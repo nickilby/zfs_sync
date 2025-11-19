@@ -4,21 +4,9 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
+dist/
+build/
 
 # Virtual environments
 venv/
@@ -31,31 +19,33 @@ ENV/
 .idea/
 *.swp
 *.swo
-*~
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
-.tox/
 
 # Environment variables
 .env
 .env.local
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Git
+.git/
+.gitignore
 
-# Logs
+# Documentation
+*.md
+!README.md
+
+# Logs and data (will be mounted as volumes)
 *.log
 logs/
+*.db
+*.sqlite
+data/
 
 # Docker
-data/
-.docker/
+Dockerfile
+docker-compose.yml
+.dockerignore
 
-# OS
-.DS_Store
-Thumbs.db

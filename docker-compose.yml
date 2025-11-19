@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  zfs-sync:
+    build: .
+    container_name: zfs-sync
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount config directory
+      - ./config:/config:ro
+      # Mount logs directory
+      - ./logs:/logs
+      # Mount data directory for SQLite database
+      - ./data:/data
+    environment:
+      - ZFS_SYNC_HOST=0.0.0.0
+      - ZFS_SYNC_PORT=8000
+      - ZFS_SYNC_DATABASE_URL=sqlite:////data/zfs_sync.db
+      - ZFS_SYNC_LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - zfs-sync-network
+
+networks:
+  zfs-sync-network:
+    driver: bridge
+
