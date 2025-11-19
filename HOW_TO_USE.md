@@ -38,7 +38,7 @@ Before you begin, you need:
 
 ### Installation
 
-#### Option 1: Local Installation
+#### Option 1: Local Installation (Recommended)
 
 1. **Clone or download the repository:**
    ```bash
@@ -46,31 +46,48 @@ Before you begin, you need:
    cd zfs_sync
    ```
 
-2. **Install dependencies:**
+2. **Set up virtual environment and install dependencies:**
    ```bash
+   # Run the setup script (creates venv and installs dependencies)
+   ./setup.sh
+   
+   # Or manually:
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install --upgrade pip
    pip install -r requirements.txt
    ```
 
-3. **Start the server:**
+3. **Activate the virtual environment (if not already active):**
+
+   ```bash
+   source venv/bin/activate
+   ```
+
+4. **Start the server:**
+
    ```bash
    python -m zfs_sync
    ```
 
-   The server will start on `http://localhost:8000`
+   The server will start on `http://0.0.0.0:8000` (accessible from any network interface)
 
 #### Option 2: Docker Installation
 
 1. **Build the Docker image:**
+
    ```bash
    docker-compose build
    ```
 
 2. **Start the container:**
+
    ```bash
    docker-compose up -d
    ```
 
 3. **View logs:**
+
    ```bash
    docker-compose logs -f
    ```
