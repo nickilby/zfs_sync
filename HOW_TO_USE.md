@@ -114,6 +114,7 @@ A "system" is a computer or server that has ZFS pools and snapshots.
 2. Click on `POST /api/v1/systems`
 3. Click "Try it out"
 4. Fill in the form:
+
    ```json
    {
      "hostname": "backup-server-01",
@@ -121,11 +122,13 @@ A "system" is a computer or server that has ZFS pools and snapshots.
      "connectivity_status": "online"
    }
    ```
+
 5. Click "Execute"
 
 **Important:** Save the `api_key` from the response! You'll need it for all future requests from this system.
 
 **Example Response:**
+
 ```json
 {
   "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -148,6 +151,7 @@ A sync group tells ZFS Sync which systems should stay synchronized with each oth
 2. Click on `POST /api/v1/sync-groups`
 3. Click "Try it out"
 4. Fill in the form:
+
    ```json
    {
      "name": "Production Backup Group",
@@ -159,6 +163,7 @@ A sync group tells ZFS Sync which systems should stay synchronized with each oth
      ]
    }
    ```
+
 5. Click "Execute"
 
 **Note:** Use the `id` values from the systems you registered in Step 2.
@@ -171,6 +176,7 @@ Now your systems need to tell ZFS Sync what snapshots they have.
 2. Click on `POST /api/v1/snapshots`
 3. Click "Try it out"
 4. Fill in snapshot information:
+
    ```json
    {
      "name": "backup-20240115-120000",
@@ -181,6 +187,7 @@ Now your systems need to tell ZFS Sync what snapshots they have.
      "system_id": "your-system-id"
    }
    ```
+
 5. Click "Execute"
 
 **Tip:** You can report multiple snapshots at once using `POST /api/v1/snapshots/batch`
@@ -230,6 +237,7 @@ curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
 ```
 
 **Response Example:**
+
 ```json
 {
   "system_id": "...",
@@ -385,6 +393,7 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 ### Problem: System shows as "offline"
 
 **Solution:** 
+
 1. Check if the system is sending heartbeats regularly
 2. Verify the heartbeat timeout setting (default: 300 seconds)
 3. Send a heartbeat manually to test
@@ -392,6 +401,7 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 ### Problem: Can't see snapshots from other systems
 
 **Solution:**
+
 1. Make sure all systems are in the same sync group
 2. Verify snapshots are being reported correctly
 3. Check the sync group is enabled
@@ -399,6 +409,7 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 ### Problem: "System not found" error
 
 **Solution:**
+
 1. Verify you're using the correct system ID
 2. Check the system exists: `GET /api/v1/systems/{system_id}`
 3. Make sure you registered the system first
@@ -406,6 +417,7 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 ### Problem: Server won't start
 
 **Solution:**
+
 1. Check if port 8000 is already in use
 2. Verify all dependencies are installed: `pip install -r requirements.txt`
 3. Check the logs for error messages
