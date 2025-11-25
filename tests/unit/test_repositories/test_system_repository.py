@@ -63,5 +63,5 @@ class TestSystemRepository:
             data["hostname"] = f"test-system-{i}"
             repo.create(**data)
 
-        all_systems = repo.list_all()
+        all_systems = repo.get_all()
         assert len(all_systems) >= 3

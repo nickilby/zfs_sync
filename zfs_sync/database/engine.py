@@ -27,5 +27,8 @@ def create_engine() -> Engine:
 
 def init_db() -> None:
     """Initialize the database by creating all tables."""
+    # Import models to ensure they register with Base.metadata
+    import zfs_sync.database.models  # noqa: F401
+
     engine = create_engine()
     Base.metadata.create_all(bind=engine)
