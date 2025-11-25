@@ -34,7 +34,7 @@ jobs:
       
       - name: Initialize test database schema
         run: |
-          python -c "from zfs_sync.database.models import Base; from zfs_sync.database.engine import create_engine; import zfs_sync.database.models; engine = create_engine(); Base.metadata.create_all(bind=engine)"
+          python -c "from zfs_sync.database.base import Base; from zfs_sync.database.engine import create_engine; import zfs_sync.database.models; engine = create_engine(); Base.metadata.create_all(bind=engine)"
       
       - name: Run tests with coverage
         run: |
