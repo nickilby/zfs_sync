@@ -53,7 +53,7 @@ def verify_tables_exist(engine) -> None:
     """Verify that all expected tables exist in the database."""
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
-    
+
     # Expected tables based on models
     expected_tables = {
         "systems",
@@ -62,7 +62,7 @@ def verify_tables_exist(engine) -> None:
         "sync_group_systems",
         "sync_states",
     }
-    
+
     missing_tables = expected_tables - existing_tables
     if missing_tables:
         raise RuntimeError(
@@ -100,6 +100,7 @@ def test_db() -> Generator[Session, None, None]:
         engine.dispose()
         # Clean up test database file
         import os
+
         if os.path.exists(_test_db_file.name):
             os.unlink(_test_db_file.name)
 
@@ -129,7 +130,7 @@ def test_client(test_db: Session) -> Generator[TestClient, None, None]:
     # TestClient doesn't trigger startup events by default in FastAPI
     # But we've already disabled startup DB init in app.py for pytest
     client = TestClient(app)
-    
+
     try:
         yield client
     finally:
