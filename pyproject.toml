@@ -72,5 +72,6 @@ markers = [
     "integration: Integration tests",
     "slow: Slow running tests",
     "benchmark: Performance benchmark tests",
+    "database: Tests that require database access",
 ]
 

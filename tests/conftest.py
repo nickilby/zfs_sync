@@ -6,7 +6,7 @@ from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from zfs_sync.api.app import app
@@ -19,6 +19,56 @@ import zfs_sync.database.models  # noqa: F401
 TEST_DATABASE_URL = "sqlite:///:memory:"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def verify_database_setup():
+    """Autouse fixture to verify database models are properly registered."""
+    # This runs once per test session before any tests
+    # Verify that models are imported and registered with Base.metadata
+    expected_tables = {
+        "systems",
+        "snapshots",
+        "sync_groups",
+        "sync_group_systems",
+        "sync_states",
+    }
+
+    # Check that all expected tables are in Base.metadata
+    registered_tables = set(Base.metadata.tables.keys())
+    missing_tables = expected_tables - registered_tables
+
+    if missing_tables:
+        raise RuntimeError(
+            f"Database models not properly registered. Missing tables in metadata: {missing_tables}. "
+            f"Registered tables: {registered_tables}. "
+            f"This usually means models weren't imported before Base.metadata was accessed."
+        )
+
+    yield  # Continue with tests
+
+
+def verify_tables_exist(engine) -> None:
+    """Verify that all expected tables exist in the database."""
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    
+    # Expected tables based on models
+    expected_tables = {
+        "systems",
+        "snapshots",
+        "sync_groups",
+        "sync_group_systems",
+        "sync_states",
+    }
+    
+    missing_tables = expected_tables - existing_tables
+    if missing_tables:
+        raise RuntimeError(
+            f"Missing database tables: {missing_tables}. "
+            f"Existing tables: {existing_tables}. "
+            f"This indicates a problem with database initialization."
+        )
+
+
 @pytest.fixture(scope="function")
 def test_db() -> Generator[Session, None, None]:
     """Create a test database session with in-memory SQLite."""
@@ -29,8 +79,11 @@ def test_db() -> Generator[Session, None, None]:
         echo=False,
     )
 
-    # Create all tables (models must be imported first for this to work)
+    # Models are already imported at module level, create all tables
     Base.metadata.create_all(bind=engine)
+
+    # Verify tables were created successfully
+    verify_tables_exist(engine)
 
     # Create a session
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -47,8 +100,14 @@ def test_db() -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def test_client(test_db: Session) -> Generator[TestClient, None, None]:
     """Create a test client with overridden database dependency."""
+    # Verify database is ready before creating client
+    if not test_db.bind:
+        raise RuntimeError("Test database session has no engine bind")
+    
+    # Verify tables exist in the test database
+    verify_tables_exist(test_db.bind)
 
-    # Override the get_db dependency
+    # Override the get_db dependency BEFORE creating TestClient
     def override_get_db():
         try:
             yield test_db
@@ -57,13 +116,14 @@ def test_client(test_db: Session) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Tables are already created by test_db fixture
     # TestClient doesn't trigger startup events by default in FastAPI
+    # But we've already disabled startup DB init in app.py for pytest
     client = TestClient(app)
+    
     try:
         yield client
     finally:
-        # Clean up
+        # Clean up dependency overrides
         app.dependency_overrides.clear()
 
 

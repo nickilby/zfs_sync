@@ -32,10 +32,6 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
       
-      - name: Initialize test database schema
-        run: |
-          python -c "from zfs_sync.database.base import Base; from zfs_sync.database.engine import create_engine; import zfs_sync.database.models; engine = create_engine(); Base.metadata.create_all(bind=engine)"
-      
       - name: Run tests with coverage
         run: |
           pytest --cov=zfs_sync --cov-report=xml --cov-report=term-missing --cov-report=html -v

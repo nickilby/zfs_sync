@@ -50,11 +50,26 @@ pytest -v
 
 The `conftest.py` file provides shared fixtures:
 
-- `test_db`: In-memory SQLite database session (function-scoped)
-- `test_client`: FastAPI TestClient with database override
+- `verify_database_setup`: Autouse fixture that verifies database models are registered (session-scoped)
+- `test_db`: In-memory SQLite database session with automatic table creation and verification (function-scoped)
+- `test_client`: FastAPI TestClient with database dependency override and table verification
 - `sample_system_data`: Sample data for creating test systems
 - `sample_snapshot_data`: Sample data for creating test snapshots
 - `sample_sync_group_data`: Sample data for creating test sync groups
+
+### Database Setup
+
+The test suite uses a robust database initialization approach:
+
+1. **Model Registration Verification**: An autouse fixture verifies all database models are properly registered with SQLAlchemy's metadata before any tests run.
+
+2. **Table Creation**: Each test gets a fresh in-memory SQLite database with all tables automatically created via the `test_db` fixture.
+
+3. **Table Verification**: Before each test runs, the fixtures verify that all expected tables exist in the database, providing clear error messages if something goes wrong.
+
+4. **Isolation**: Each test function gets a completely fresh database, ensuring tests don't interfere with each other.
+
+5. **Startup Event Handling**: The app's startup event is automatically disabled during tests to prevent interference with test database setup.
 
 ## Writing New Tests
 
@@ -90,9 +105,31 @@ def test_create_system_endpoint(test_client):
     assert response.status_code == 201
 ```
 
+## Test Markers
+
+The test suite uses pytest markers to categorize tests:
+
+- `@pytest.mark.unit`: Unit tests (isolated component tests)
+- `@pytest.mark.integration`: Integration tests (API endpoint tests)
+- `@pytest.mark.slow`: Slow-running tests
+- `@pytest.mark.benchmark`: Performance benchmark tests
+- `@pytest.mark.database`: Tests that require database access
+
+Example:
+```python
+@pytest.mark.integration
+@pytest.mark.database
+def test_create_system(test_client):
+    """Test system creation."""
+    ...
+```
+
 ## Notes
 
 - All tests use an in-memory SQLite database for speed and isolation
-- Each test function gets a fresh database session
+- Each test function gets a fresh database session with all tables pre-created
 - The test client automatically overrides the database dependency
+- Database tables are verified to exist before each test runs
+- If database initialization fails, you'll get clear error messages indicating which tables are missing
+- The app startup event is automatically disabled during tests to prevent database conflicts
 
