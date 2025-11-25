@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from zfs_sync.api.app import app
 from zfs_sync.database.base import Base, get_db
-from zfs_sync.database.engine import SessionLocal
 
 
 # Use in-memory SQLite for tests
