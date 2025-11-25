@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SystemBase(BaseModel):
@@ -13,7 +13,15 @@ class SystemBase(BaseModel):
     hostname: str = Field(..., description="Hostname of the system")
     platform: str = Field(..., description="Operating system platform")
     connectivity_status: str = Field(default="unknown", description="Connectivity status")
-    metadata: dict = Field(default_factory=dict, description="Additional metadata")
+    metadata: Optional[dict] = Field(default_factory=dict, alias="extra_metadata", description="Additional metadata")
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, v):
+        """Convert None to empty dict for metadata."""
+        if v is None:
+            return {}
+        return v if isinstance(v, dict) else {}
 
 
 class SystemCreate(SystemBase):
@@ -45,4 +53,5 @@ class SystemResponse(SystemBase):
         """Pydantic configuration."""
 
         from_attributes = True
+        populate_by_name = True
 

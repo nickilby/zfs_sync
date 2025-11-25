@@ -1,7 +1,7 @@
 """Service for coordinating snapshot synchronization across systems."""
 
-from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ class SyncCoordinationService:
         self.system_repo = SystemRepository(db)
         self.comparison_service = SnapshotComparisonService(db)
 
-    def detect_sync_mismatches(self, sync_group_id: UUID) -> List[Dict[str, any]]:
+    def detect_sync_mismatches(self, sync_group_id: UUID) -> List[Dict[str, Any]]:
         """
         Detect snapshot mismatches for a sync group.
 
@@ -44,7 +44,10 @@ class SyncCoordinationService:
 
         sync_group = self.sync_group_repo.get(sync_group_id)
         if not sync_group:
-            raise ValueError(f"Sync group {sync_group_id} not found")
+            raise ValueError(
+                f"Sync group '{sync_group_id}' not found. "
+                f"Cannot detect sync mismatches for non-existent sync group."
+            )
 
         if not sync_group.enabled:
             logger.info(f"Sync group {sync_group_id} is disabled")
@@ -93,7 +96,7 @@ class SyncCoordinationService:
 
     def determine_sync_actions(
         self, sync_group_id: UUID, system_id: Optional[UUID] = None
-    ) -> List[Dict[str, any]]:
+    ) -> List[Dict[str, Any]]:
         """
         Determine sync actions needed for a sync group or specific system.
 
@@ -109,6 +112,16 @@ class SyncCoordinationService:
 
         actions = []
         for mismatch in mismatches:
+            source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
+            
+            # Find snapshot_id from source system
+            snapshot_id = self._find_snapshot_id(
+                pool=mismatch["pool"],
+                dataset=mismatch["dataset"],
+                snapshot_name=mismatch["missing_snapshot"],
+                system_id=source_system_id,
+            )
+            
             action = {
                 "action_type": "sync_snapshot",
                 "sync_group_id": mismatch["sync_group_id"],
@@ -117,12 +130,13 @@ class SyncCoordinationService:
                 "target_system_id": mismatch["target_system_id"],
                 "source_system_id": mismatch["source_system_ids"][0],  # Use first available
                 "snapshot_name": mismatch["missing_snapshot"],
+                "snapshot_id": str(snapshot_id) if snapshot_id else None,
                 "priority": mismatch["priority"],
                 "estimated_size": self._estimate_snapshot_size(
                     mismatch["pool"],
                     mismatch["dataset"],
                     mismatch["missing_snapshot"],
-                    UUID(mismatch["source_system_ids"][0]),
+                    source_system_id,
                 ),
             }
             actions.append(action)
@@ -134,7 +148,7 @@ class SyncCoordinationService:
 
     def get_sync_instructions(
         self, system_id: UUID, sync_group_id: Optional[UUID] = None
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Get sync instructions for a system.
 
@@ -163,7 +177,7 @@ class SyncCoordinationService:
 
         return {
             "system_id": str(system_id),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "actions": all_actions,
             "action_count": len(all_actions),
             "sync_groups": [str(g.id) for g in sync_groups if g],
@@ -196,9 +210,9 @@ class SyncCoordinationService:
         if existing:
             # Update existing
             existing.status = status.value
-            existing.last_check = datetime.utcnow()
+            existing.last_check = datetime.now(timezone.utc)
             if status == SyncStatus.IN_SYNC:
-                existing.last_sync = datetime.utcnow()
+                existing.last_sync = datetime.now(timezone.utc)
             if error_message:
                 existing.error_message = error_message
             else:
@@ -213,11 +227,11 @@ class SyncCoordinationService:
                 snapshot_id=snapshot_id,
                 system_id=system_id,
                 status=status.value,
-                last_check=datetime.utcnow(),
+                last_check=datetime.now(timezone.utc),
                 error_message=error_message,
             )
 
-    def get_sync_status_summary(self, sync_group_id: UUID) -> Dict[str, any]:
+    def get_sync_status_summary(self, sync_group_id: UUID) -> Dict[str, Any]:
         """
         Get a summary of sync status for a sync group.
 
@@ -279,7 +293,9 @@ class SyncCoordinationService:
         # If it's the latest snapshot, increase priority
         latest_snapshots = comparison.get("latest_snapshots", {})
         for system_id_str, latest_info in latest_snapshots.items():
-            if latest_info.get("name", "").endswith(snapshot_name):
+            # Extract snapshot name from full name (e.g., "tank/data@snapshot-20240115" -> "snapshot-20240115")
+            latest_snapshot_name = self.comparison_service._extract_snapshot_name(latest_info.get("name", ""))
+            if latest_snapshot_name == snapshot_name:
                 priority += 20
                 break
 
@@ -292,6 +308,26 @@ class SyncCoordinationService:
         priority += missing_count * 5
 
         return priority
+
+    def _find_snapshot_id(
+        self, pool: str, dataset: str, snapshot_name: str, system_id: UUID
+    ) -> Optional[UUID]:
+        """
+        Find snapshot_id for a given snapshot name on a system.
+        
+        Returns the snapshot ID if found, None otherwise.
+        """
+        snapshots = self.snapshot_repo.get_by_pool_dataset(
+            pool=pool, dataset=dataset, system_id=system_id
+        )
+        for snapshot in snapshots:
+            if self.comparison_service._extract_snapshot_name(snapshot.name) == snapshot_name:
+                return snapshot.id
+        logger.warning(
+            f"Could not find snapshot_id for {snapshot_name} on system {system_id} "
+            f"for {pool}/{dataset}"
+        )
+        return None
 
     def _estimate_snapshot_size(
         self, pool: str, dataset: str, snapshot_name: str, source_system_id: UUID

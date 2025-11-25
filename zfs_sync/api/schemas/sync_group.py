@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SyncGroupBase(BaseModel):
@@ -15,7 +15,15 @@ class SyncGroupBase(BaseModel):
     sync_interval_seconds: int = Field(
         default=3600, description="Interval between sync checks in seconds"
     )
-    metadata: dict = Field(default_factory=dict, description="Additional metadata")
+    metadata: Optional[dict] = Field(default_factory=dict, alias="extra_metadata", description="Additional metadata")
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, v):
+        """Convert None to empty dict for metadata."""
+        if v is None:
+            return {}
+        return v if isinstance(v, dict) else {}
 
 
 class SyncGroupCreate(SyncGroupBase):
@@ -46,4 +54,5 @@ class SyncGroupResponse(SyncGroupBase):
         """Pydantic configuration."""
 
         from_attributes = True
+        populate_by_name = True
 

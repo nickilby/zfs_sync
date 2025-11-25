@@ -119,6 +119,7 @@ Based on the architecture and requirements outlined above, here's the step-by-st
    - Coordination logic to determine sync actions
    - Endpoint for systems to query sync instructions
    - Sync status tracking and reporting
+   - Sync actions include snapshot_id for efficient state updates
 
 ### Phase 4: Advanced Features
 

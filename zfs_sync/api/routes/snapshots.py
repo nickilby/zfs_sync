@@ -21,7 +21,7 @@ router = APIRouter()
 async def create_snapshot(snapshot: SnapshotCreate, db: Session = Depends(get_db)):
     """Report a new snapshot."""
     repo = SnapshotRepository(db)
-    db_snapshot = repo.create(**snapshot.model_dump())
+    db_snapshot = repo.create(**snapshot.model_dump(by_alias=True))
     logger.info(f"Created snapshot: {db_snapshot.name} on {db_snapshot.pool}/{db_snapshot.dataset}")
     return SnapshotResponse.model_validate(db_snapshot)
 
@@ -70,7 +70,7 @@ async def create_snapshots_batch(
     repo = SnapshotRepository(db)
     created = []
     for snapshot_data in snapshots:
-        db_snapshot = repo.create(**snapshot_data.model_dump())
+        db_snapshot = repo.create(**snapshot_data.model_dump(by_alias=True))
         created.append(SnapshotResponse.model_validate(db_snapshot))
     logger.info(f"Created {len(created)} snapshots in batch")
     return created

@@ -26,7 +26,7 @@ async def create_sync_group(group: SyncGroupCreate, db: Session = Depends(get_db
         )
 
     # Create the sync group
-    db_group = repo.create(**group.model_dump(exclude={"system_ids"}))
+    db_group = repo.create(**group.model_dump(exclude={"system_ids"}, by_alias=True))
 
     # Add system associations
     from zfs_sync.database.models import SyncGroupSystemModel
@@ -79,7 +79,7 @@ async def update_sync_group(
 ):
     """Update a sync group."""
     repo = SyncGroupRepository(db)
-    update_data = group_update.model_dump(exclude_unset=True, exclude={"system_ids"})
+    update_data = group_update.model_dump(exclude_unset=True, exclude={"system_ids"}, by_alias=True)
 
     if update_data:
         group = repo.update(group_id, **update_data)

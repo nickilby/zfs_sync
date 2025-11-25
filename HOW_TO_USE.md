@@ -241,24 +241,31 @@ curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
 ```json
 {
   "system_id": "...",
+  "timestamp": "2024-01-15T12:00:00Z",
+  "action_count": 1,
+  "sync_groups": ["..."],
   "actions": [
     {
       "action_type": "sync_snapshot",
+      "sync_group_id": "...",
       "pool": "tank",
       "dataset": "tank/data",
       "snapshot_name": "backup-20240115-120000",
+      "snapshot_id": "123e4567-e89b-12d3-a456-426614174000",
+      "target_system_id": "...",
       "source_system_id": "...",
-      "priority": 25
+      "priority": 25,
+      "estimated_size": 1073741824
     }
   ]
 }
 ```
 
-This tells you which snapshots to copy from other systems.
+This tells you which snapshots to copy from other systems. The `snapshot_id` field (when present) can be used to efficiently update sync state after completing the synchronization.
 
 #### 4. Update Sync Status
 
-After syncing a snapshot, tell ZFS Sync it's done:
+After syncing a snapshot, tell ZFS Sync it's done. You can use the `snapshot_id` from the sync instructions:
 
 ```bash
 curl -X POST "http://localhost:8000/api/v1/sync/states" \
@@ -271,6 +278,8 @@ curl -X POST "http://localhost:8000/api/v1/sync/states" \
     "status": "in_sync"
   }'
 ```
+
+**Note:** The `snapshot_id` is included in sync instructions (see Step 3 above) to make it easier to update sync state after completing synchronization. If `snapshot_id` is not available in the instructions, you can still update sync state using the snapshot name.
 
 ---
 
@@ -368,9 +377,15 @@ curl -X POST "$API_URL/systems/$SYSTEM_ID/heartbeat" \
   -H "X-API-Key: $API_KEY"
 
 # Get sync instructions
-curl -X GET "$API_URL/sync/instructions/$SYSTEM_ID" \
-  -H "X-API-Key: $API_KEY"
+INSTRUCTIONS=$(curl -s -X GET "$API_URL/sync/instructions/$SYSTEM_ID" \
+  -H "X-API-Key: $API_KEY")
+
+# Process sync instructions (example - you would implement actual ZFS sync here)
+# The instructions include snapshot_id which can be used to update sync state
+echo "$INSTRUCTIONS" | jq -r '.actions[] | "\(.snapshot_name) from \(.source_system_id) to \(.target_system_id) (snapshot_id: \(.snapshot_id))"'
 ```
+
+**Note:** The sync instructions now include `snapshot_id` for each action, which makes it easier to update sync state after completing synchronization. The `snapshot_id` is the UUID of the snapshot on the source system and can be used when calling the sync state update endpoint.
 
 Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report.sh`), and add it to your crontab:
 
