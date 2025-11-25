@@ -1,6 +1,6 @@
 """Repository for SyncState operations."""
 
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 
 from sqlalchemy.orm import Session

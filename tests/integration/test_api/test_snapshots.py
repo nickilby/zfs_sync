@@ -2,7 +2,6 @@
 
 from datetime import datetime, timezone
 
-import pytest
 from fastapi import status
 
 
@@ -34,7 +33,7 @@ class TestSnapshotsEndpoints:
         }
 
         response = test_client.post(
-            f"/api/v1/snapshots",
+            "/api/v1/snapshots",
             headers={"X-API-Key": api_key},
             json=snapshot_data,
         )
@@ -71,7 +70,7 @@ class TestSnapshotsEndpoints:
         ]
 
         response = test_client.post(
-            f"/api/v1/snapshots/batch",
+            "/api/v1/snapshots/batch",
             headers={"X-API-Key": api_key},
             json=snapshots,
         )
@@ -104,7 +103,7 @@ class TestSnapshotsEndpoints:
             "system_id": str(system_id),
         }
         test_client.post(
-            f"/api/v1/snapshots",
+            "/api/v1/snapshots",
             headers={"X-API-Key": api_key},
             json=snapshot_data,
         )

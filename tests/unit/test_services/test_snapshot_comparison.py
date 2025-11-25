@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from zfs_sync.database.repositories import (
     SnapshotRepository,

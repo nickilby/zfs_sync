@@ -1,14 +1,11 @@
 """Conflict resolution API schemas."""
 
-from datetime import datetime
 from typing import Dict, List, Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from zfs_sync.services.conflict_resolution import (
     ConflictResolutionStrategy,
-    ConflictType,
 )
 
 

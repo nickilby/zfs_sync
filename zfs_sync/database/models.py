@@ -1,8 +1,5 @@
 """SQLAlchemy database models."""
 
-from datetime import datetime
-from typing import List
-from uuid import UUID
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship

@@ -1,6 +1,5 @@
 """Unit tests for SyncCoordinationService."""
 
-import pytest
 
 from zfs_sync.database.repositories import (
     SnapshotRepository,

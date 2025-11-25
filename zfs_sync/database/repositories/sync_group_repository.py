@@ -1,7 +1,6 @@
 """Repository for SyncGroup operations."""
 
 from typing import List, Optional
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -22,5 +21,5 @@ class SyncGroupRepository(BaseRepository[SyncGroupModel]):
 
     def get_enabled(self) -> List[SyncGroupModel]:
         """Get all enabled sync groups."""
-        return self.db.query(SyncGroupModel).filter(SyncGroupModel.enabled == True).all()
+        return self.db.query(SyncGroupModel).filter(SyncGroupModel.enabled).all()
 

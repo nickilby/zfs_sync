@@ -1,6 +1,5 @@
 """Unit tests for SystemRepository."""
 
-import pytest
 
 from zfs_sync.database.repositories import SystemRepository
 
@@ -31,7 +30,7 @@ class TestSystemRepository:
     def test_get_by_hostname(self, test_db, sample_system_data):
         """Test retrieving a system by hostname."""
         repo = SystemRepository(test_db)
-        system = repo.create(**sample_system_data)
+        repo.create(**sample_system_data)
 
         retrieved = repo.get_by_hostname(sample_system_data["hostname"])
         assert retrieved is not None

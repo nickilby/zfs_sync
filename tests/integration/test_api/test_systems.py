@@ -1,6 +1,5 @@
 """Integration tests for systems endpoints."""
 
-import pytest
 from fastapi import status
 
 

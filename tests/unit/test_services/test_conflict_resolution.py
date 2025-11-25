@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-import pytest
 
 from zfs_sync.database.repositories import (
     SnapshotRepository,

@@ -1,7 +1,7 @@
 """Service for comparing snapshot states across systems."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Set
 from uuid import UUID
 
 from sqlalchemy.orm import Session

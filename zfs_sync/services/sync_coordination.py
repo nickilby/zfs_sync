@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from zfs_sync.database.models import SyncGroupModel, SyncStateModel
+from zfs_sync.database.models import SyncStateModel
 from zfs_sync.database.repositories import (
     SnapshotRepository,
     SyncGroupRepository,
