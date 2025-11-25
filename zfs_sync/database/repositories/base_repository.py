@@ -33,7 +33,7 @@ class BaseRepository(Generic[ModelType]):
     def create(self, **kwargs) -> ModelType:
         """
         Create a new record.
-        
+
         Raises:
             ValueError: If a unique constraint violation occurs
             Exception: For other database errors
@@ -46,7 +46,7 @@ class BaseRepository(Generic[ModelType]):
             return db_obj
         except IntegrityError as e:
             self.db.rollback()
-            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+            error_msg = str(e.orig) if hasattr(e, "orig") else str(e)
             logger.error(f"Database integrity error creating {self.model.__name__}: {error_msg}")
             raise ValueError(
                 f"Failed to create {self.model.__name__}: constraint violation. "
@@ -60,7 +60,7 @@ class BaseRepository(Generic[ModelType]):
     def update(self, id: UUID, **kwargs) -> Optional[ModelType]:
         """
         Update a record by ID.
-        
+
         Raises:
             ValueError: If a unique constraint violation occurs
             Exception: For other database errors
@@ -74,8 +74,10 @@ class BaseRepository(Generic[ModelType]):
                 self.db.refresh(db_obj)
             except IntegrityError as e:
                 self.db.rollback()
-                error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
-                logger.error(f"Database integrity error updating {self.model.__name__} {id}: {error_msg}")
+                error_msg = str(e.orig) if hasattr(e, "orig") else str(e)
+                logger.error(
+                    f"Database integrity error updating {self.model.__name__} {id}: {error_msg}"
+                )
                 raise ValueError(
                     f"Failed to update {self.model.__name__} {id}: constraint violation. "
                     f"Details: {error_msg}"
@@ -89,7 +91,7 @@ class BaseRepository(Generic[ModelType]):
     def delete(self, id: UUID) -> bool:
         """
         Delete a record by ID.
-        
+
         Raises:
             Exception: For database errors
         """
@@ -104,4 +106,3 @@ class BaseRepository(Generic[ModelType]):
                 logger.error(f"Database error deleting {self.model.__name__} {id}: {e}")
                 raise
         return False
-

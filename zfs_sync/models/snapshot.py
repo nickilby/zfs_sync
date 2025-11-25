@@ -41,4 +41,3 @@ class Snapshot(BaseModel):
                 "used": 1048576,
             }
         }
-

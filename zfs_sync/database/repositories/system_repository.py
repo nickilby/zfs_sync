@@ -26,4 +26,3 @@ class SystemRepository(BaseRepository[SystemModel]):
     def get_all_online(self) -> List[SystemModel]:
         """Get all online systems."""
         return self.db.query(SystemModel).filter(SystemModel.connectivity_status == "online").all()
-

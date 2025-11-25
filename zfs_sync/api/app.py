@@ -57,7 +57,14 @@ async def shutdown_event():
 
 
 # Import routes (must be after app creation)
-from zfs_sync.api.routes import conflicts, health, snapshots, sync, sync_groups, systems  # noqa: E402
+from zfs_sync.api.routes import (
+    conflicts,
+    health,
+    snapshots,
+    sync,
+    sync_groups,
+    systems,
+)  # noqa: E402
 
 app.include_router(health.router, prefix=settings.api_prefix, tags=["Health"])
 app.include_router(systems.router, prefix=settings.api_prefix, tags=["Systems"])
@@ -65,6 +72,7 @@ app.include_router(snapshots.router, prefix=settings.api_prefix, tags=["Snapshot
 app.include_router(sync_groups.router, prefix=settings.api_prefix, tags=["Sync Groups"])
 app.include_router(sync.router, prefix=settings.api_prefix, tags=["Sync"])
 app.include_router(conflicts.router, prefix=settings.api_prefix, tags=["Conflicts"])
+
 
 # Root route - redirect to API docs
 @app.get("/")
@@ -98,19 +106,22 @@ if static_dir.exists() and any(static_dir.iterdir()):
     except Exception as e:
         logger.warning(f"Could not mount static directory: {e}")
 
+
 # Handle favicon requests gracefully
 @app.get("/favicon.ico")
 async def favicon():
     """Handle favicon requests."""
     from fastapi.responses import Response
+
     return Response(status_code=204)  # No content
 
 
 # Catch-all for assets if not mounted (returns 204 to avoid 404 spam in logs)
 if not assets_mounted:
+
     @app.get("/assets/{path:path}")
     async def assets_catchall(path: str):
         """Handle asset requests when assets directory is not available."""
         from fastapi.responses import Response
-        return Response(status_code=204)  # No content
 
+        return Response(status_code=204)  # No content

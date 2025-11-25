@@ -26,15 +26,14 @@ async def create_system(system: SystemCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"System with hostname '{system.hostname}' already exists (ID: {existing.id})"
+            detail=f"System with hostname '{system.hostname}' already exists (ID: {existing.id})",
         )
     try:
         db_system = repo.create(**system.model_dump(by_alias=True))
     except ValueError as e:
         # Handle constraint violations from repository
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Failed to create system: {str(e)}"
+            status_code=status.HTTP_409_CONFLICT, detail=f"Failed to create system: {str(e)}"
         ) from e
 
     # Generate API key for the new system
@@ -45,7 +44,7 @@ async def create_system(system: SystemCreate, db: Session = Depends(get_db)):
         logger.error(f"Failed to generate API key for system {db_system.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"System created but failed to generate API key: {str(e)}"
+            detail=f"System created but failed to generate API key: {str(e)}",
         ) from e
 
     logger.info(f"Created system: {db_system.hostname} ({db_system.id}) with API key")
@@ -117,7 +116,7 @@ async def list_systems(skip: int = 0, limit: int = 100, db: Session = Depends(ge
     """List all registered systems."""
     repo = SystemRepository(db)
     systems = repo.get_all(skip=skip, limit=limit)
-    
+
     results = []
     for system in systems:
         try:
@@ -125,13 +124,14 @@ async def list_systems(skip: int = 0, limit: int = 100, db: Session = Depends(ge
             results.append(response)
         except Exception as e:
             logger.error(
-                f"Failed to validate system {system.id} ({system.hostname}): {e}",
-                exc_info=True
+                f"Failed to validate system {system.id} ({system.hostname}): {e}", exc_info=True
             )
             # Continue with other systems even if one fails
             continue
-    
-    logger.info(f"Returning {len(results)} systems (requested {len(systems)}, skipped {len(systems) - len(results)})")
+
+    logger.info(
+        f"Returning {len(results)} systems (requested {len(systems)}, skipped {len(systems) - len(results)})"
+    )
     return results
 
 
@@ -142,27 +142,29 @@ async def get_system(system_id: UUID, db: Session = Depends(get_db)):
     system = repo.get(system_id)
     if not system:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"System with ID '{system_id}' not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"System with ID '{system_id}' not found"
         )
     return SystemResponse.model_validate(system)
 
 
 @router.put("/systems/{system_id}", response_model=SystemResponse)
-async def update_system(system_id: UUID, system_update: SystemUpdate, db: Session = Depends(get_db)):
+async def update_system(
+    system_id: UUID, system_update: SystemUpdate, db: Session = Depends(get_db)
+):
     """Update a system."""
     repo = SystemRepository(db)
     try:
-        system = repo.update(system_id, **system_update.model_dump(exclude_unset=True, by_alias=True))
+        system = repo.update(
+            system_id, **system_update.model_dump(exclude_unset=True, by_alias=True)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update system '{system_id}': {str(e)}"
+            detail=f"Failed to update system '{system_id}': {str(e)}",
         ) from e
     if not system:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"System with ID '{system_id}' not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"System with ID '{system_id}' not found"
         )
     logger.info(f"Updated system: {system.hostname} ({system.id})")
     return SystemResponse.model_validate(system)
@@ -176,7 +178,7 @@ async def delete_system(system_id: UUID, db: Session = Depends(get_db)):
         if not repo.delete(system_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"System with ID '{system_id}' not found"
+                detail=f"System with ID '{system_id}' not found",
             )
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -184,7 +186,7 @@ async def delete_system(system_id: UUID, db: Session = Depends(get_db)):
         logger.error(f"Error deleting system {system_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete system '{system_id}': {str(e)}"
+            detail=f"Failed to delete system '{system_id}': {str(e)}",
         ) from e
     logger.info(f"Deleted system: {system_id}")
 
@@ -242,4 +244,3 @@ async def get_offline_systems(db: Session = Depends(get_db)):
     health_service = SystemHealthService(db)
     offline = health_service.get_offline_systems()
     return {"systems": offline, "count": len(offline)}
-

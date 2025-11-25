@@ -88,7 +88,9 @@ class SyncCoordinationService:
                                     "target_system_id": str(system_id),
                                     "missing_snapshot": missing_snapshot,
                                     "source_system_ids": [str(sid) for sid in source_systems],
-                                    "priority": self._calculate_priority(missing_snapshot, comparison),
+                                    "priority": self._calculate_priority(
+                                        missing_snapshot, comparison
+                                    ),
                                 }
                             )
 
@@ -113,7 +115,7 @@ class SyncCoordinationService:
         actions = []
         for mismatch in mismatches:
             source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
-            
+
             # Find snapshot_id from source system
             snapshot_id = self._find_snapshot_id(
                 pool=mismatch["pool"],
@@ -121,7 +123,7 @@ class SyncCoordinationService:
                 snapshot_name=mismatch["missing_snapshot"],
                 system_id=source_system_id,
             )
-            
+
             action = {
                 "action_type": "sync_snapshot",
                 "sync_group_id": mismatch["sync_group_id"],
@@ -253,9 +255,7 @@ class SyncCoordinationService:
             "syncing_count": status_counts.get("syncing", 0),
             "conflict_count": status_counts.get("conflict", 0),
             "error_count": status_counts.get("error", 0),
-            "last_updated": max(
-                (s.last_check for s in sync_states if s.last_check), default=None
-            ),
+            "last_updated": max((s.last_check for s in sync_states if s.last_check), default=None),
         }
 
     def _get_datasets_for_systems(self, system_ids: List[UUID]) -> List[Tuple[str, str]]:
@@ -294,7 +294,9 @@ class SyncCoordinationService:
         latest_snapshots = comparison.get("latest_snapshots", {})
         for system_id_str, latest_info in latest_snapshots.items():
             # Extract snapshot name from full name (e.g., "tank/data@snapshot-20240115" -> "snapshot-20240115")
-            latest_snapshot_name = self.comparison_service._extract_snapshot_name(latest_info.get("name", ""))
+            latest_snapshot_name = self.comparison_service._extract_snapshot_name(
+                latest_info.get("name", "")
+            )
             if latest_snapshot_name == snapshot_name:
                 priority += 20
                 break
@@ -314,7 +316,7 @@ class SyncCoordinationService:
     ) -> Optional[UUID]:
         """
         Find snapshot_id for a given snapshot name on a system.
-        
+
         Returns the snapshot ID if found, None otherwise.
         """
         snapshots = self.snapshot_repo.get_by_pool_dataset(
@@ -340,4 +342,3 @@ class SyncCoordinationService:
             if self.comparison_service._extract_snapshot_name(snapshot.name) == snapshot_name:
                 return snapshot.size
         return None
-

@@ -118,4 +118,3 @@ class TestSnapshotsEndpoints:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-

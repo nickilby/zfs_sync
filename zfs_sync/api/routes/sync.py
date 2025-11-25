@@ -102,4 +102,3 @@ async def get_sync_status_summary(group_id: UUID, db: Session = Depends(get_db))
     service = SyncCoordinationService(db)
     summary = service.get_sync_status_summary(sync_group_id=group_id)
     return SyncStatusSummary(**summary)
-

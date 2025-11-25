@@ -21,7 +21,7 @@ class GUID(TypeDecorator):
     cache_ok = True
 
     def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
+        if dialect.name == "postgresql":
             return dialect.type_descriptor(PostgresUUID())
         else:
             return dialect.type_descriptor(CHAR(36))
@@ -29,7 +29,7 @@ class GUID(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None:
             return value
-        elif dialect.name == 'postgresql':
+        elif dialect.name == "postgresql":
             return str(value)
         else:
             if not isinstance(value, uuid.UUID):
@@ -50,11 +50,11 @@ class BaseModel(Base):
 
     __abstract__ = True
 
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)  # type: ignore[assignment]
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)  # type: ignore[assignment]
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
+    )  # type: ignore[assignment]
 
 
 def get_session() -> Session:
@@ -77,4 +77,3 @@ def get_db():
         yield db
     finally:
         db.close()
-

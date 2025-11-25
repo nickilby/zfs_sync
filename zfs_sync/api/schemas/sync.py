@@ -49,7 +49,9 @@ class SyncActionResponse(BaseModel):
     target_system_id: str = Field(..., description="System that needs the snapshot")
     source_system_id: str = Field(..., description="System that has the snapshot")
     snapshot_name: str = Field(..., description="Name of snapshot to sync")
-    snapshot_id: Optional[str] = Field(None, description="Snapshot ID from source system (for sync state updates)")
+    snapshot_id: Optional[str] = Field(
+        None, description="Snapshot ID from source system (for sync state updates)"
+    )
     priority: int = Field(..., description="Priority of this action (higher = more important)")
     estimated_size: Optional[int] = Field(None, description="Estimated size in bytes")
 
@@ -66,4 +68,3 @@ class SyncStatusSummary(BaseModel):
     conflict_count: int
     error_count: int
     last_updated: Optional[datetime] = None
-

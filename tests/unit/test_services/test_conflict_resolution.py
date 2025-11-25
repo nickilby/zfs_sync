@@ -55,9 +55,7 @@ class TestConflictResolutionService:
 
         # Should detect timestamp mismatch
         assert len(conflicts) > 0
-        timestamp_conflicts = [
-            c for c in conflicts if c["type"] == "timestamp_mismatch"
-        ]
+        timestamp_conflicts = [c for c in conflicts if c["type"] == "timestamp_mismatch"]
         assert len(timestamp_conflicts) > 0
 
     def test_resolve_conflict_use_newest(self, test_db):
@@ -167,4 +165,3 @@ class TestConflictResolutionService:
 
         # Should return a list (may be empty if no conflicts)
         assert isinstance(conflicts, list)
-

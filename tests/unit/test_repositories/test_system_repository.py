@@ -1,6 +1,5 @@
 """Unit tests for SystemRepository."""
 
-
 from zfs_sync.database.repositories import SystemRepository
 
 
@@ -57,7 +56,7 @@ class TestSystemRepository:
     def test_list_all_systems(self, test_db, sample_system_data):
         """Test listing all systems."""
         repo = SystemRepository(test_db)
-        
+
         # Create multiple systems
         for i in range(3):
             data = sample_system_data.copy()
@@ -66,4 +65,3 @@ class TestSystemRepository:
 
         all_systems = repo.list_all()
         assert len(all_systems) >= 3
-

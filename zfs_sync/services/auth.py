@@ -78,4 +78,3 @@ class AuthService:
         new_key = self.create_api_key_for_system(system_id)
         logger.info(f"Rotated API key for system {system_id}")
         return new_key
-

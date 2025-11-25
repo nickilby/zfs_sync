@@ -85,7 +85,9 @@ async def resolve_conflict(
     # If auto-resolved, mark as resolved
     if result.get("status") == "resolved":
         # Generate a conflict ID (in production, this would be stored)
-        conflict_id = f"{conflict.sync_group_id}:{conflict.pool}:{conflict.dataset}:{conflict.snapshot_name}"
+        conflict_id = (
+            f"{conflict.sync_group_id}:{conflict.pool}:{conflict.dataset}:{conflict.snapshot_name}"
+        )
         service.mark_conflict_resolved(conflict_id, result)
 
     return ConflictResolutionResponse(**result)
@@ -141,4 +143,3 @@ async def mark_conflict_as_resolved(
         "message": f"Conflict {conflict_id} marked as resolved",
         "resolution": result,
     }
-

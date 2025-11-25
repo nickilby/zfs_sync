@@ -31,12 +31,8 @@ class SyncState(BaseModel):
     last_sync: Optional[datetime] = Field(
         default=None, description="Timestamp of last successful synchronization"
     )
-    last_check: Optional[datetime] = Field(
-        default=None, description="Timestamp of last sync check"
-    )
-    error_message: Optional[str] = Field(
-        default=None, description="Error message if sync failed"
-    )
+    last_check: Optional[datetime] = Field(default=None, description="Timestamp of last sync check")
+    error_message: Optional[str] = Field(default=None, description="Error message if sync failed")
     metadata: dict = Field(default_factory=dict, description="Additional sync state metadata")
 
     class Config:
@@ -56,4 +52,3 @@ class SyncState(BaseModel):
                 "last_check": "2024-01-15T11:30:00Z",
             }
         }
-

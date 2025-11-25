@@ -17,7 +17,9 @@ class SnapshotBase(BaseModel):
     size: Optional[int] = Field(None, description="Size of the snapshot in bytes")
     referenced: Optional[int] = Field(None, description="Referenced size in bytes")
     used: Optional[int] = Field(None, description="Used space in bytes")
-    metadata: Optional[dict] = Field(default_factory=dict, alias="extra_metadata", description="Additional metadata")
+    metadata: Optional[dict] = Field(
+        default_factory=dict, alias="extra_metadata", description="Additional metadata"
+    )
 
     @field_validator("metadata", mode="before")
     @classmethod
@@ -47,4 +49,3 @@ class SnapshotResponse(SnapshotBase):
 
         from_attributes = True
         populate_by_name = True
-

@@ -102,7 +102,8 @@ class ConflictResolutionService:
         for snapshot_name in all_names:
             # Find which systems have this snapshot
             systems_with_snapshot = [
-                sid for sid, names_dict in snapshot_names_by_system.items()
+                sid
+                for sid, names_dict in snapshot_names_by_system.items()
                 if snapshot_name in names_dict
             ]
 
@@ -111,8 +112,7 @@ class ConflictResolutionService:
 
             # Get snapshot details from each system
             snapshots_by_system = {
-                sid: snapshot_names_by_system[sid][snapshot_name]
-                for sid in systems_with_snapshot
+                sid: snapshot_names_by_system[sid][snapshot_name] for sid in systems_with_snapshot
             }
 
             # Check for timestamp mismatches
@@ -284,7 +284,7 @@ class ConflictResolutionService:
                         # Fallback to epoch if parsing fails
                         return datetime.min.replace(tzinfo=timezone.utc)
                 return datetime.min.replace(tzinfo=timezone.utc)
-            
+
             newest_system = max(
                 systems.items(),
                 key=lambda x: get_timestamp(x[1]),
@@ -364,7 +364,9 @@ class ConflictResolutionService:
             for other_snap in other_snapshots:
                 other_name = self.comparison_service._extract_snapshot_name(other_snap.name)
                 # Check if there's a snapshot with similar name pattern (simplified check)
-                if other_name.startswith(snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name):
+                if other_name.startswith(
+                    snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name
+                ):
                     if other_snap.timestamp < snapshot.timestamp:
                         return True
 
@@ -477,4 +479,3 @@ class ConflictResolutionService:
                     status=SyncStatus.CONFLICT,
                     error_message=f"Conflict detected: {conflict.get('type')}",
                 )
-

@@ -28,14 +28,14 @@ def test_db() -> Generator[Session, None, None]:
         connect_args={"check_same_thread": False},
         echo=False,
     )
-    
+
     # Create all tables (models must be imported first for this to work)
     Base.metadata.create_all(bind=engine)
-    
+
     # Create a session
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = TestingSessionLocal()
-    
+
     try:
         yield session
     finally:
@@ -47,15 +47,16 @@ def test_db() -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def test_client(test_db: Session) -> Generator[TestClient, None, None]:
     """Create a test client with overridden database dependency."""
+
     # Override the get_db dependency
     def override_get_db():
         try:
             yield test_db
         finally:
             pass  # Don't close the session here, let test_db fixture handle it
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     client = TestClient(app)
     try:
         yield client
@@ -78,7 +79,7 @@ def sample_system_data():
 def sample_snapshot_data():
     """Sample snapshot data for testing."""
     from datetime import datetime, timezone
-    
+
     return {
         "name": "backup-20240115-120000",
         "pool": "tank",
@@ -110,10 +111,9 @@ api_prefix: "/api/v1"
 """
         f.write(config_content)
         temp_path = f.name
-    
+
     yield temp_path
-    
+
     # Cleanup
     if os.path.exists(temp_path):
         os.unlink(temp_path)
-

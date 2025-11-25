@@ -15,7 +15,9 @@ class SyncGroupBase(BaseModel):
     sync_interval_seconds: int = Field(
         default=3600, description="Interval between sync checks in seconds"
     )
-    metadata: Optional[dict] = Field(default_factory=dict, alias="extra_metadata", description="Additional metadata")
+    metadata: Optional[dict] = Field(
+        default_factory=dict, alias="extra_metadata", description="Additional metadata"
+    )
 
     @field_validator("metadata", mode="before")
     @classmethod
@@ -46,7 +48,9 @@ class SyncGroupResponse(SyncGroupBase):
     """Schema for sync group response."""
 
     id: UUID
-    system_ids: List[UUID] = Field(default_factory=list, description="List of system IDs in this sync group")
+    system_ids: List[UUID] = Field(
+        default_factory=list, description="List of system IDs in this sync group"
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -55,4 +59,3 @@ class SyncGroupResponse(SyncGroupBase):
 
         from_attributes = True
         populate_by_name = True
-

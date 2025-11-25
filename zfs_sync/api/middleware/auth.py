@@ -57,4 +57,3 @@ async def get_optional_system(
 
     auth_service = AuthService(db)
     return auth_service.validate_api_key(api_key)
-

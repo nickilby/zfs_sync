@@ -22,7 +22,8 @@ async def create_sync_group(group: SyncGroupCreate, db: Session = Depends(get_db
     existing = repo.get_by_name(group.name)
     if existing:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=f"Sync group with name {group.name} already exists"
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Sync group with name {group.name} already exists",
         )
 
     # Create the sync group
@@ -32,9 +33,7 @@ async def create_sync_group(group: SyncGroupCreate, db: Session = Depends(get_db
     from zfs_sync.database.models import SyncGroupSystemModel
 
     for system_id in group.system_ids:
-        association = SyncGroupSystemModel(
-            sync_group_id=db_group.id, system_id=system_id
-        )
+        association = SyncGroupSystemModel(sync_group_id=db_group.id, system_id=system_id)
         db.add(association)
 
     db.commit()
@@ -84,11 +83,15 @@ async def update_sync_group(
     if update_data:
         group = repo.update(group_id, **update_data)
         if not group:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync group not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Sync group not found"
+            )
     else:
         group = repo.get(group_id)
         if not group:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync group not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Sync group not found"
+            )
 
     # Update system associations if provided
     if group_update.system_ids is not None:
@@ -120,4 +123,3 @@ async def delete_sync_group(group_id: UUID, db: Session = Depends(get_db)):
     if not repo.delete(group_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync group not found")
     logger.info(f"Deleted sync group: {group_id}")
-

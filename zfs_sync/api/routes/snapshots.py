@@ -62,10 +62,10 @@ async def get_snapshots_by_system(
     return [SnapshotResponse.model_validate(s) for s in snapshots]
 
 
-@router.post("/snapshots/batch", response_model=List[SnapshotResponse], status_code=status.HTTP_201_CREATED)
-async def create_snapshots_batch(
-    snapshots: List[SnapshotCreate], db: Session = Depends(get_db)
-):
+@router.post(
+    "/snapshots/batch", response_model=List[SnapshotResponse], status_code=status.HTTP_201_CREATED
+)
+async def create_snapshots_batch(snapshots: List[SnapshotCreate], db: Session = Depends(get_db)):
     """Report multiple snapshots in a single request."""
     repo = SnapshotRepository(db)
     created = []
@@ -147,9 +147,7 @@ async def get_snapshot_timeline(
 ):
     """Get a timeline of snapshots across multiple systems."""
     service = SnapshotHistoryService(db)
-    timeline = service.get_snapshot_timeline(
-        pool=pool, dataset=dataset, system_ids=system_ids
-    )
+    timeline = service.get_snapshot_timeline(pool=pool, dataset=dataset, system_ids=system_ids)
     return timeline
 
 
@@ -163,4 +161,3 @@ async def get_snapshot_statistics(
     service = SnapshotHistoryService(db)
     stats = service.get_snapshot_statistics(system_id=system_id, days=days)
     return stats
-

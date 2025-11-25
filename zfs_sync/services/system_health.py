@@ -122,4 +122,3 @@ class SystemHealthService:
         """Get list of systems that are currently online."""
         all_health = self.get_all_systems_health()
         return [h for h in all_health if h.get("status") == "online"]
-

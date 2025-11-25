@@ -13,7 +13,9 @@ class SystemBase(BaseModel):
     hostname: str = Field(..., description="Hostname of the system")
     platform: str = Field(..., description="Operating system platform")
     connectivity_status: str = Field(default="unknown", description="Connectivity status")
-    metadata: Optional[dict] = Field(default_factory=dict, alias="extra_metadata", description="Additional metadata")
+    metadata: Optional[dict] = Field(
+        default_factory=dict, alias="extra_metadata", description="Additional metadata"
+    )
 
     @field_validator("metadata", mode="before")
     @classmethod
@@ -54,4 +56,3 @@ class SystemResponse(SystemBase):
 
         from_attributes = True
         populate_by_name = True
-

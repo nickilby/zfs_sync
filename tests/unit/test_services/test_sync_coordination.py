@@ -1,6 +1,5 @@
 """Unit tests for SyncCoordinationService."""
 
-
 from zfs_sync.database.repositories import (
     SnapshotRepository,
     SyncGroupRepository,
@@ -78,4 +77,3 @@ class TestSyncCoordinationService:
         # Verify state was updated (would need to query sync_state_repo to verify)
         # For now, just verify no exception was raised
         assert True
-

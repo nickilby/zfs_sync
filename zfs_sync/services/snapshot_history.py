@@ -105,9 +105,7 @@ class SnapshotHistoryService:
             "systems": [str(sid) for sid in system_ids],
         }
 
-    def get_snapshot_statistics(
-        self, system_id: UUID, days: int = 30
-    ) -> Dict[str, Any]:
+    def get_snapshot_statistics(self, system_id: UUID, days: int = 30) -> Dict[str, Any]:
         """
         Get statistics about snapshots for a system.
 
@@ -169,12 +167,8 @@ class SnapshotHistoryService:
         # Get existing snapshots from database
         existing_snapshots = self.snapshot_repo.get_by_system(system_id)
 
-        existing_names = {
-            f"{s.pool}/{s.dataset}@{s.name}" for s in existing_snapshots
-        }
-        current_names = {
-            f"{s['pool']}/{s['dataset']}@{s['name']}" for s in current_snapshots
-        }
+        existing_names = {f"{s.pool}/{s.dataset}@{s.name}" for s in existing_snapshots}
+        current_names = {f"{s['pool']}/{s['dataset']}@{s['name']}" for s in current_snapshots}
 
         added = current_names - existing_names
         removed = existing_names - current_names
@@ -187,4 +181,3 @@ class SnapshotHistoryService:
             "unchanged_snapshots": sorted(list(unchanged)),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-

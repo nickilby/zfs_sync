@@ -22,4 +22,3 @@ class SyncGroupRepository(BaseRepository[SyncGroupModel]):
     def get_enabled(self) -> List[SyncGroupModel]:
         """Get all enabled sync groups."""
         return self.db.query(SyncGroupModel).filter(SyncGroupModel.enabled).all()
-

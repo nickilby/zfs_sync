@@ -59,20 +59,28 @@ class SnapshotComparisonService:
                 "latest_snapshots": {},
             }
 
-        common_snapshots = set.intersection(*system_snapshot_names.values()) if system_snapshot_names else set()
+        common_snapshots = (
+            set.intersection(*system_snapshot_names.values()) if system_snapshot_names else set()
+        )
 
         # Find unique snapshots per system
         unique_snapshots: Dict[UUID, List[str]] = {}
         for system_id, names in system_snapshot_names.items():
-            other_names = set.union(
-                *[names for sid, names in system_snapshot_names.items() if sid != system_id]
-            ) if len(system_snapshot_names) > 1 else set()
+            other_names = (
+                set.union(
+                    *[names for sid, names in system_snapshot_names.items() if sid != system_id]
+                )
+                if len(system_snapshot_names) > 1
+                else set()
+            )
             unique = names - other_names
             unique_snapshots[system_id] = sorted(list(unique))
 
         # Find missing snapshots per system
         missing_snapshots: Dict[UUID, List[str]] = {}
-        all_snapshots = set.union(*system_snapshot_names.values()) if system_snapshot_names else set()
+        all_snapshots = (
+            set.union(*system_snapshot_names.values()) if system_snapshot_names else set()
+        )
         for system_id, names in system_snapshot_names.items():
             missing = all_snapshots - names
             missing_snapshots[system_id] = sorted(list(missing))
@@ -92,15 +100,9 @@ class SnapshotComparisonService:
             "pool": pool,
             "dataset": dataset,
             "common_snapshots": sorted(list(common_snapshots)),
-            "unique_snapshots": {
-                str(sid): names for sid, names in unique_snapshots.items()
-            },
-            "missing_snapshots": {
-                str(sid): names for sid, names in missing_snapshots.items()
-            },
-            "latest_snapshots": {
-                str(sid): info for sid, info in latest_snapshots.items()
-            },
+            "unique_snapshots": {str(sid): names for sid, names in unique_snapshots.items()},
+            "missing_snapshots": {str(sid): names for sid, names in missing_snapshots.items()},
+            "latest_snapshots": {str(sid): info for sid, info in latest_snapshots.items()},
             "comparison_timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -156,12 +158,12 @@ class SnapshotComparisonService:
         # Build a map of snapshot_name -> list of system_ids that have it
         snapshot_to_systems: Dict[str, List[str]] = {}
         all_system_ids_str = [str(sid) for sid in system_ids]
-        
+
         # Common snapshots are present on all systems
         common_snapshots = comparison.get("common_snapshots", [])
         for snapshot_name in common_snapshots:
             snapshot_to_systems[snapshot_name] = all_system_ids_str.copy()
-        
+
         # Unique snapshots are only on specific systems
         unique_snapshots = comparison.get("unique_snapshots", {})
         for system_id_str, names in unique_snapshots.items():
@@ -176,7 +178,9 @@ class SnapshotComparisonService:
                 # Find which systems have this snapshot from our map
                 systems_with_snapshot = snapshot_to_systems.get(snapshot_name, [])
                 # Filter out the current system
-                systems_with_snapshot = [sid for sid in systems_with_snapshot if sid != system_id_str]
+                systems_with_snapshot = [
+                    sid for sid in systems_with_snapshot if sid != system_id_str
+                ]
 
                 gaps.append(
                     {
@@ -200,4 +204,3 @@ class SnapshotComparisonService:
         if "@" in full_name:
             return full_name.split("@")[-1]
         return full_name
-

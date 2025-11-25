@@ -14,7 +14,9 @@ class SyncGroup(BaseModel):
     system_ids: List[UUID] = Field(
         default_factory=list, description="List of system IDs in this sync group"
     )
-    enabled: bool = Field(default=True, description="Whether synchronization is enabled for this group")
+    enabled: bool = Field(
+        default=True, description="Whether synchronization is enabled for this group"
+    )
     sync_interval_seconds: int = Field(
         default=3600, description="Interval between sync checks in seconds"
     )
@@ -35,4 +37,3 @@ class SyncGroup(BaseModel):
                 "sync_interval_seconds": 3600,
             }
         }
-

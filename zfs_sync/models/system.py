@@ -35,4 +35,3 @@ class System(BaseModel):
                 "metadata": {"pool_count": 3, "zfs_version": "2.1.0"},
             }
         }
-

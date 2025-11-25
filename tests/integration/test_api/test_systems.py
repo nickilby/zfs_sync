@@ -87,4 +87,3 @@ class TestSystemsEndpoints:
         data = response.json()
         assert "last_seen" in data
         assert "status" in data
-
