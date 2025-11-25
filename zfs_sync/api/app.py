@@ -57,14 +57,14 @@ async def shutdown_event():
 
 
 # Import routes (must be after app creation)
-from zfs_sync.api.routes import (
+from zfs_sync.api.routes import (  # noqa: E402
     conflicts,
     health,
     snapshots,
     sync,
     sync_groups,
     systems,
-)  # noqa: E402
+)
 
 # Validate settings.api_prefix
 if not hasattr(settings, "api_prefix") or settings.api_prefix is None:
