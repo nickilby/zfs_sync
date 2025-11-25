@@ -41,12 +41,12 @@ class TestConflictResolutionService:
         snapshot_repo = SnapshotRepository(test_db)
         snapshot1_data = sample_snapshot_data.copy()
         snapshot1_data["system_id"] = system1.id
-        snapshot1 = snapshot_repo.create(**snapshot1_data)
+        snapshot_repo.create(**snapshot1_data)
 
         snapshot2_data = sample_snapshot_data.copy()
         snapshot2_data["system_id"] = system2.id
         snapshot2_data["timestamp"] = datetime.now(timezone.utc) + timedelta(hours=1)
-        snapshot2 = snapshot_repo.create(**snapshot2_data)
+        snapshot_repo.create(**snapshot2_data)
 
         # Detect conflicts
         service = ConflictResolutionService(test_db)
@@ -61,7 +61,7 @@ class TestConflictResolutionService:
         ]
         assert len(timestamp_conflicts) > 0
 
-    def test_resolve_conflict_use_newest(self, test_db, sample_system_data, sample_snapshot_data):
+    def test_resolve_conflict_use_newest(self, test_db):
         """Test conflict resolution using newest strategy."""
         # Create conflict data
         conflict = {
@@ -97,7 +97,7 @@ class TestConflictResolutionService:
         assert "actions" in result
         assert len(result["actions"]) > 0
 
-    def test_resolve_conflict_manual(self, test_db, sample_system_data, sample_snapshot_data):
+    def test_resolve_conflict_manual(self, test_db):
         """Test conflict resolution requiring manual intervention."""
         conflict = {
             "type": "divergent_snapshots",
@@ -146,7 +146,7 @@ class TestConflictResolutionService:
 
         assert result["status"] == "ignored"
 
-    def test_get_all_conflicts(self, test_db, sample_system_data, sample_snapshot_data):
+    def test_get_all_conflicts(self, test_db, sample_system_data):
         """Test getting all conflicts for a sync group."""
         # Create systems and sync group
         system_repo = SystemRepository(test_db)
