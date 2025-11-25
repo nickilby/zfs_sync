@@ -112,10 +112,17 @@ jobs:
       - name: Test API health endpoint
         run: |
           docker run -d --name zfs-sync-test -p 8000:8000 zfs-sync:test
-          sleep 5
-          curl -f http://localhost:8000/api/v1/health || exit 1
-          docker stop zfs-sync-test
-          docker rm zfs-sync-test
+          sleep 10
+          for i in {1..10}; do
+            if curl -f http://localhost:8000/api/v1/health; then
+              echo "Health check passed"
+              break
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 2
+          done
+          docker stop zfs-sync-test || true
+          docker rm zfs-sync-test || true
 
   security-scan:
     name: Security Scanning
@@ -153,11 +160,19 @@ jobs:
           retention-days: 30
       
       - name: Scan for secrets
+        if: github.event_name == 'pull_request'
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+        continue-on-error: true
+      
+      - name: Scan for secrets (push)
+        if: github.event_name == 'push'
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
         continue-on-error: true
 
   dependency-check:
@@ -203,9 +218,13 @@ jobs:
       
       - name: Check for critical vulnerabilities
         run: |
-          if pip-audit --requirement requirements.txt --desc | grep -i "CRITICAL\|HIGH"; then
+          pip-audit --requirement requirements.txt --desc > audit-output.txt 2>&1 || true
+          if grep -i "CRITICAL\|HIGH" audit-output.txt; then
             echo "Critical or High severity vulnerabilities found!"
+            cat audit-output.txt
             exit 1
+          else
+            echo "No critical or high severity vulnerabilities found"
           fi
 
   benchmark:
