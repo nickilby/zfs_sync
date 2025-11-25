@@ -50,6 +50,7 @@ class SyncGroupModel(BaseModel):
     __tablename__ = "sync_groups"
 
     name = Column(String(255), nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
     enabled = Column(Boolean, default=True, nullable=False)
     sync_interval_seconds = Column(Integer, default=3600, nullable=False)
     extra_metadata = Column("metadata", JSON, default=dict)

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from zfs_sync.api.app import app
 from zfs_sync.database.base import Base, get_db
 
+# Import models to ensure they register with Base.metadata
+import zfs_sync.database.models  # noqa: F401
 
 # Use in-memory SQLite for tests
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -27,7 +29,7 @@ def test_db() -> Generator[Session, None, None]:
         echo=False,
     )
     
-    # Create all tables
+    # Create all tables (models must be imported first for this to work)
     Base.metadata.create_all(bind=engine)
     
     # Create a session
