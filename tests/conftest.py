@@ -57,6 +57,8 @@ def test_client(test_db: Session) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_db] = override_get_db
 
+    # Tables are already created by test_db fixture
+    # TestClient doesn't trigger startup events by default in FastAPI
     client = TestClient(app)
     try:
         yield client

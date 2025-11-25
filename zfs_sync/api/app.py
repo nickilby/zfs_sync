@@ -43,6 +43,14 @@ async def startup_event():
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Database: {settings.database_url}")
 
+    # Skip database initialization if we're in a test environment
+    # (tests handle their own database setup via fixtures)
+    import os
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.info("Skipping database initialization in test environment")
+        return
+
     # Initialize database
     from zfs_sync.database import init_db
 
