@@ -30,6 +30,7 @@ class TestSnapshotsEndpoints:
             "dataset": "tank/data",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "size": 1024 * 1024,
+            "system_id": str(system_id),
         }
 
         response = test_client.post(
@@ -64,6 +65,7 @@ class TestSnapshotsEndpoints:
                 "dataset": "tank/data",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "size": 1024 * 1024 * (i + 1),
+                "system_id": str(system_id),
             }
             for i in range(3)
         ]
@@ -99,6 +101,7 @@ class TestSnapshotsEndpoints:
             "dataset": "tank/data",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "size": 1024 * 1024,
+            "system_id": str(system_id),
         }
         test_client.post(
             f"/api/v1/snapshots",
