@@ -1,0 +1,23 @@
+[bandit]
+# Bandit configuration file for security scanning
+
+# Skip these tests (by test ID)
+# B101: assert_used - We allow asserts in tests
+# B601: shell_injection_subprocess - We use subprocess for ZFS commands intentionally
+skips = B101,B601
+
+# Exclude these paths from scanning
+exclude_dirs = tests,__pycache__,.git,.pytest_cache,htmlcov
+
+# Report confidence levels
+confidence = high
+
+# Report severity levels
+severity = medium
+
+# Output format
+output_format = json
+
+# Aggressive mode (more thorough scanning)
+aggressive = false
+
