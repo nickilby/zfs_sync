@@ -68,9 +68,7 @@ from zfs_sync.api.routes import (  # noqa: E402
 
 # Validate settings.api_prefix
 if not hasattr(settings, "api_prefix") or settings.api_prefix is None:
-    raise ValueError(
-        f"settings.api_prefix is not set. Current settings: {dir(settings)}"
-    )
+    raise ValueError(f"settings.api_prefix is not set. Current settings: {dir(settings)}")
 
 # Validate and include routers with error handling
 routers_to_include = [
