@@ -66,12 +66,40 @@ from zfs_sync.api.routes import (
     systems,
 )  # noqa: E402
 
-app.include_router(health.router, prefix=settings.api_prefix, tags=["Health"])
-app.include_router(systems.router, prefix=settings.api_prefix, tags=["Systems"])
-app.include_router(snapshots.router, prefix=settings.api_prefix, tags=["Snapshots"])
-app.include_router(sync_groups.router, prefix=settings.api_prefix, tags=["Sync Groups"])
-app.include_router(sync.router, prefix=settings.api_prefix, tags=["Sync"])
-app.include_router(conflicts.router, prefix=settings.api_prefix, tags=["Conflicts"])
+# Validate settings.api_prefix
+if not hasattr(settings, "api_prefix") or settings.api_prefix is None:
+    raise ValueError(
+        f"settings.api_prefix is not set. Current settings: {dir(settings)}"
+    )
+
+# Validate and include routers with error handling
+routers_to_include = [
+    ("health", health, "Health"),
+    ("systems", systems, "Systems"),
+    ("snapshots", snapshots, "Snapshots"),
+    ("sync_groups", sync_groups, "Sync Groups"),
+    ("sync", sync, "Sync"),
+    ("conflicts", conflicts, "Conflicts"),
+]
+
+for route_name, route_module, tag in routers_to_include:
+    try:
+        if not hasattr(route_module, "router"):
+            raise AttributeError(
+                f"Module {route_name} does not have a 'router' attribute. "
+                f"Available attributes: {dir(route_module)}"
+            )
+        router = getattr(route_module, "router")
+        if router is None:
+            raise ValueError(f"Router for {route_name} is None")
+        app.include_router(router, prefix=settings.api_prefix, tags=[tag])
+        logger.debug(f"Successfully included router: {route_name}")
+    except Exception as e:
+        logger.error(f"Failed to include router {route_name}: {e}")
+        raise RuntimeError(
+            f"Failed to include router '{route_name}': {e}. "
+            f"This is a configuration error that must be fixed."
+        ) from e
 
 
 # Root route - redirect to API docs
