@@ -46,20 +46,20 @@ class SSHCommandGenerator:
         ssh_parts = ["ssh"]
         if port != 22:
             ssh_parts.append(f"-p {port}")
-        
+
         # Build target (user@hostname or just hostname)
         # Note: We don't escape the target as it's part of SSH syntax
         if user:
             target = f"{user}@{hostname}"
         else:
             target = hostname
-        
+
         ssh_parts.append(target)
-        
+
         if command:
             # Command should be quoted as a single argument to SSH
             ssh_parts.append(SSHCommandGenerator.escape_shell_string(command))
-        
+
         return " ".join(ssh_parts)
 
     @staticmethod
@@ -90,14 +90,14 @@ class SSHCommandGenerator:
         # Construct full snapshot path
         # Dataset may already include pool (e.g., "tank/data") or just be dataset name
         # Use dataset as-is if it contains '/', otherwise prepend pool
-        if '/' in dataset:
+        if "/" in dataset:
             full_snapshot = f"{dataset}@{snapshot_name}"
         else:
             full_snapshot = f"{pool}/{dataset}@{snapshot_name}"
 
         if incremental_base:
             # Incremental send: zfs send -I base_snapshot latest_snapshot
-            if '/' in dataset:
+            if "/" in dataset:
                 base_snapshot = f"{dataset}@{incremental_base}"
             else:
                 base_snapshot = f"{pool}/{dataset}@{incremental_base}"
@@ -131,11 +131,13 @@ class SSHCommandGenerator:
         """
         flags = "-F" if force else ""
         # Dataset may already include pool (e.g., "tank/data") or just be dataset name
-        if '/' in dataset:
+        if "/" in dataset:
             target_dataset = dataset
         else:
             target_dataset = f"{pool}/{dataset}"
-        return f"zfs receive {flags} {SSHCommandGenerator.escape_shell_string(target_dataset)}".strip()
+        return (
+            f"zfs receive {flags} {SSHCommandGenerator.escape_shell_string(target_dataset)}".strip()
+        )
 
     @staticmethod
     def generate_full_sync_command(
@@ -213,4 +215,3 @@ class SSHCommandGenerator:
         )
 
         return f"{send_cmd} | {receive_cmd}"
-

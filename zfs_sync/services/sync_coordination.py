@@ -425,9 +425,7 @@ class SyncCoordinationService:
 
         # Find common snapshots, sorted by timestamp (most recent first)
         common_snapshots = [
-            (name, timestamp)
-            for name, timestamp in target_names.items()
-            if name in source_names
+            (name, timestamp) for name, timestamp in target_names.items() if name in source_names
         ]
         common_snapshots.sort(key=lambda x: x[1], reverse=True)
 

@@ -73,13 +73,13 @@ async def get_sync_instructions(
     """Get sync instructions for a system."""
     service = SyncCoordinationService(db)
     instructions = service.get_sync_instructions(system_id=system_id, sync_group_id=sync_group_id)
-    
+
     # If include_commands is False, remove sync_command from actions
     if not include_commands and "actions" in instructions:
         for action in instructions.get("actions", []):
             if isinstance(action, dict) and "sync_command" in action:
                 action.pop("sync_command", None)
-    
+
     return instructions
 
 
