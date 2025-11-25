@@ -1,8 +1,5 @@
 """Unit tests for SyncCoordinationService."""
 
-from datetime import datetime, timedelta, timezone
-from uuid import uuid4
-
 import pytest
 
 from zfs_sync.database.repositories import (
@@ -39,7 +36,7 @@ class TestSyncCoordinationService:
         snapshot_repo = SnapshotRepository(test_db)
         snapshot1_data = sample_snapshot_data.copy()
         snapshot1_data["system_id"] = system1.id
-        snapshot1 = snapshot_repo.create(**snapshot1_data)
+        snapshot_repo.create(**snapshot1_data)
 
         # Get sync actions
         service = SyncCoordinationService(test_db)
