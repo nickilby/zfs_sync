@@ -29,12 +29,12 @@ class TestSnapshotComparisonService:
         # System1 has snapshots
         snapshot1_data = sample_snapshot_data.copy()
         snapshot1_data["system_id"] = system1.id
-        snapshot1 = snapshot_repo.create(**snapshot1_data)
+        snapshot_repo.create(**snapshot1_data)
         
         # System2 has same snapshot
         snapshot2_data = sample_snapshot_data.copy()
         snapshot2_data["system_id"] = system2.id
-        snapshot2 = snapshot_repo.create(**snapshot2_data)
+        snapshot_repo.create(**snapshot2_data)
 
         # Compare
         service = SnapshotComparisonService(test_db)
@@ -63,12 +63,12 @@ class TestSnapshotComparisonService:
         
         snapshot1_data = sample_snapshot_data.copy()
         snapshot1_data["system_id"] = system1.id
-        snapshot1 = snapshot_repo.create(**snapshot1_data)
+        snapshot_repo.create(**snapshot1_data)
         
         snapshot2_data = sample_snapshot_data.copy()
         snapshot2_data["system_id"] = system2.id
         snapshot2_data["name"] = "backup-20240116-120000"
-        snapshot2 = snapshot_repo.create(**snapshot2_data)
+        snapshot_repo.create(**snapshot2_data)
 
         # Find differences
         service = SnapshotComparisonService(test_db)
