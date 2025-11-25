@@ -15,8 +15,11 @@ from zfs_sync.database.base import Base, get_db
 # Import models to ensure they register with Base.metadata
 import zfs_sync.database.models  # noqa: F401
 
-# Use in-memory SQLite for tests
-TEST_DATABASE_URL = "sqlite:///:memory:"
+# Use file-based SQLite for tests to ensure consistent database across connections
+# In-memory SQLite creates separate databases per connection, causing test failures
+_test_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+_test_db_file.close()
+TEST_DATABASE_URL = f"sqlite:///{_test_db_file.name}"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -95,6 +98,10 @@ def test_db() -> Generator[Session, None, None]:
         session.close()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
+        # Clean up test database file
+        import os
+        if os.path.exists(_test_db_file.name):
+            os.unlink(_test_db_file.name)
 
 
 @pytest.fixture(scope="function")
