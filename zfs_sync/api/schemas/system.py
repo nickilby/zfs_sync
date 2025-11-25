@@ -13,6 +13,9 @@ class SystemBase(BaseModel):
     hostname: str = Field(..., description="Hostname of the system")
     platform: str = Field(..., description="Operating system platform")
     connectivity_status: str = Field(default="unknown", description="Connectivity status")
+    ssh_hostname: Optional[str] = Field(None, description="SSH hostname/IP (can differ from API hostname)")
+    ssh_user: Optional[str] = Field(None, description="SSH username for key-based authentication")
+    ssh_port: int = Field(default=22, description="SSH port")
     metadata: Optional[dict] = Field(
         default_factory=dict, alias="extra_metadata", description="Additional metadata"
     )
@@ -38,6 +41,9 @@ class SystemUpdate(BaseModel):
     hostname: Optional[str] = None
     platform: Optional[str] = None
     connectivity_status: Optional[str] = None
+    ssh_hostname: Optional[str] = None
+    ssh_user: Optional[str] = None
+    ssh_port: Optional[int] = None
     last_seen: Optional[datetime] = None
     metadata: Optional[dict] = None
 

@@ -1,0 +1,57 @@
+# System SSH Configuration Template
+# Use this template when registering systems with SSH connection details
+
+# Example 1: Basic system with SSH details
+system_basic:
+  hostname: "backup-server-01"
+  platform: "linux"
+  ssh_hostname: "backup-server-01.internal"
+  ssh_user: "zfsadmin"
+  ssh_port: 22
+
+# Example 2: System with non-standard SSH port
+system_custom_port:
+  hostname: "backup-server-02"
+  platform: "freebsd"
+  ssh_hostname: "backup-server-02.internal"
+  ssh_user: "zfsadmin"
+  ssh_port: 2222
+
+# Example 3: System where SSH hostname differs from API hostname
+system_different_hostname:
+  hostname: "backup-server-03"  # API hostname
+  platform: "linux"
+  ssh_hostname: "192.168.1.100"  # SSH uses IP address
+  ssh_user: "zfsadmin"
+  ssh_port: 22
+
+# Example 4: System without SSH details (legacy/optional)
+system_no_ssh:
+  hostname: "backup-server-04"
+  platform: "linux"
+  # SSH fields omitted - sync commands will not be generated
+
+# Example 5: Complete system registration JSON for API
+system_complete_json: |
+  {
+    "hostname": "backup-server-01",
+    "platform": "linux",
+    "connectivity_status": "online",
+    "ssh_hostname": "backup-server-01.internal",
+    "ssh_user": "zfsadmin",
+    "ssh_port": 22,
+    "metadata": {
+      "location": "datacenter-1",
+      "description": "Primary backup server"
+    }
+  }
+
+# Field Descriptions:
+# - hostname: System hostname for API communication (required)
+# - platform: Operating system platform (required: "linux", "freebsd", etc.)
+# - ssh_hostname: SSH hostname/IP (optional, can differ from API hostname)
+# - ssh_user: SSH username for key-based authentication (optional)
+# - ssh_port: SSH port number (optional, default: 22)
+# - connectivity_status: System connectivity status (optional, default: "unknown")
+# - metadata: Additional system metadata (optional, JSON object)
+

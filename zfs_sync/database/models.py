@@ -16,6 +16,9 @@ class SystemModel(BaseModel):
     connectivity_status = Column(String(20), default="unknown", nullable=False)  # type: ignore[assignment]
     last_seen = Column(DateTime(timezone=True), nullable=True)  # type: ignore[assignment]
     api_key = Column(String(255), nullable=True, unique=True, index=True)  # type: ignore[assignment]
+    ssh_hostname = Column(String(255), nullable=True, index=True)  # type: ignore[assignment]
+    ssh_user = Column(String(100), nullable=True)  # type: ignore[assignment]
+    ssh_port = Column(Integer, default=22, nullable=False)  # type: ignore[assignment]
     extra_metadata = Column("metadata", JSON, default=dict)  # type: ignore[assignment]
 
     # Relationships

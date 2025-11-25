@@ -54,6 +54,18 @@ class SyncActionResponse(BaseModel):
     )
     priority: int = Field(..., description="Priority of this action (higher = more important)")
     estimated_size: Optional[int] = Field(None, description="Estimated size in bytes")
+    source_ssh_hostname: Optional[str] = Field(
+        None, description="SSH hostname/IP for source system"
+    )
+    source_ssh_user: Optional[str] = Field(None, description="SSH username for source system")
+    source_ssh_port: int = Field(default=22, description="SSH port for source system")
+    sync_command: Optional[str] = Field(
+        None, description="Ready-to-execute sync command (SSH send piped to local receive)"
+    )
+    incremental_base: Optional[str] = Field(
+        None, description="Base snapshot name for incremental send (if applicable)"
+    )
+    is_incremental: bool = Field(default=False, description="Whether this is an incremental send")
 
 
 class SyncStatusSummary(BaseModel):

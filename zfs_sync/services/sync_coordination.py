@@ -16,6 +16,7 @@ from zfs_sync.database.repositories import (
 from zfs_sync.logging_config import get_logger
 from zfs_sync.models import SyncStatus
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
+from zfs_sync.services.ssh_command_generator import SSHCommandGenerator
 
 logger = get_logger(__name__)
 
@@ -115,6 +116,13 @@ class SyncCoordinationService:
         actions = []
         for mismatch in mismatches:
             source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
+            target_system_id = UUID(mismatch["target_system_id"])
+
+            # Get source system for SSH details
+            source_system = self.system_repo.get(source_system_id)
+            if not source_system:
+                logger.warning(f"Source system {source_system_id} not found, skipping action")
+                continue
 
             # Find snapshot_id from source system
             snapshot_id = self._find_snapshot_id(
@@ -123,6 +131,41 @@ class SyncCoordinationService:
                 snapshot_name=mismatch["missing_snapshot"],
                 system_id=source_system_id,
             )
+
+            # Check if incremental send is possible
+            incremental_base = self._find_incremental_base(
+                pool=mismatch["pool"],
+                dataset=mismatch["dataset"],
+                target_system_id=target_system_id,
+                source_system_id=source_system_id,
+            )
+            is_incremental = incremental_base is not None
+
+            # Generate sync command if SSH details are available
+            sync_command = None
+            if source_system.ssh_hostname:
+                try:
+                    if is_incremental and incremental_base:
+                        sync_command = SSHCommandGenerator.generate_incremental_sync_command(
+                            pool=mismatch["pool"],
+                            dataset=mismatch["dataset"],
+                            snapshot_name=mismatch["missing_snapshot"],
+                            incremental_base=incremental_base,
+                            ssh_hostname=source_system.ssh_hostname,
+                            ssh_user=source_system.ssh_user,
+                            ssh_port=source_system.ssh_port,
+                        )
+                    else:
+                        sync_command = SSHCommandGenerator.generate_full_sync_command(
+                            pool=mismatch["pool"],
+                            dataset=mismatch["dataset"],
+                            snapshot_name=mismatch["missing_snapshot"],
+                            ssh_hostname=source_system.ssh_hostname,
+                            ssh_user=source_system.ssh_user,
+                            ssh_port=source_system.ssh_port,
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to generate sync command: {e}")
 
             action = {
                 "action_type": "sync_snapshot",
@@ -140,6 +183,12 @@ class SyncCoordinationService:
                     mismatch["missing_snapshot"],
                     source_system_id,
                 ),
+                "source_ssh_hostname": source_system.ssh_hostname,
+                "source_ssh_user": source_system.ssh_user,
+                "source_ssh_port": source_system.ssh_port,
+                "sync_command": sync_command,
+                "incremental_base": incremental_base,
+                "is_incremental": is_incremental,
             }
             actions.append(action)
 
@@ -341,4 +390,49 @@ class SyncCoordinationService:
         for snapshot in snapshots:
             if self.comparison_service._extract_snapshot_name(snapshot.name) == snapshot_name:
                 return snapshot.size
+        return None
+
+    def _find_incremental_base(
+        self,
+        pool: str,
+        dataset: str,
+        target_system_id: UUID,
+        source_system_id: UUID,
+    ) -> Optional[str]:
+        """
+        Find a common base snapshot for incremental send.
+
+        Returns the snapshot name that exists on both systems and can serve as base,
+        or None if no common base is found (full send required).
+        """
+        # Get all snapshots from both systems
+        target_snapshots = self.snapshot_repo.get_by_pool_dataset(
+            pool=pool, dataset=dataset, system_id=target_system_id
+        )
+        source_snapshots = self.snapshot_repo.get_by_pool_dataset(
+            pool=pool, dataset=dataset, system_id=source_system_id
+        )
+
+        # Extract snapshot names (without pool/dataset prefix)
+        target_names = {
+            self.comparison_service._extract_snapshot_name(s.name): s.timestamp
+            for s in target_snapshots
+        }
+        source_names = {
+            self.comparison_service._extract_snapshot_name(s.name): s.timestamp
+            for s in source_snapshots
+        }
+
+        # Find common snapshots, sorted by timestamp (most recent first)
+        common_snapshots = [
+            (name, timestamp)
+            for name, timestamp in target_names.items()
+            if name in source_names
+        ]
+        common_snapshots.sort(key=lambda x: x[1], reverse=True)
+
+        # Return the most recent common snapshot if any exist
+        if common_snapshots:
+            return common_snapshots[0][0]
+
         return None

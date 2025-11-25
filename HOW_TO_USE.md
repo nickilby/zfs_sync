@@ -192,6 +192,49 @@ Now your systems need to tell ZFS Sync what snapshots they have.
 
 **Tip:** You can report multiple snapshots at once using `POST /api/v1/snapshots/batch`
 
+### Step 6: Configure SSH for Snapshot Synchronization (Optional)
+
+To enable systems to execute snapshot synchronization themselves using SSH, configure SSH connection details when registering or updating systems.
+
+**Prerequisites:**
+- SSH key-based authentication must already be configured between systems
+- SSH keys should have proper permissions (600 for private keys)
+- Systems must have network connectivity for SSH
+
+**Register System with SSH Details:**
+
+```json
+{
+  "hostname": "backup-server-01",
+  "platform": "linux",
+  "ssh_hostname": "backup-server-01.internal",
+  "ssh_user": "zfsadmin",
+  "ssh_port": 22
+}
+```
+
+**Update SSH Details:**
+
+```bash
+curl -X PUT "http://localhost:8000/api/v1/systems/{system_id}" \
+  -H "X-API-Key: your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ssh_hostname": "backup-server-01.new-domain.com",
+    "ssh_port": 2222
+  }'
+```
+
+**Testing SSH Connectivity:**
+
+Before configuring sync groups, verify SSH connectivity:
+
+```bash
+ssh -i ~/.ssh/id_rsa_zfs_sync -p 22 zfsadmin@backup-server-01.internal "zfs list"
+```
+
+**For detailed SSH setup instructions, see:** `docs/SSH_SETUP.md`
+
 ---
 
 ## Using the System
@@ -232,11 +275,11 @@ curl -X POST "http://localhost:8000/api/v1/snapshots" \
 Ask ZFS Sync what snapshots your system needs to sync:
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
+curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
   -H "X-API-Key: your-api-key-here"
 ```
 
-**Response Example:**
+**Response Example (with SSH details):**
 
 ```json
 {
@@ -254,6 +297,12 @@ curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
       "snapshot_id": "123e4567-e89b-12d3-a456-426614174000",
       "target_system_id": "...",
       "source_system_id": "...",
+      "source_ssh_hostname": "backup-server-01.internal",
+      "source_ssh_user": "zfsadmin",
+      "source_ssh_port": 22,
+      "sync_command": "ssh -p 22 zfsadmin@backup-server-01.internal 'zfs send tank/data@backup-20240115-120000' | zfs receive -F tank/data",
+      "incremental_base": "backup-20240114-120000",
+      "is_incremental": true,
       "priority": 25,
       "estimated_size": 1073741824
     }
@@ -261,7 +310,24 @@ curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
 }
 ```
 
-This tells you which snapshots to copy from other systems. The `snapshot_id` field (when present) can be used to efficiently update sync state after completing the synchronization.
+This tells you which snapshots to copy from other systems. If SSH details are configured, the response includes:
+- `source_ssh_hostname`, `source_ssh_user`, `source_ssh_port`: SSH connection details
+- `sync_command`: Ready-to-execute command string (if `include_commands=true`)
+- `incremental_base`: Base snapshot for incremental sends (if available)
+- `is_incremental`: Whether an incremental send is possible
+
+**Executing Sync Commands:**
+
+If `sync_command` is provided, you can execute it directly:
+
+```bash
+# Execute the sync command from the instructions
+ssh -p 22 zfsadmin@backup-server-01.internal 'zfs send tank/data@backup-20240115-120000' | zfs receive -F tank/data
+```
+
+Or use the provided sync executor script template: `docs/templates/sync_executor.sh`
+
+The `snapshot_id` field (when present) can be used to efficiently update sync state after completing the synchronization.
 
 #### 4. Update Sync Status
 
