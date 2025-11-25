@@ -71,12 +71,12 @@ class TestSnapshotsEndpoints:
         response = test_client.post(
             f"/api/v1/snapshots/batch",
             headers={"X-API-Key": api_key},
-            json={"snapshots": snapshots},
+            json=snapshots,
         )
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
-        assert "created" in data
-        assert data["created"] == 3
+        assert isinstance(data, list)
+        assert len(data) == 3
 
     def test_get_snapshots(self, test_client):
         """Test retrieving snapshots for a system."""
@@ -108,12 +108,12 @@ class TestSnapshotsEndpoints:
 
         # Get snapshots
         response = test_client.get(
-            f"/api/v1/snapshots",
+            f"/api/v1/snapshots/system/{system_id}",
             headers={"X-API-Key": api_key},
             params={"pool": "tank", "dataset": "tank/data"},
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert "snapshots" in data
-        assert len(data["snapshots"]) >= 1
+        assert isinstance(data, list)
+        assert len(data) >= 1
 
