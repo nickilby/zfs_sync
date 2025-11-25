@@ -1,0 +1,28 @@
+# ZFS Sync Configuration Example
+# Copy this file to zfs_sync.yaml and modify as needed
+
+# Application settings
+app_name: "zfs-sync"
+app_version: "0.1.0"
+debug: false
+log_level: "INFO"
+
+# Server configuration
+host: "0.0.0.0"
+port: 8000
+api_prefix: "/api/v1"
+
+# Database configuration
+# For SQLite (development):
+database_url: "sqlite:///./zfs_sync.db"
+# For PostgreSQL (production):
+# database_url: "postgresql://user:password@localhost:5432/zfs_sync"
+
+# Security
+secret_key: null  # Set via environment variable ZFS_SYNC_SECRET_KEY
+api_key_length: 32
+
+# Sync settings
+default_sync_interval_seconds: 3600  # 1 hour
+heartbeat_timeout_seconds: 300  # 5 minutes
+
