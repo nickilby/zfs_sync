@@ -13,10 +13,19 @@ port: 8000
 api_prefix: "/api/v1"
 
 # Database configuration
-# For SQLite (development):
-database_url: "sqlite:///./zfs_sync.db"
+# Default location is platform-specific:
+#   - Linux: /var/lib/zfs-sync/zfs_sync.db
+#   - Windows: %APPDATA%/zfs-sync/zfs_sync.db
+#   - macOS/Other: ~/.local/share/zfs-sync/zfs_sync.db
+#
+# For SQLite with custom path (override default):
+# database_url: "sqlite:////var/lib/zfs-sync/zfs_sync.db"
+# database_url: "sqlite:////path/to/custom/location/zfs_sync.db"
+#
 # For PostgreSQL (production):
 # database_url: "postgresql://user:password@localhost:5432/zfs_sync"
+#
+# Note: The database path can also be set via the ZFS_SYNC_DATABASE_URL environment variable
 
 # Security
 secret_key: null  # Set via environment variable ZFS_SYNC_SECRET_KEY

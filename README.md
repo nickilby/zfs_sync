@@ -253,6 +253,11 @@ The application is production-ready with Docker and includes security best pract
 For development or small deployments using SQLite:
 
 ```bash
+# Create persistent data directory (required, one-time setup)
+sudo mkdir -p /var/lib/zfs-sync
+sudo chown -R 1000:1000 /var/lib/zfs-sync
+sudo chmod 755 /var/lib/zfs-sync
+
 # Build and start the container
 docker-compose up -d
 
@@ -265,6 +270,8 @@ curl http://localhost:8000/api/v1/health
 # Stop the container
 docker-compose down
 ```
+
+**Note:** The database is stored in `/var/lib/zfs-sync/` on the host system, ensuring it persists across container updates and app refreshes.
 
 #### Production Deployment (with PostgreSQL)
 
@@ -302,11 +309,14 @@ The production Docker setup includes:
 
 #### Configuration
 
-Configuration can be provided via:
+Configuration can be provided via (in order of precedence, highest first):
 
-1. **Environment variables** (recommended for production):
+1. **Environment variables** (recommended for production, highest priority):
+
    ```bash
    export ZFS_SYNC_DATABASE_URL=postgresql://user:pass@host:5432/db
+   # Or for custom SQLite location:
+   export ZFS_SYNC_DATABASE_URL=sqlite:////custom/path/zfs_sync.db
    export ZFS_SYNC_LOG_LEVEL=INFO
    export ZFS_SYNC_SECRET_KEY=your-secret-key
    ```
@@ -314,24 +324,76 @@ Configuration can be provided via:
 2. **Config file** (mounted as volume):
    - Place `zfs_sync.yaml` in the `./config` directory
    - It will be automatically loaded by the application
+   - Can override default database path: `database_url: "sqlite:////custom/path/zfs_sync.db"`
 
 3. **Docker Compose environment variables**:
    - Edit `docker-compose.yml` or `docker-compose.prod.yml`
    - Set environment variables in the `environment` section
 
+4. **Default values** (lowest priority):
+   - Platform-specific defaults are used if nothing else is configured
+   - Linux: `/var/lib/zfs-sync/zfs_sync.db`
+
 #### Data Persistence
 
 Important data is persisted via Docker volumes:
 
-- **Database**: `./data` directory (SQLite) or PostgreSQL volume (production)
-- **Logs**: `./logs` directory
+- **Database**: `/var/lib/zfs-sync/` directory on host (SQLite) or PostgreSQL volume (production)
+  - Default location: `/var/lib/zfs-sync/zfs_sync.db` (persists outside app directory)
+  - This ensures the database survives app updates and directory refreshes
+  - Can be overridden via `ZFS_SYNC_DATABASE_URL` environment variable or config file
+- **Logs**: `./logs` directory (relative to docker-compose.yml)
 - **Configuration**: `./config` directory (read-only mount)
+
+**Database Location Details:**
+
+The application uses platform-specific default database locations:
+- **Linux (Docker)**: `/var/lib/zfs-sync/zfs_sync.db` (mounted to `/data/zfs_sync.db` in container)
+- **Windows**: `%APPDATA%/zfs-sync/zfs_sync.db`
+- **macOS/Other Unix**: `~/.local/share/zfs-sync/zfs_sync.db`
+
+**Permissions Setup (Required for Docker):**
+
+The `/var/lib/zfs-sync` directory must exist and be writable by the container user (UID 1000):
+
+```bash
+# Create the directory
+sudo mkdir -p /var/lib/zfs-sync
+
+# Set ownership to UID 1000 (zfssync user in container)
+sudo chown -R 1000:1000 /var/lib/zfs-sync
+
+# Set appropriate permissions
+sudo chmod 755 /var/lib/zfs-sync
+```
+
+**Ansible Deployment:**
+
+For Ansible playbooks, include the following tasks to set up the persistent data directory:
+
+```yaml
+- name: Create zfs-sync data directory
+  file:
+    path: /var/lib/zfs-sync
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Ensure zfs-sync data directory persists
+  lineinfile:
+    path: /etc/fstab
+    line: "# zfs-sync data directory - do not remove"
+    create: yes
+  when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+```
 
 **Backup Recommendations:**
 
-- Regularly backup the `./data` directory for SQLite deployments
+- Regularly backup the `/var/lib/zfs-sync/` directory for SQLite deployments
 - Use PostgreSQL backup tools (`pg_dump`) for production deployments
 - Consider automated backup solutions for production environments
+- The database location is outside the application directory, so it won't be affected by app updates
 
 #### Security Considerations
 
@@ -388,6 +450,21 @@ docker inspect zfs-sync | grep -A 20 Mounts
 - Verify `ZFS_SYNC_DATABASE_URL` is correct
 - For PostgreSQL, ensure the database service is healthy: `docker-compose ps postgres`
 - Check database logs: `docker-compose logs postgres`
+- For SQLite, ensure `/var/lib/zfs-sync` directory exists and has correct permissions:
+  ```bash
+  # Check if directory exists
+  ls -la /var/lib/zfs-sync
+  
+  # Fix permissions if needed
+  sudo mkdir -p /var/lib/zfs-sync
+  sudo chown -R 1000:1000 /var/lib/zfs-sync
+  sudo chmod 755 /var/lib/zfs-sync
+  ```
+
+**Permission issues:**
+- The container runs as UID 1000. Ensure mounted volumes have correct permissions
+- For data directory: `sudo chown -R 1000:1000 /var/lib/zfs-sync`
+- Check container user: `docker exec zfs-sync id`
 
 **Permission issues:**
 - The container runs as UID 1000. Ensure mounted volumes have correct permissions

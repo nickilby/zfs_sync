@@ -1,6 +1,7 @@
 """Application settings and configuration."""
 
 import os
+import platform
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +14,26 @@ try:
     import tomli
 except ImportError:
     tomli = None  # type: ignore[assignment, misc]
+
+
+def get_default_database_url() -> str:
+    """Get default database URL based on platform."""
+    system = platform.system().lower()
+    
+    if system == "linux":
+        # Linux: Use persistent system directory
+        return "sqlite:////var/lib/zfs-sync/zfs_sync.db"
+    elif system == "windows":
+        # Windows: Use AppData directory for persistence
+        appdata = os.getenv("APPDATA", os.path.expanduser("~"))
+        db_path = Path(appdata) / "zfs-sync" / "zfs_sync.db"
+        # Convert Windows path to SQLite URL format
+        return f"sqlite:///{str(db_path).replace(chr(92), '/')}"
+    else:
+        # macOS and other Unix-like systems: Use user data directory
+        home = Path.home()
+        db_path = home / ".local" / "share" / "zfs-sync" / "zfs_sync.db"
+        return f"sqlite:///{db_path}"
 
 
 class Settings(BaseSettings):
@@ -31,7 +52,8 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="sqlite:///./zfs_sync.db", description="Database connection URL"
+        default_factory=get_default_database_url,
+        description="Database connection URL (defaults to platform-specific persistent location)",
     )
 
     # Security

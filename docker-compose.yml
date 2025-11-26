@@ -13,8 +13,9 @@ services:
       - ./config:/config:ro
       # Mount logs directory
       - ./logs:/logs
-      # Mount data directory for SQLite database
-      - ./data:/data
+      # Mount persistent data directory for SQLite database (outside app directory)
+      # This ensures database persists across app updates
+      - /var/lib/zfs-sync:/data
     environment:
       - ZFS_SYNC_HOST=0.0.0.0
       - ZFS_SYNC_PORT=8000
