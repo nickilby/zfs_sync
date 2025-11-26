@@ -211,6 +211,22 @@ python -m zfs_sync
 - Direct access to logs and files
 - No need to rebuild Docker images for every change
 
+#### Automatic Version Incrementing
+
+The project includes a Git pre-commit hook that automatically increments the patch version (e.g., 0.1.4 → 0.1.5) before each commit. The hook:
+
+- Reads the current version from `pyproject.toml` or `zfs_sync/__init__.py`
+- Increments the patch version number
+- Updates all version files:
+  - `pyproject.toml`
+  - `zfs_sync/__init__.py`
+  - `zfs_sync/config/settings.py`
+  - `config/zfs_sync.yaml.example`
+- Automatically stages the updated version files
+- Includes the version bump in your commit
+
+**Note:** The hook is located at `.git/hooks/pre-commit` and runs automatically on every commit. If you need to skip version incrementing for a specific commit, use `git commit --no-verify`.
+
 #### Option 2: Docker Development (Recommended for Testing Production-like Environment)
 
 For testing the containerized deployment:
