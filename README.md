@@ -33,11 +33,13 @@ The primary goal of this application is to:
 
 ## Architecture
 
-The application will follow a witness pattern where:
+The application follows a witness pattern where:
 
 1. **Witness Service**: Central service that maintains state and coordinates operations
 2. **ZFS Clients**: Systems with ZFS pools that report their snapshot states to the witness
 3. **Synchronization Protocol**: Defined protocol for how clients communicate snapshot states and receive synchronization instructions
+
+For comprehensive architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Use Cases
 
@@ -480,29 +482,18 @@ docker inspect zfs-sync | grep -A 20 Mounts
 
 ## Development Status
 
-**Phase 1: Foundation & Project Setup** - ✅ **COMPLETE**
-
-- ✅ Python project structure and dependency management
-- ✅ Core data models (System, Snapshot, SyncGroup, SyncState)
-- ✅ Configuration system with YAML/TOML and environment variable support
-- ✅ Docker support for containerized deployment
-
-**Phase 2: Core Infrastructure** - ✅ **COMPLETE**
-
-- ✅ State storage with SQLAlchemy (SQLite/PostgreSQL support)
-- ✅ Database models and repository pattern
-- ✅ RESTful API foundation with FastAPI
-- ✅ Structured logging system with rotation
-
-**Phase 3: Core Functionality** - ✅ **COMPLETE**
+The core functionality of ZFS Sync is **complete and production-ready**. The application provides:
 
 - ✅ System Registration & Management (API keys, heartbeat, health monitoring)
 - ✅ Snapshot State Tracking (comparison, history, statistics)
 - ✅ Synchronization Coordination (mismatch detection, sync actions, instructions)
+- ✅ Conflict Detection & Resolution
+- ✅ RESTful API with OpenAPI documentation
+- ✅ Docker containerization with production-ready configuration
+- ✅ Database support (SQLite/PostgreSQL)
+- ✅ Comprehensive logging and health monitoring
 
-**Overall Progress: ~65% Complete**
-
-See [STATUS.md](STATUS.md) for detailed status of all phases and remaining work.
+For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Future Considerations
 
