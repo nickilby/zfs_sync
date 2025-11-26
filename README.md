@@ -350,6 +350,7 @@ Important data is persisted via Docker volumes:
 **Database Location Details:**
 
 The application uses platform-specific default database locations:
+
 - **Linux (Docker)**: `/var/lib/zfs-sync/zfs_sync.db` (mounted to `/data/zfs_sync.db` in container)
 - **Windows**: `%APPDATA%/zfs-sync/zfs_sync.db`
 - **macOS/Other Unix**: `~/.local/share/zfs-sync/zfs_sync.db`
@@ -404,7 +405,7 @@ For Ansible playbooks, include the following tasks to set up the persistent data
    - Docker secrets (Docker Swarm)
    - External secret management (HashiCorp Vault, AWS Secrets Manager, etc.)
 
-2. **Network Security**: 
+2. **Network Security**:
    - Use reverse proxy (nginx, Traefik) with TLS/SSL termination
    - Restrict container network access
    - Use firewall rules to limit access to port 8000
@@ -436,7 +437,48 @@ curl http://localhost:8000/api/v1/health
 
 #### Troubleshooting
 
+**Database Schema Errors (500 Internal Server Error):**
+
+If you see errors like `no such column: sync_groups.description` or `no such column: systems.ssh_hostname`, this indicates a database schema mismatch. This typically happens when the database was moved to a new location with an old schema.
+
+**Solution (Recommended - Recreate Database):**
+
+```bash
+# 1. Fix permissions first
+sudo chown -R 1000:1000 /var/lib/zfs-sync
+sudo chmod 755 /var/lib/zfs-sync
+
+# 2. Backup existing database (optional, if you want to keep a copy)
+sudo cp /var/lib/zfs-sync/zfs_sync.db /var/lib/zfs-sync/zfs_sync.db.backup
+
+# 3. Delete old database - app will recreate with correct schema on restart
+sudo rm /var/lib/zfs-sync/zfs_sync.db
+
+# 4. Restart container - it will automatically create a fresh database with correct schema
+docker-compose restart zfs-sync
+```
+
+The application will automatically create a new database with the correct schema when it starts. All systems will need to re-register, and snapshots will need to be reported again.
+
+**Alternative: Database Migrations (if you need to preserve data):**
+
+If you need to preserve existing data, you can use Alembic migrations (see Database Migrations section below).
+
+**Database Permissions Issues:**
+
+If the database file is owned by a different user (e.g., `headhoncho:headhoncho` instead of UID 1000):
+
+```bash
+# Check current ownership
+ls -lah /var/lib/zfs-sync/
+
+# Fix ownership to match container user (UID 1000)
+sudo chown -R 1000:1000 /var/lib/zfs-sync
+sudo chmod 755 /var/lib/zfs-sync
+```
+
 **Container won't start:**
+
 ```bash
 # Check logs
 docker-compose logs zfs-sync
@@ -449,10 +491,12 @@ docker inspect zfs-sync | grep -A 20 Mounts
 ```
 
 **Database connection issues:**
+
 - Verify `ZFS_SYNC_DATABASE_URL` is correct
 - For PostgreSQL, ensure the database service is healthy: `docker-compose ps postgres`
 - Check database logs: `docker-compose logs postgres`
 - For SQLite, ensure `/var/lib/zfs-sync` directory exists and has correct permissions:
+
   ```bash
   # Check if directory exists
   ls -la /var/lib/zfs-sync
@@ -463,14 +507,22 @@ docker inspect zfs-sync | grep -A 20 Mounts
   sudo chmod 755 /var/lib/zfs-sync
   ```
 
+**Database Migrations (Optional - for preserving existing data):**
+
+If you need to preserve existing data instead of recreating the database, you can use Alembic migrations. Note: This requires proper Alembic configuration setup.
+
+Available migrations:
+
+- `001_add_ssh_fields_to_systems.py` - Adds SSH connection fields to systems table
+- `002_add_description_to_sync_groups.py` - Adds description field to sync_groups table
+
+For most deployments, recreating the database (as shown above) is simpler and recommended.
+
 **Permission issues:**
+
 - The container runs as UID 1000. Ensure mounted volumes have correct permissions
 - For data directory: `sudo chown -R 1000:1000 /var/lib/zfs-sync`
 - Check container user: `docker exec zfs-sync id`
-
-**Permission issues:**
-- The container runs as UID 1000. Ensure mounted volumes have correct permissions
-- For data directory: `chown -R 1000:1000 ./data ./logs`
 
 ### Recommended First Steps
 
