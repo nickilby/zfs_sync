@@ -3,7 +3,7 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from zfs_sync.api.schemas.conflict import (
@@ -85,7 +85,9 @@ async def resolve_conflict(
     # If auto-resolved, mark as resolved
     if result.get("status") == "resolved":
         # Generate a conflict ID (in production, this would be stored)
-        conflict_id = f"{conflict.sync_group_id}:{conflict.pool}:{conflict.dataset}:{conflict.snapshot_name}"
+        conflict_id = (
+            f"{conflict.sync_group_id}:{conflict.pool}:{conflict.dataset}:{conflict.snapshot_name}"
+        )
         service.mark_conflict_resolved(conflict_id, result)
 
     return ConflictResolutionResponse(**result)
@@ -130,8 +132,6 @@ async def mark_conflict_as_resolved(
     """Manually mark a conflict as resolved."""
     service = ConflictResolutionService(db)
 
-    # Extract conflict from resolution
-    conflict_dict = resolution.conflict or {}
     result = service.mark_conflict_resolved(
         conflict_id=conflict_id,
         resolution=resolution.model_dump(),
@@ -143,4 +143,3 @@ async def mark_conflict_as_resolved(
         "message": f"Conflict {conflict_id} marked as resolved",
         "resolution": result,
     }
-

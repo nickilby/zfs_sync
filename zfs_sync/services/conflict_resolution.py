@@ -1,8 +1,8 @@
 """Service for detecting and resolving snapshot conflicts."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -54,7 +54,7 @@ class ConflictResolutionService:
 
     def detect_conflicts(
         self, sync_group_id: UUID, pool: str, dataset: str
-    ) -> List[Dict[str, any]]:
+    ) -> List[Dict[str, Any]]:
         """
         Detect conflicts for a specific dataset in a sync group.
 
@@ -64,7 +64,10 @@ class ConflictResolutionService:
 
         sync_group = self.sync_group_repo.get(sync_group_id)
         if not sync_group:
-            raise ValueError(f"Sync group {sync_group_id} not found")
+            raise ValueError(
+                f"Sync group '{sync_group_id}' not found. "
+                f"Cannot detect conflicts for non-existent sync group."
+            )
 
         system_ids = [assoc.system_id for assoc in sync_group.system_associations]
 
@@ -99,7 +102,8 @@ class ConflictResolutionService:
         for snapshot_name in all_names:
             # Find which systems have this snapshot
             systems_with_snapshot = [
-                sid for sid, names_dict in snapshot_names_by_system.items()
+                sid
+                for sid, names_dict in snapshot_names_by_system.items()
                 if snapshot_name in names_dict
             ]
 
@@ -108,8 +112,7 @@ class ConflictResolutionService:
 
             # Get snapshot details from each system
             snapshots_by_system = {
-                sid: snapshot_names_by_system[sid][snapshot_name]
-                for sid in systems_with_snapshot
+                sid: snapshot_names_by_system[sid][snapshot_name] for sid in systems_with_snapshot
             }
 
             # Check for timestamp mismatches
@@ -132,7 +135,7 @@ class ConflictResolutionService:
                             for sid, snap in snapshots_by_system.items()
                         },
                         "severity": "medium",
-                        "detected_at": datetime.utcnow().isoformat(),
+                        "detected_at": datetime.now(timezone.utc).isoformat(),
                     }
                 )
 
@@ -157,7 +160,7 @@ class ConflictResolutionService:
                                 for sid, snap in snapshots_by_system.items()
                             },
                             "severity": "low",
-                            "detected_at": datetime.utcnow().isoformat(),
+                            "detected_at": datetime.now(timezone.utc).isoformat(),
                         }
                     )
 
@@ -182,7 +185,7 @@ class ConflictResolutionService:
                             for sid, snap in snapshots_by_system.items()
                         },
                         "severity": "high",
-                        "detected_at": datetime.utcnow().isoformat(),
+                        "detected_at": datetime.now(timezone.utc).isoformat(),
                     }
                 )
 
@@ -219,7 +222,7 @@ class ConflictResolutionService:
                                     }
                                 },
                                 "severity": "medium",
-                                "detected_at": datetime.utcnow().isoformat(),
+                                "detected_at": datetime.now(timezone.utc).isoformat(),
                             }
                         )
 
@@ -227,10 +230,10 @@ class ConflictResolutionService:
 
     def resolve_conflict(
         self,
-        conflict: Dict[str, any],
+        conflict: Dict[str, Any],
         strategy: ConflictResolutionStrategy,
         resolution_data: Optional[Dict] = None,
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Resolve a conflict using the specified strategy.
 
@@ -271,9 +274,20 @@ class ConflictResolutionService:
 
         if strategy == ConflictResolutionStrategy.USE_NEWEST:
             # Find system with newest timestamp
+            # Parse ISO timestamp strings to datetime objects for proper comparison
+            def get_timestamp(system_data: Dict[str, Any]) -> datetime:
+                timestamp_str = system_data.get("timestamp", "")
+                if isinstance(timestamp_str, str):
+                    try:
+                        return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                    except (ValueError, AttributeError):
+                        # Fallback to epoch if parsing fails
+                        return datetime.min.replace(tzinfo=timezone.utc)
+                return datetime.min.replace(tzinfo=timezone.utc)
+
             newest_system = max(
                 systems.items(),
-                key=lambda x: x[1].get("timestamp", ""),
+                key=lambda x: get_timestamp(x[1]),
             )
             return self._create_resolution_action(conflict, newest_system[0], "use_newest")
 
@@ -302,7 +316,7 @@ class ConflictResolutionService:
 
     def _create_resolution_action(
         self, conflict: Dict, source_system_id: str, reason: str
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """Create a resolution action dictionary."""
         systems = conflict.get("systems", {})
         source_info = systems.get(source_system_id, {})
@@ -327,7 +341,7 @@ class ConflictResolutionService:
                 }
                 for target_id in target_systems
             ],
-            "resolution_timestamp": datetime.utcnow().isoformat(),
+            "resolution_timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     def _has_common_ancestor(
@@ -350,17 +364,22 @@ class ConflictResolutionService:
             for other_snap in other_snapshots:
                 other_name = self.comparison_service._extract_snapshot_name(other_snap.name)
                 # Check if there's a snapshot with similar name pattern (simplified check)
-                if other_name.startswith(snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name):
+                if other_name.startswith(
+                    snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name
+                ):
                     if other_snap.timestamp < snapshot.timestamp:
                         return True
 
         return False
 
-    def get_all_conflicts(self, sync_group_id: UUID) -> List[Dict[str, any]]:
+    def get_all_conflicts(self, sync_group_id: UUID) -> List[Dict[str, Any]]:
         """Get all conflicts for a sync group across all datasets."""
         sync_group = self.sync_group_repo.get(sync_group_id)
         if not sync_group:
-            raise ValueError(f"Sync group {sync_group_id} not found")
+            raise ValueError(
+                f"Sync group '{sync_group_id}' not found. "
+                f"Cannot detect conflicts for non-existent sync group."
+            )
 
         # Get all unique datasets from snapshots in this sync group
         system_ids = [assoc.system_id for assoc in sync_group.system_associations]
@@ -381,9 +400,9 @@ class ConflictResolutionService:
     def mark_conflict_resolved(
         self,
         conflict_id: str,
-        resolution: Dict[str, any],
+        resolution: Dict[str, Any],
         resolved_by: Optional[str] = None,
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Mark a conflict as resolved and update sync states.
 
@@ -430,13 +449,13 @@ class ConflictResolutionService:
         return {
             "conflict_id": conflict_id,
             "status": "resolved",
-            "resolved_at": datetime.utcnow().isoformat(),
+            "resolved_at": datetime.now(timezone.utc).isoformat(),
             "resolved_by": resolved_by or "system",
             "resolution": resolution,
         }
 
     def mark_conflicts_in_sync_states(
-        self, sync_group_id: UUID, conflicts: List[Dict[str, any]]
+        self, sync_group_id: UUID, conflicts: List[Dict[str, Any]]
     ) -> None:
         """
         Mark sync states as having conflicts when conflicts are detected.
@@ -460,4 +479,3 @@ class ConflictResolutionService:
                     status=SyncStatus.CONFLICT,
                     error_message=f"Conflict detected: {conflict.get('type')}",
                 )
-

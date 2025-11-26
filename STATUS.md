@@ -36,18 +36,19 @@
 - ✅ Coordination logic to determine sync actions
 - ✅ Endpoint for systems to query sync instructions
 - ✅ Sync status tracking and reporting
+- ✅ Enhanced sync actions with snapshot_id for efficient state updates
 
 ---
 
 ## 🚧 Remaining Work
 
-### Phase 4: Advanced Features - ❌ NOT STARTED
+### Phase 4: Advanced Features - ⚠️ PARTIALLY DONE
 
-#### 1. Conflict Resolution - ❌ NOT STARTED
-- [ ] Detect conflicts when snapshots diverge
-- [ ] Implement conflict resolution strategies
-- [ ] Manual intervention support for complex conflicts
-- [ ] Conflict notification system
+#### 1. Conflict Resolution - ✅ COMPLETE
+- ✅ Detect conflicts when snapshots diverge
+- ✅ Implement conflict resolution strategies (use_newest, use_largest, use_majority, manual, ignore)
+- ✅ Manual intervention support for complex conflicts
+- [ ] Conflict notification system (webhooks/events not yet implemented)
 
 #### 2. Event-Driven Architecture - ❌ NOT STARTED
 - [ ] Event system for snapshot events
@@ -64,9 +65,13 @@
 
 ### Phase 5: Testing & Documentation - ⚠️ PARTIALLY DONE
 
-#### 1. Testing - ❌ NOT STARTED
-- [ ] Unit tests for core logic
-- [ ] Integration tests for API endpoints
+#### 1. Testing - ⚠️ PARTIALLY DONE
+- [x] Test infrastructure setup (pytest, fixtures, conftest)
+- [x] Unit tests for core services (conflict resolution, sync coordination, snapshot comparison)
+- [x] Unit tests for repositories (system repository)
+- [x] Integration tests for API endpoints (health, systems, snapshots)
+- [ ] Additional unit tests for remaining services
+- [ ] Integration tests for remaining API endpoints (sync, sync groups, conflicts)
 - [ ] End-to-end tests with mock ZFS systems
 - [ ] Performance testing
 - [ ] Load testing
@@ -108,11 +113,11 @@
 | Phase 1: Foundation | ✅ Complete | 100% |
 | Phase 2: Core Infrastructure | ✅ Complete | 100% |
 | Phase 3: Core Functionality | ✅ Complete | 100% |
-| Phase 4: Advanced Features | ❌ Not Started | 0% |
-| Phase 5: Testing & Documentation | ⚠️ Partial | ~30% |
+| Phase 4: Advanced Features | ⚠️ Partial | ~35% |
+| Phase 5: Testing & Documentation | ⚠️ Partial | ~50% |
 | Phase 6: Production Readiness | ⚠️ Partial | ~40% |
 
-**Overall Progress: ~65% Complete**
+**Overall Progress: ~72% Complete**
 
 ---
 
@@ -125,10 +130,13 @@
    - Rate limiting
    - Production CORS configuration
 
-2. **Testing** (Phase 5.1)
-   - Unit tests for critical services
-   - Integration tests for API endpoints
-   - Basic end-to-end tests
+2. **Testing** (Phase 5.1) - ✅ INFRASTRUCTURE COMPLETE
+   - ✅ Test infrastructure and fixtures set up
+   - ✅ Unit tests for core services (conflict resolution, sync coordination, snapshot comparison)
+   - ✅ Integration tests for key API endpoints (health, systems, snapshots)
+   - [ ] Additional unit tests for remaining services
+   - [ ] Integration tests for remaining endpoints (sync, sync groups, conflicts)
+   - [ ] End-to-end tests with mock ZFS systems
 
 3. **Database Migrations** (Phase 6.2)
    - Set up Alembic migrations
@@ -142,9 +150,9 @@
    - Basic dashboard
    - Alerting setup
 
-5. **Conflict Resolution** (Phase 4.1)
-   - Conflict detection
-   - Basic resolution strategies
+5. **Conflict Notification System** (Phase 4.1)
+   - Webhook/event notifications for conflicts
+   - Conflict alerting integration
 
 6. **Documentation** (Phase 5.2)
    - Client library examples
@@ -170,6 +178,7 @@ The system is **functional** and can be used for:
 - ✅ Snapshot reporting and tracking
 - ✅ Cross-system snapshot comparison
 - ✅ Sync coordination and instructions
+- ✅ Conflict detection and resolution
 - ✅ Health monitoring
 - ✅ Basic API operations
 

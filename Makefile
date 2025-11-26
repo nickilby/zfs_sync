@@ -43,19 +43,43 @@ clean:
 	rm -rf build/ dist/ *.egg-info
 	rm -rf .pytest_cache .coverage htmlcov
 
-# Docker commands
+# Docker commands - support both docker-compose (v1) and docker compose (v2)
+DOCKER_COMPOSE := $(shell command -v docker-compose 2> /dev/null || echo "docker compose")
+
 docker-build:
-	docker-compose build
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "Error: Docker is not installed or not in PATH"; \
+		echo "Please install Docker Desktop from https://www.docker.com/products/docker-desktop"; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) build
 
 docker-up:
-	docker-compose up -d
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "Error: Docker is not installed or not in PATH"; \
+		echo "Please install Docker Desktop from https://www.docker.com/products/docker-desktop"; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) up -d
 
 docker-down:
-	docker-compose down
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "Error: Docker is not installed or not in PATH"; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) down
 
 docker-logs:
-	docker-compose logs -f
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "Error: Docker is not installed or not in PATH"; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) logs -f
 
 docker-shell:
-	docker-compose exec zfs-sync /bin/bash
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "Error: Docker is not installed or not in PATH"; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) exec zfs-sync /bin/bash
 

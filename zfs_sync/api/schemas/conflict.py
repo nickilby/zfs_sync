@@ -1,14 +1,11 @@
 """Conflict resolution API schemas."""
 
-from datetime import datetime
 from typing import Dict, List, Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from zfs_sync.services.conflict_resolution import (
     ConflictResolutionStrategy,
-    ConflictType,
 )
 
 
@@ -28,9 +25,7 @@ class ConflictResponse(BaseModel):
 class ConflictResolutionRequest(BaseModel):
     """Schema for conflict resolution request."""
 
-    strategy: ConflictResolutionStrategy = Field(
-        ..., description="Resolution strategy to use"
-    )
+    strategy: ConflictResolutionStrategy = Field(..., description="Resolution strategy to use")
     resolution_data: Optional[Dict] = Field(
         None, description="Additional data for resolution (e.g., chosen system_id)"
     )
@@ -53,4 +48,3 @@ class ConflictListResponse(BaseModel):
     conflicts: List[ConflictResponse] = Field(..., description="List of conflicts")
     count: int = Field(..., description="Number of conflicts")
     sync_group_id: str = Field(..., description="Sync group ID")
-

@@ -1,7 +1,7 @@
 """Service for tracking snapshot history and changes."""
 
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, desc
@@ -29,7 +29,7 @@ class SnapshotHistoryService:
         dataset: Optional[str] = None,
         days: Optional[int] = None,
         limit: int = 100,
-    ) -> List[Dict[str, any]]:
+    ) -> List[Dict[str, Any]]:
         """
         Get snapshot history for a system with optional filters.
 
@@ -50,7 +50,7 @@ class SnapshotHistoryService:
         if dataset:
             query = query.filter(SnapshotModel.dataset == dataset)
         if days:
-            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
             query = query.filter(SnapshotModel.timestamp >= cutoff_date)
 
         snapshots = query.order_by(desc(SnapshotModel.timestamp)).limit(limit).all()
@@ -72,7 +72,7 @@ class SnapshotHistoryService:
 
     def get_snapshot_timeline(
         self, pool: str, dataset: str, system_ids: List[UUID]
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Get a timeline of snapshots across multiple systems for a dataset.
 
@@ -105,15 +105,13 @@ class SnapshotHistoryService:
             "systems": [str(sid) for sid in system_ids],
         }
 
-    def get_snapshot_statistics(
-        self, system_id: UUID, days: int = 30
-    ) -> Dict[str, any]:
+    def get_snapshot_statistics(self, system_id: UUID, days: int = 30) -> Dict[str, Any]:
         """
         Get statistics about snapshots for a system.
 
         Returns counts, sizes, and trends.
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         snapshots = (
             self.db.query(SnapshotModel)
@@ -158,8 +156,8 @@ class SnapshotHistoryService:
         }
 
     def track_snapshot_changes(
-        self, system_id: UUID, current_snapshots: List[Dict[str, any]]
-    ) -> Dict[str, any]:
+        self, system_id: UUID, current_snapshots: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
         Track changes in snapshots by comparing current state with stored state.
 
@@ -169,12 +167,8 @@ class SnapshotHistoryService:
         # Get existing snapshots from database
         existing_snapshots = self.snapshot_repo.get_by_system(system_id)
 
-        existing_names = {
-            f"{s.pool}/{s.dataset}@{s.name}" for s in existing_snapshots
-        }
-        current_names = {
-            f"{s['pool']}/{s['dataset']}@{s['name']}" for s in current_snapshots
-        }
+        existing_names = {f"{s.pool}/{s.dataset}@{s.name}" for s in existing_snapshots}
+        current_names = {f"{s['pool']}/{s['dataset']}@{s['name']}" for s in current_snapshots}
 
         added = current_names - existing_names
         removed = existing_names - current_names
@@ -185,6 +179,5 @@ class SnapshotHistoryService:
             "added_snapshots": sorted(list(added)),
             "removed_snapshots": sorted(list(removed)),
             "unchanged_snapshots": sorted(list(unchanged)),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-

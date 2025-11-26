@@ -1,0 +1,277 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+  push:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+      fail-fast: false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=zfs_sync --cov-report=xml --cov-report=term-missing --cov-report=html -v
+      
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+      
+      - name: Upload coverage HTML report
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      
+      - name: Run ruff
+        run: |
+          ruff check zfs_sync/ tests/
+      
+      - name: Run mypy
+        run: |
+          mypy zfs_sync/
+        continue-on-error: true
+      
+      - name: Check code formatting
+        run: |
+          black --check zfs_sync/ tests/
+
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    needs: [test]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: zfs-sync:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Test Docker image
+        run: |
+          docker run --rm zfs-sync:test python -c "import zfs_sync; print('Import successful')"
+      
+      - name: Test API health endpoint
+        run: |
+          docker run -d --name zfs-sync-test -p 8000:8000 zfs-sync:test
+          sleep 10
+          for i in {1..10}; do
+            if curl -f http://localhost:8000/api/v1/health; then
+              echo "Health check passed"
+              break
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 2
+          done
+          docker stop zfs-sync-test || true
+          docker rm zfs-sync-test || true
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      
+      - name: Run Bandit security scan
+        run: |
+          bandit -r zfs_sync/ -f json -o bandit-report.json || true
+          bandit -r zfs_sync/ -ll
+        continue-on-error: true
+      
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+          retention-days: 30
+      
+      - name: Scan for secrets
+        if: github.event_name == 'pull_request'
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+        continue-on-error: true
+      
+      - name: Scan for secrets (push)
+        if: github.event_name == 'push'
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+        continue-on-error: true
+
+  dependency-check:
+    name: Dependency Vulnerability Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+      
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+      
+      - name: Audit production dependencies
+        run: |
+          pip-audit --requirement requirements.txt --format json --output pip-audit-prod.json || true
+          pip-audit --requirement requirements.txt
+        continue-on-error: true
+      
+      - name: Audit development dependencies
+        run: |
+          pip-audit --requirement requirements-dev.txt --format json --output pip-audit-dev.json || true
+          pip-audit --requirement requirements-dev.txt
+        continue-on-error: true
+      
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-reports
+          path: |
+            pip-audit-prod.json
+            pip-audit-dev.json
+          retention-days: 30
+      
+      - name: Check for critical vulnerabilities
+        run: |
+          pip-audit --requirement requirements.txt --desc > audit-output.txt 2>&1 || true
+          if grep -i "CRITICAL\|HIGH" audit-output.txt; then
+            echo "Critical or High severity vulnerabilities found!"
+            cat audit-output.txt
+            exit 1
+          else
+            echo "No critical or high severity vulnerabilities found"
+          fi
+
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      
+      - name: Run benchmarks
+        run: |
+          pytest --benchmark-only --benchmark-json=benchmark-results.json -m benchmark || echo "No benchmark tests found"
+        continue-on-error: true
+      
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.json
+          retention-days: 90
+      
+      - name: Display benchmark summary
+        if: always()
+        run: |
+          if [ -f benchmark-results.json ]; then
+            echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat benchmark-results.json | head -50 >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No benchmark tests found or benchmarks failed" >> $GITHUB_STEP_SUMMARY
+          fi
+

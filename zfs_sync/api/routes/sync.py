@@ -67,11 +67,19 @@ async def get_sync_actions(
 async def get_sync_instructions(
     system_id: UUID,
     sync_group_id: Optional[UUID] = Query(None, description="Filter by sync group"),
+    include_commands: bool = Query(True, description="Include ready-to-execute sync commands"),
     db: Session = Depends(get_db),
 ):
     """Get sync instructions for a system."""
     service = SyncCoordinationService(db)
     instructions = service.get_sync_instructions(system_id=system_id, sync_group_id=sync_group_id)
+
+    # If include_commands is False, remove sync_command from actions
+    if not include_commands and "actions" in instructions:
+        for action in instructions.get("actions", []):
+            if isinstance(action, dict) and "sync_command" in action:
+                action.pop("sync_command", None)
+
     return instructions
 
 
@@ -102,4 +110,3 @@ async def get_sync_status_summary(group_id: UUID, db: Session = Depends(get_db))
     service = SyncCoordinationService(db)
     summary = service.get_sync_status_summary(sync_group_id=group_id)
     return SyncStatusSummary(**summary)
-

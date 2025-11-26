@@ -32,7 +32,10 @@ class AuthService:
         """Generate and assign an API key to a system."""
         system = self.system_repo.get(system_id)
         if not system:
-            raise ValueError(f"System {system_id} not found")
+            raise ValueError(
+                f"System '{system_id}' not found. "
+                f"Cannot create API key for non-existent system."
+            )
 
         api_key = self.generate_api_key()
         self.system_repo.update(system_id, api_key=api_key)
@@ -52,9 +55,9 @@ class AuthService:
         system = self.system_repo.get_by_api_key(api_key)
         if system:
             # Update last_seen timestamp
-            from datetime import datetime
+            from datetime import datetime, timezone
 
-            self.system_repo.update(system.id, last_seen=datetime.utcnow())
+            self.system_repo.update(system.id, last_seen=datetime.now(timezone.utc))
             return system.id
         return None
 
@@ -62,7 +65,10 @@ class AuthService:
         """Revoke (remove) an API key from a system."""
         system = self.system_repo.get(system_id)
         if not system:
-            raise ValueError(f"System {system_id} not found")
+            raise ValueError(
+                f"System '{system_id}' not found. "
+                f"Cannot create API key for non-existent system."
+            )
 
         self.system_repo.update(system_id, api_key=None)
         logger.info(f"Revoked API key for system {system_id}")
@@ -72,4 +78,3 @@ class AuthService:
         new_key = self.create_api_key_for_system(system_id)
         logger.info(f"Rotated API key for system {system_id}")
         return new_key
-

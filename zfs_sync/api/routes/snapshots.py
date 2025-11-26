@@ -21,7 +21,7 @@ router = APIRouter()
 async def create_snapshot(snapshot: SnapshotCreate, db: Session = Depends(get_db)):
     """Report a new snapshot."""
     repo = SnapshotRepository(db)
-    db_snapshot = repo.create(**snapshot.model_dump())
+    db_snapshot = repo.create(**snapshot.model_dump(by_alias=True))
     logger.info(f"Created snapshot: {db_snapshot.name} on {db_snapshot.pool}/{db_snapshot.dataset}")
     return SnapshotResponse.model_validate(db_snapshot)
 
@@ -62,15 +62,15 @@ async def get_snapshots_by_system(
     return [SnapshotResponse.model_validate(s) for s in snapshots]
 
 
-@router.post("/snapshots/batch", response_model=List[SnapshotResponse], status_code=status.HTTP_201_CREATED)
-async def create_snapshots_batch(
-    snapshots: List[SnapshotCreate], db: Session = Depends(get_db)
-):
+@router.post(
+    "/snapshots/batch", response_model=List[SnapshotResponse], status_code=status.HTTP_201_CREATED
+)
+async def create_snapshots_batch(snapshots: List[SnapshotCreate], db: Session = Depends(get_db)):
     """Report multiple snapshots in a single request."""
     repo = SnapshotRepository(db)
     created = []
     for snapshot_data in snapshots:
-        db_snapshot = repo.create(**snapshot_data.model_dump())
+        db_snapshot = repo.create(**snapshot_data.model_dump(by_alias=True))
         created.append(SnapshotResponse.model_validate(db_snapshot))
     logger.info(f"Created {len(created)} snapshots in batch")
     return created
@@ -147,9 +147,7 @@ async def get_snapshot_timeline(
 ):
     """Get a timeline of snapshots across multiple systems."""
     service = SnapshotHistoryService(db)
-    timeline = service.get_snapshot_timeline(
-        pool=pool, dataset=dataset, system_ids=system_ids
-    )
+    timeline = service.get_snapshot_timeline(pool=pool, dataset=dataset, system_ids=system_ids)
     return timeline
 
 
@@ -163,4 +161,3 @@ async def get_snapshot_statistics(
     service = SnapshotHistoryService(db)
     stats = service.get_snapshot_statistics(system_id=system_id, days=days)
     return stats
-

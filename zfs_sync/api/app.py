@@ -43,6 +43,14 @@ async def startup_event():
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Database: {settings.database_url}")
 
+    # Skip database initialization if we're in a test environment
+    # (tests handle their own database setup via fixtures)
+    import os
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.info("Skipping database initialization in test environment")
+        return
+
     # Initialize database
     from zfs_sync.database import init_db
 
@@ -57,14 +65,48 @@ async def shutdown_event():
 
 
 # Import routes (must be after app creation)
-from zfs_sync.api.routes import conflicts, health, snapshots, sync, sync_groups, systems  # noqa: E402
+from zfs_sync.api.routes import (  # noqa: E402
+    conflicts,
+    health,
+    snapshots,
+    sync,
+    sync_groups,
+    systems,
+)
 
-app.include_router(health.router, prefix=settings.api_prefix, tags=["Health"])
-app.include_router(systems.router, prefix=settings.api_prefix, tags=["Systems"])
-app.include_router(snapshots.router, prefix=settings.api_prefix, tags=["Snapshots"])
-app.include_router(sync_groups.router, prefix=settings.api_prefix, tags=["Sync Groups"])
-app.include_router(sync.router, prefix=settings.api_prefix, tags=["Sync"])
-app.include_router(conflicts.router, prefix=settings.api_prefix, tags=["Conflicts"])
+# Validate settings.api_prefix
+if not hasattr(settings, "api_prefix") or settings.api_prefix is None:
+    raise ValueError(f"settings.api_prefix is not set. Current settings: {dir(settings)}")
+
+# Validate and include routers with error handling
+routers_to_include = [
+    ("health", health, "Health"),
+    ("systems", systems, "Systems"),
+    ("snapshots", snapshots, "Snapshots"),
+    ("sync_groups", sync_groups, "Sync Groups"),
+    ("sync", sync, "Sync"),
+    ("conflicts", conflicts, "Conflicts"),
+]
+
+for route_name, route_module, tag in routers_to_include:
+    try:
+        if not hasattr(route_module, "router"):
+            raise AttributeError(
+                f"Module {route_name} does not have a 'router' attribute. "
+                f"Available attributes: {dir(route_module)}"
+            )
+        router = getattr(route_module, "router")
+        if router is None:
+            raise ValueError(f"Router for {route_name} is None")
+        app.include_router(router, prefix=settings.api_prefix, tags=[tag])
+        logger.debug(f"Successfully included router: {route_name}")
+    except Exception as e:
+        logger.error(f"Failed to include router {route_name}: {e}")
+        raise RuntimeError(
+            f"Failed to include router '{route_name}': {e}. "
+            f"This is a configuration error that must be fixed."
+        ) from e
+
 
 # Root route - redirect to API docs
 @app.get("/")
@@ -98,19 +140,22 @@ if static_dir.exists() and any(static_dir.iterdir()):
     except Exception as e:
         logger.warning(f"Could not mount static directory: {e}")
 
+
 # Handle favicon requests gracefully
 @app.get("/favicon.ico")
 async def favicon():
     """Handle favicon requests."""
     from fastapi.responses import Response
+
     return Response(status_code=204)  # No content
 
 
 # Catch-all for assets if not mounted (returns 204 to avoid 404 spam in logs)
 if not assets_mounted:
+
     @app.get("/assets/{path:path}")
     async def assets_catchall(path: str):
         """Handle asset requests when assets directory is not available."""
         from fastapi.responses import Response
-        return Response(status_code=204)  # No content
 
+        return Response(status_code=204)  # No content

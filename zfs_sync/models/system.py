@@ -16,6 +16,11 @@ class System(BaseModel):
     connectivity_status: str = Field(
         default="unknown", description="Current connectivity status (online, offline, unknown)"
     )
+    ssh_hostname: Optional[str] = Field(
+        None, description="SSH hostname/IP (can differ from API hostname)"
+    )
+    ssh_user: Optional[str] = Field(None, description="SSH username for key-based authentication")
+    ssh_port: int = Field(default=22, description="SSH port")
     last_seen: Optional[datetime] = Field(
         default=None, description="Timestamp of last successful communication"
     )
@@ -35,4 +40,3 @@ class System(BaseModel):
                 "metadata": {"pool_count": 3, "zfs_version": "2.1.0"},
             }
         }
-

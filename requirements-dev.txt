@@ -4,8 +4,14 @@
 # Development dependencies
 pytest>=7.0.0
 pytest-cov>=4.0.0
+pytest-benchmark>=4.0.0  # Performance benchmarking
+httpx>=0.25.0  # Required for FastAPI TestClient
 black>=23.0.0
 ruff>=0.1.0
 mypy>=1.0.0
 types-PyYAML>=6.0.0
+
+# Security and dependency checking
+bandit>=1.7.5  # Security scanning
+pip-audit>=2.6.0  # Dependency vulnerability checking
 

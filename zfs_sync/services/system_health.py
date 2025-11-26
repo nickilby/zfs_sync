@@ -1,7 +1,7 @@
 """Service for monitoring system health and connectivity."""
 
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -22,7 +22,7 @@ class SystemHealthService:
         self.system_repo = SystemRepository(db)
         self.settings = get_settings()
 
-    def record_heartbeat(self, system_id: UUID, metadata: Optional[Dict] = None) -> Dict[str, any]:
+    def record_heartbeat(self, system_id: UUID, metadata: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Record a heartbeat from a system.
 
@@ -30,14 +30,17 @@ class SystemHealthService:
         """
         system = self.system_repo.get(system_id)
         if not system:
-            raise ValueError(f"System {system_id} not found")
+            raise ValueError(
+                f"System '{system_id}' not found. "
+                f"Cannot record heartbeat for non-existent system."
+            )
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         self.system_repo.update(
             system_id,
             last_seen=now,
             connectivity_status="online",
-            metadata=metadata or {},
+            extra_metadata=metadata or {},
         )
 
         logger.debug(f"Heartbeat recorded for system {system_id}")
@@ -48,7 +51,7 @@ class SystemHealthService:
             "status": "online",
         }
 
-    def check_system_health(self, system_id: UUID) -> Dict[str, any]:
+    def check_system_health(self, system_id: UUID) -> Dict[str, Any]:
         """
         Check the health status of a system.
 
@@ -56,9 +59,12 @@ class SystemHealthService:
         """
         system = self.system_repo.get(system_id)
         if not system:
-            raise ValueError(f"System {system_id} not found")
+            raise ValueError(
+                f"System '{system_id}' not found. "
+                f"Cannot record heartbeat for non-existent system."
+            )
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         timeout_seconds = self.settings.heartbeat_timeout_seconds
 
         # Determine if system is online based on last_seen
@@ -85,7 +91,7 @@ class SystemHealthService:
             "is_healthy": is_online,
         }
 
-    def get_all_systems_health(self) -> List[Dict[str, any]]:
+    def get_all_systems_health(self) -> List[Dict[str, Any]]:
         """Get health status for all systems."""
         systems = self.system_repo.get_all()
         health_statuses = []
@@ -107,13 +113,12 @@ class SystemHealthService:
 
         return health_statuses
 
-    def get_offline_systems(self) -> List[Dict[str, any]]:
+    def get_offline_systems(self) -> List[Dict[str, Any]]:
         """Get list of systems that are currently offline."""
         all_health = self.get_all_systems_health()
         return [h for h in all_health if h.get("status") == "offline"]
 
-    def get_online_systems(self) -> List[Dict[str, any]]:
+    def get_online_systems(self) -> List[Dict[str, Any]]:
         """Get list of systems that are currently online."""
         all_health = self.get_all_systems_health()
         return [h for h in all_health if h.get("status") == "online"]
-

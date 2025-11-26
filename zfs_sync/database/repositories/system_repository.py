@@ -1,7 +1,6 @@
 """Repository for System operations."""
 
 from typing import List, Optional
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -28,3 +27,21 @@ class SystemRepository(BaseRepository[SystemModel]):
         """Get all online systems."""
         return self.db.query(SystemModel).filter(SystemModel.connectivity_status == "online").all()
 
+    def get_by_ssh_hostname(self, ssh_hostname: str) -> Optional[SystemModel]:
+        """Get a system by SSH hostname."""
+        return self.db.query(SystemModel).filter(SystemModel.ssh_hostname == ssh_hostname).first()
+
+    def has_complete_ssh_config(self, system_id: str) -> bool:
+        """
+        Check if a system has complete SSH configuration.
+
+        Args:
+            system_id: UUID of the system to check
+
+        Returns:
+            True if system has ssh_hostname configured, False otherwise
+        """
+        system = self.get(system_id)
+        if not system:
+            return False
+        return system.ssh_hostname is not None and system.ssh_hostname != ""

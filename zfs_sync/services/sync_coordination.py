@@ -1,12 +1,12 @@
 """Service for coordinating snapshot synchronization across systems."""
 
-from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from zfs_sync.database.models import SyncGroupModel, SyncStateModel
+from zfs_sync.database.models import SyncStateModel
 from zfs_sync.database.repositories import (
     SnapshotRepository,
     SyncGroupRepository,
@@ -16,6 +16,7 @@ from zfs_sync.database.repositories import (
 from zfs_sync.logging_config import get_logger
 from zfs_sync.models import SyncStatus
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
+from zfs_sync.services.ssh_command_generator import SSHCommandGenerator
 
 logger = get_logger(__name__)
 
@@ -32,7 +33,7 @@ class SyncCoordinationService:
         self.system_repo = SystemRepository(db)
         self.comparison_service = SnapshotComparisonService(db)
 
-    def detect_sync_mismatches(self, sync_group_id: UUID) -> List[Dict[str, any]]:
+    def detect_sync_mismatches(self, sync_group_id: UUID) -> List[Dict[str, Any]]:
         """
         Detect snapshot mismatches for a sync group.
 
@@ -44,7 +45,10 @@ class SyncCoordinationService:
 
         sync_group = self.sync_group_repo.get(sync_group_id)
         if not sync_group:
-            raise ValueError(f"Sync group {sync_group_id} not found")
+            raise ValueError(
+                f"Sync group '{sync_group_id}' not found. "
+                f"Cannot detect sync mismatches for non-existent sync group."
+            )
 
         if not sync_group.enabled:
             logger.info(f"Sync group {sync_group_id} is disabled")
@@ -85,7 +89,9 @@ class SyncCoordinationService:
                                     "target_system_id": str(system_id),
                                     "missing_snapshot": missing_snapshot,
                                     "source_system_ids": [str(sid) for sid in source_systems],
-                                    "priority": self._calculate_priority(missing_snapshot, comparison),
+                                    "priority": self._calculate_priority(
+                                        missing_snapshot, comparison
+                                    ),
                                 }
                             )
 
@@ -93,7 +99,7 @@ class SyncCoordinationService:
 
     def determine_sync_actions(
         self, sync_group_id: UUID, system_id: Optional[UUID] = None
-    ) -> List[Dict[str, any]]:
+    ) -> List[Dict[str, Any]]:
         """
         Determine sync actions needed for a sync group or specific system.
 
@@ -109,6 +115,58 @@ class SyncCoordinationService:
 
         actions = []
         for mismatch in mismatches:
+            source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
+            target_system_id = UUID(mismatch["target_system_id"])
+
+            # Get source system for SSH details
+            source_system = self.system_repo.get(source_system_id)
+            if not source_system:
+                logger.warning(f"Source system {source_system_id} not found, skipping action")
+                continue
+
+            # Find snapshot_id from source system
+            snapshot_id = self._find_snapshot_id(
+                pool=mismatch["pool"],
+                dataset=mismatch["dataset"],
+                snapshot_name=mismatch["missing_snapshot"],
+                system_id=source_system_id,
+            )
+
+            # Check if incremental send is possible
+            incremental_base = self._find_incremental_base(
+                pool=mismatch["pool"],
+                dataset=mismatch["dataset"],
+                target_system_id=target_system_id,
+                source_system_id=source_system_id,
+            )
+            is_incremental = incremental_base is not None
+
+            # Generate sync command if SSH details are available
+            sync_command = None
+            if source_system.ssh_hostname:
+                try:
+                    if is_incremental and incremental_base:
+                        sync_command = SSHCommandGenerator.generate_incremental_sync_command(
+                            pool=mismatch["pool"],
+                            dataset=mismatch["dataset"],
+                            snapshot_name=mismatch["missing_snapshot"],
+                            incremental_base=incremental_base,
+                            ssh_hostname=source_system.ssh_hostname,
+                            ssh_user=source_system.ssh_user,
+                            ssh_port=source_system.ssh_port,
+                        )
+                    else:
+                        sync_command = SSHCommandGenerator.generate_full_sync_command(
+                            pool=mismatch["pool"],
+                            dataset=mismatch["dataset"],
+                            snapshot_name=mismatch["missing_snapshot"],
+                            ssh_hostname=source_system.ssh_hostname,
+                            ssh_user=source_system.ssh_user,
+                            ssh_port=source_system.ssh_port,
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to generate sync command: {e}")
+
             action = {
                 "action_type": "sync_snapshot",
                 "sync_group_id": mismatch["sync_group_id"],
@@ -117,13 +175,20 @@ class SyncCoordinationService:
                 "target_system_id": mismatch["target_system_id"],
                 "source_system_id": mismatch["source_system_ids"][0],  # Use first available
                 "snapshot_name": mismatch["missing_snapshot"],
+                "snapshot_id": str(snapshot_id) if snapshot_id else None,
                 "priority": mismatch["priority"],
                 "estimated_size": self._estimate_snapshot_size(
                     mismatch["pool"],
                     mismatch["dataset"],
                     mismatch["missing_snapshot"],
-                    UUID(mismatch["source_system_ids"][0]),
+                    source_system_id,
                 ),
+                "source_ssh_hostname": source_system.ssh_hostname,
+                "source_ssh_user": source_system.ssh_user,
+                "source_ssh_port": source_system.ssh_port,
+                "sync_command": sync_command,
+                "incremental_base": incremental_base,
+                "is_incremental": is_incremental,
             }
             actions.append(action)
 
@@ -134,7 +199,7 @@ class SyncCoordinationService:
 
     def get_sync_instructions(
         self, system_id: UUID, sync_group_id: Optional[UUID] = None
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Get sync instructions for a system.
 
@@ -163,7 +228,7 @@ class SyncCoordinationService:
 
         return {
             "system_id": str(system_id),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "actions": all_actions,
             "action_count": len(all_actions),
             "sync_groups": [str(g.id) for g in sync_groups if g],
@@ -196,9 +261,9 @@ class SyncCoordinationService:
         if existing:
             # Update existing
             existing.status = status.value
-            existing.last_check = datetime.utcnow()
+            existing.last_check = datetime.now(timezone.utc)
             if status == SyncStatus.IN_SYNC:
-                existing.last_sync = datetime.utcnow()
+                existing.last_sync = datetime.now(timezone.utc)
             if error_message:
                 existing.error_message = error_message
             else:
@@ -213,11 +278,11 @@ class SyncCoordinationService:
                 snapshot_id=snapshot_id,
                 system_id=system_id,
                 status=status.value,
-                last_check=datetime.utcnow(),
+                last_check=datetime.now(timezone.utc),
                 error_message=error_message,
             )
 
-    def get_sync_status_summary(self, sync_group_id: UUID) -> Dict[str, any]:
+    def get_sync_status_summary(self, sync_group_id: UUID) -> Dict[str, Any]:
         """
         Get a summary of sync status for a sync group.
 
@@ -239,9 +304,7 @@ class SyncCoordinationService:
             "syncing_count": status_counts.get("syncing", 0),
             "conflict_count": status_counts.get("conflict", 0),
             "error_count": status_counts.get("error", 0),
-            "last_updated": max(
-                (s.last_check for s in sync_states if s.last_check), default=None
-            ),
+            "last_updated": max((s.last_check for s in sync_states if s.last_check), default=None),
         }
 
     def _get_datasets_for_systems(self, system_ids: List[UUID]) -> List[Tuple[str, str]]:
@@ -279,7 +342,11 @@ class SyncCoordinationService:
         # If it's the latest snapshot, increase priority
         latest_snapshots = comparison.get("latest_snapshots", {})
         for system_id_str, latest_info in latest_snapshots.items():
-            if latest_info.get("name", "").endswith(snapshot_name):
+            # Extract snapshot name from full name (e.g., "tank/data@snapshot-20240115" -> "snapshot-20240115")
+            latest_snapshot_name = self.comparison_service._extract_snapshot_name(
+                latest_info.get("name", "")
+            )
+            if latest_snapshot_name == snapshot_name:
                 priority += 20
                 break
 
@@ -293,6 +360,26 @@ class SyncCoordinationService:
 
         return priority
 
+    def _find_snapshot_id(
+        self, pool: str, dataset: str, snapshot_name: str, system_id: UUID
+    ) -> Optional[UUID]:
+        """
+        Find snapshot_id for a given snapshot name on a system.
+
+        Returns the snapshot ID if found, None otherwise.
+        """
+        snapshots = self.snapshot_repo.get_by_pool_dataset(
+            pool=pool, dataset=dataset, system_id=system_id
+        )
+        for snapshot in snapshots:
+            if self.comparison_service._extract_snapshot_name(snapshot.name) == snapshot_name:
+                return snapshot.id
+        logger.warning(
+            f"Could not find snapshot_id for {snapshot_name} on system {system_id} "
+            f"for {pool}/{dataset}"
+        )
+        return None
+
     def _estimate_snapshot_size(
         self, pool: str, dataset: str, snapshot_name: str, source_system_id: UUID
     ) -> Optional[int]:
@@ -305,3 +392,45 @@ class SyncCoordinationService:
                 return snapshot.size
         return None
 
+    def _find_incremental_base(
+        self,
+        pool: str,
+        dataset: str,
+        target_system_id: UUID,
+        source_system_id: UUID,
+    ) -> Optional[str]:
+        """
+        Find a common base snapshot for incremental send.
+
+        Returns the snapshot name that exists on both systems and can serve as base,
+        or None if no common base is found (full send required).
+        """
+        # Get all snapshots from both systems
+        target_snapshots = self.snapshot_repo.get_by_pool_dataset(
+            pool=pool, dataset=dataset, system_id=target_system_id
+        )
+        source_snapshots = self.snapshot_repo.get_by_pool_dataset(
+            pool=pool, dataset=dataset, system_id=source_system_id
+        )
+
+        # Extract snapshot names (without pool/dataset prefix)
+        target_names = {
+            self.comparison_service._extract_snapshot_name(s.name): s.timestamp
+            for s in target_snapshots
+        }
+        source_names = {
+            self.comparison_service._extract_snapshot_name(s.name): s.timestamp
+            for s in source_snapshots
+        }
+
+        # Find common snapshots, sorted by timestamp (most recent first)
+        common_snapshots = [
+            (name, timestamp) for name, timestamp in target_names.items() if name in source_names
+        ]
+        common_snapshots.sort(key=lambda x: x[1], reverse=True)
+
+        # Return the most recent common snapshot if any exist
+        if common_snapshots:
+            return common_snapshots[0][0]
+
+        return None

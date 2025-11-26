@@ -1,6 +1,6 @@
 """Repository for SyncState operations."""
 
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -26,9 +26,7 @@ class SyncStateRepository(BaseRepository[SyncStateModel]):
 
     def get_by_snapshot(self, snapshot_id: UUID) -> List[SyncStateModel]:
         """Get all sync states for a snapshot."""
-        return (
-            self.db.query(SyncStateModel).filter(SyncStateModel.snapshot_id == snapshot_id).all()
-        )
+        return self.db.query(SyncStateModel).filter(SyncStateModel.snapshot_id == snapshot_id).all()
 
     def get_by_system(self, system_id: UUID) -> List[SyncStateModel]:
         """Get all sync states for a system."""
@@ -37,4 +35,3 @@ class SyncStateRepository(BaseRepository[SyncStateModel]):
     def get_by_status(self, status: str) -> List[SyncStateModel]:
         """Get all sync states with a specific status."""
         return self.db.query(SyncStateModel).filter(SyncStateModel.status == status).all()
-

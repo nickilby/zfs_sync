@@ -1,10 +1,10 @@
 """Sync state API schemas."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from zfs_sync.models import SyncStatus
 
@@ -20,14 +20,23 @@ class SyncStateResponse(BaseModel):
     last_sync: Optional[datetime] = None
     last_check: Optional[datetime] = None
     error_message: Optional[str] = None
-    metadata: dict = Field(default_factory=dict)
+    metadata: Optional[dict] = Field(default_factory=dict, alias="extra_metadata")
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, v):
+        """Convert None to empty dict for metadata."""
+        if v is None:
+            return {}
+        return v if isinstance(v, dict) else {}
 
     class Config:
         """Pydantic configuration."""
 
         from_attributes = True
+        populate_by_name = True
 
 
 class SyncActionResponse(BaseModel):
@@ -40,8 +49,23 @@ class SyncActionResponse(BaseModel):
     target_system_id: str = Field(..., description="System that needs the snapshot")
     source_system_id: str = Field(..., description="System that has the snapshot")
     snapshot_name: str = Field(..., description="Name of snapshot to sync")
+    snapshot_id: Optional[str] = Field(
+        None, description="Snapshot ID from source system (for sync state updates)"
+    )
     priority: int = Field(..., description="Priority of this action (higher = more important)")
     estimated_size: Optional[int] = Field(None, description="Estimated size in bytes")
+    source_ssh_hostname: Optional[str] = Field(
+        None, description="SSH hostname/IP for source system"
+    )
+    source_ssh_user: Optional[str] = Field(None, description="SSH username for source system")
+    source_ssh_port: int = Field(default=22, description="SSH port for source system")
+    sync_command: Optional[str] = Field(
+        None, description="Ready-to-execute sync command (SSH send piped to local receive)"
+    )
+    incremental_base: Optional[str] = Field(
+        None, description="Base snapshot name for incremental send (if applicable)"
+    )
+    is_incremental: bool = Field(default=False, description="Whether this is an incremental send")
 
 
 class SyncStatusSummary(BaseModel):
@@ -56,4 +80,3 @@ class SyncStatusSummary(BaseModel):
     conflict_count: int
     error_count: int
     last_updated: Optional[datetime] = None
-

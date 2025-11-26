@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SnapshotBase(BaseModel):
@@ -17,7 +17,17 @@ class SnapshotBase(BaseModel):
     size: Optional[int] = Field(None, description="Size of the snapshot in bytes")
     referenced: Optional[int] = Field(None, description="Referenced size in bytes")
     used: Optional[int] = Field(None, description="Used space in bytes")
-    metadata: dict = Field(default_factory=dict, description="Additional metadata")
+    metadata: Optional[dict] = Field(
+        default_factory=dict, alias="extra_metadata", description="Additional metadata"
+    )
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, v):
+        """Convert None to empty dict for metadata."""
+        if v is None:
+            return {}
+        return v if isinstance(v, dict) else {}
 
 
 class SnapshotCreate(SnapshotBase):
@@ -38,4 +48,4 @@ class SnapshotResponse(SnapshotBase):
         """Pydantic configuration."""
 
         from_attributes = True
-
+        populate_by_name = True
