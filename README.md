@@ -243,6 +243,155 @@ make docker-down
 - Use **Docker** to verify the containerized deployment works correctly
 - Both approaches are supported and can be used interchangeably
 
+### Production Deployment
+
+The application is production-ready with Docker and includes security best practices, health checks, and resource management.
+
+#### Quick Start (Development/Testing with SQLite)
+
+For development or small deployments using SQLite:
+
+```bash
+# Build and start the container
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Check health
+curl http://localhost:8000/api/v1/health
+
+# Stop the container
+docker-compose down
+```
+
+#### Production Deployment (with PostgreSQL)
+
+For production deployments, use the production override file which includes PostgreSQL:
+
+```bash
+# Set PostgreSQL password (required)
+export POSTGRES_PASSWORD=your-secure-password-here
+
+# Set secret key for JWT/session management (recommended)
+export ZFS_SYNC_SECRET_KEY=your-secret-key-here
+
+# Build and start with production configuration
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# View logs
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+
+# Stop
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+```
+
+#### Production Features
+
+The production Docker setup includes:
+
+- **Multi-stage build**: Optimized image size with separate build and runtime stages
+- **Non-root user**: Application runs as dedicated `zfssync` user (UID 1000) for security
+- **Health checks**: Built-in health monitoring with automatic restart on failure
+- **Resource limits**: CPU and memory limits to prevent resource exhaustion
+- **Logging**: Structured JSON logging with rotation (50MB files, 5 files retained)
+- **PostgreSQL support**: Optional PostgreSQL database for production workloads
+- **Volume persistence**: Data, logs, and configuration persisted via Docker volumes
+- **Restart policies**: Automatic restart on failure (`unless-stopped`)
+
+#### Configuration
+
+Configuration can be provided via:
+
+1. **Environment variables** (recommended for production):
+   ```bash
+   export ZFS_SYNC_DATABASE_URL=postgresql://user:pass@host:5432/db
+   export ZFS_SYNC_LOG_LEVEL=INFO
+   export ZFS_SYNC_SECRET_KEY=your-secret-key
+   ```
+
+2. **Config file** (mounted as volume):
+   - Place `zfs_sync.yaml` in the `./config` directory
+   - It will be automatically loaded by the application
+
+3. **Docker Compose environment variables**:
+   - Edit `docker-compose.yml` or `docker-compose.prod.yml`
+   - Set environment variables in the `environment` section
+
+#### Data Persistence
+
+Important data is persisted via Docker volumes:
+
+- **Database**: `./data` directory (SQLite) or PostgreSQL volume (production)
+- **Logs**: `./logs` directory
+- **Configuration**: `./config` directory (read-only mount)
+
+**Backup Recommendations:**
+
+- Regularly backup the `./data` directory for SQLite deployments
+- Use PostgreSQL backup tools (`pg_dump`) for production deployments
+- Consider automated backup solutions for production environments
+
+#### Security Considerations
+
+1. **Secrets Management**: Never commit secrets to version control. Use:
+   - Environment variables
+   - Docker secrets (Docker Swarm)
+   - External secret management (HashiCorp Vault, AWS Secrets Manager, etc.)
+
+2. **Network Security**: 
+   - Use reverse proxy (nginx, Traefik) with TLS/SSL termination
+   - Restrict container network access
+   - Use firewall rules to limit access to port 8000
+
+3. **Database Security**:
+   - Use strong PostgreSQL passwords
+   - Enable SSL/TLS for database connections
+   - Restrict database network access
+
+4. **Container Security**:
+   - Regularly update base images
+   - Scan images for vulnerabilities
+   - Run as non-root user (already configured)
+
+#### Monitoring
+
+The container includes health checks that can be monitored:
+
+```bash
+# Check container health status
+docker ps
+
+# View health check logs
+docker inspect zfs-sync | grep -A 10 Health
+
+# Manual health check
+curl http://localhost:8000/api/v1/health
+```
+
+#### Troubleshooting
+
+**Container won't start:**
+```bash
+# Check logs
+docker-compose logs zfs-sync
+
+# Check container status
+docker ps -a
+
+# Verify volumes are mounted correctly
+docker inspect zfs-sync | grep -A 20 Mounts
+```
+
+**Database connection issues:**
+- Verify `ZFS_SYNC_DATABASE_URL` is correct
+- For PostgreSQL, ensure the database service is healthy: `docker-compose ps postgres`
+- Check database logs: `docker-compose logs postgres`
+
+**Permission issues:**
+- The container runs as UID 1000. Ensure mounted volumes have correct permissions
+- For data directory: `chown -R 1000:1000 ./data ./logs`
+
 ### Recommended First Steps
 
 1. Choose a programming language based on team expertise and requirements ✓ (Python selected)

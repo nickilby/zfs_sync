@@ -7,45 +7,79 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+*.egg
 
 # Virtual environments
 venv/
 env/
 ENV/
-.venv
+.venv/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+*.cover
+.hypothesis/
 
-# Environment variables
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+zfs_sync.db
+
+# Environment files
 .env
 .env.local
+.env.*.local
 
 # Git
 .git/
 .gitignore
+.gitattributes
 
 # Documentation
 *.md
 !README.md
-
-# Logs and data (will be mounted as volumes)
-*.log
-logs/
-*.db
-*.sqlite
-data/
+docs/
 
 # Docker
-Dockerfile
-docker-compose.yml
+Dockerfile*
+docker-compose*.yml
 .dockerignore
 
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+test_*.py
+*.test.py
+setup.sh
+Makefile
+pyproject.toml
+requirements-dev.txt
+
+# Data directories (will be mounted as volumes)
+data/
+config/zfs_sync.yaml
+config/zfs_sync.yml
+config/zfs_sync.toml

@@ -2,12 +2,14 @@ version: '3.8'
 
 services:
   zfs-sync:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: zfs-sync
     ports:
       - "8000:8000"
     volumes:
-      # Mount config directory
+      # Mount config directory (read-only)
       - ./config:/config:ro
       # Mount logs directory
       - ./logs:/logs
@@ -19,6 +21,25 @@ services:
       - ZFS_SYNC_DATABASE_URL=sqlite:////data/zfs_sync.db
       - ZFS_SYNC_LOG_LEVEL=INFO
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - zfs-sync-network
 

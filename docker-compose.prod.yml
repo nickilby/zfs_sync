@@ -1,0 +1,83 @@
+version: '3.8'
+
+# Production override file
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  zfs-sync:
+    # Production environment variables
+    environment:
+      - ZFS_SYNC_HOST=0.0.0.0
+      - ZFS_SYNC_PORT=8000
+      - ZFS_SYNC_DATABASE_URL=postgresql://zfssync:${POSTGRES_PASSWORD:-changeme}@postgres:5432/zfssync
+      - ZFS_SYNC_LOG_LEVEL=INFO
+      - ZFS_SYNC_DEBUG=false
+      # Set secret key via environment variable in production
+      # - ZFS_SYNC_SECRET_KEY=${ZFS_SYNC_SECRET_KEY}
+    # Stricter resource limits for production
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    # Production logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+        compress: "true"
+    # Dependencies
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # PostgreSQL database for production
+  postgres:
+    image: postgres:15-alpine
+    container_name: zfs-sync-postgres
+    environment:
+      - POSTGRES_USER=zfssync
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=zfssync
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zfssync"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zfs-sync-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  zfs-sync-network:
+    driver: bridge
+    # Optional: Use external network for production
+    # external: true
+    # name: production-network
+
+
