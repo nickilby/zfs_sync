@@ -257,7 +257,7 @@ For development or small deployments using SQLite:
 ```bash
 # Create persistent data directory (required, one-time setup)
 sudo mkdir -p /var/lib/zfs-sync
-sudo chown -R 1000:1000 /var/lib/zfs-sync
+sudo chown -R 1001:1001 /var/lib/zfs-sync
 sudo chmod 755 /var/lib/zfs-sync
 
 # Build and start the container
@@ -301,7 +301,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
 The production Docker setup includes:
 
 - **Multi-stage build**: Optimized image size with separate build and runtime stages
-- **Non-root user**: Application runs as dedicated `zfssync` user (UID 1000) for security
+- **Non-root user**: Application runs as dedicated `zfssync` user (UID 1001) for security
 - **Health checks**: Built-in health monitoring with automatic restart on failure
 - **Resource limits**: CPU and memory limits to prevent resource exhaustion
 - **Logging**: Structured JSON logging with rotation (50MB files, 5 files retained)
@@ -357,14 +357,14 @@ The application uses platform-specific default database locations:
 
 **Permissions Setup (Required for Docker):**
 
-The `/var/lib/zfs-sync` directory must exist and be writable by the container user (UID 1000):
+The `/var/lib/zfs-sync` directory must exist and be writable by the container user (UID 1001):
 
 ```bash
 # Create the directory
 sudo mkdir -p /var/lib/zfs-sync
 
-# Set ownership to UID 1000 (zfssync user in container)
-sudo chown -R 1000:1000 /var/lib/zfs-sync
+# Set ownership to UID 1001 (zfssync user in container)
+sudo chown -R 1001:1001 /var/lib/zfs-sync
 
 # Set appropriate permissions
 sudo chmod 755 /var/lib/zfs-sync
@@ -379,8 +379,8 @@ For Ansible playbooks, include the following tasks to set up the persistent data
   file:
     path: /var/lib/zfs-sync
     state: directory
-    owner: "1000"
-    group: "1000"
+    owner: "1001"
+    group: "1001"
     mode: "0755"
 
 - name: Ensure zfs-sync data directory persists
@@ -445,7 +445,7 @@ If you see errors like `no such column: sync_groups.description` or `no such col
 
 ```bash
 # 1. Fix permissions first
-sudo chown -R 1000:1000 /var/lib/zfs-sync
+sudo chown -R 1001:1001 /var/lib/zfs-sync
 sudo chmod 755 /var/lib/zfs-sync
 
 # 2. Backup existing database (optional, if you want to keep a copy)
@@ -466,14 +466,14 @@ If you need to preserve existing data, you can use Alembic migrations (see Datab
 
 **Database Permissions Issues:**
 
-If the database file is owned by a different user (e.g., `headhoncho:headhoncho` instead of UID 1000):
+If the database file is owned by a different user (e.g., `username:username` instead of UID 1001):
 
 ```bash
 # Check current ownership
 ls -lah /var/lib/zfs-sync/
 
-# Fix ownership to match container user (UID 1000)
-sudo chown -R 1000:1000 /var/lib/zfs-sync
+# Fix ownership to match container user (UID 1001)
+sudo chown -R 1001:1001 /var/lib/zfs-sync
 sudo chmod 755 /var/lib/zfs-sync
 ```
 
@@ -503,7 +503,7 @@ docker inspect zfs-sync | grep -A 20 Mounts
   
   # Fix permissions if needed
   sudo mkdir -p /var/lib/zfs-sync
-  sudo chown -R 1000:1000 /var/lib/zfs-sync
+  sudo chown -R 1001:1001 /var/lib/zfs-sync
   sudo chmod 755 /var/lib/zfs-sync
   ```
 
@@ -520,8 +520,8 @@ For most deployments, recreating the database (as shown above) is simpler and re
 
 **Permission issues:**
 
-- The container runs as UID 1000. Ensure mounted volumes have correct permissions
-- For data directory: `sudo chown -R 1000:1000 /var/lib/zfs-sync`
+- The container runs as UID 1001. Ensure mounted volumes have correct permissions
+- For data directory: `sudo chown -R 1001:1001 /var/lib/zfs-sync`
 - Check container user: `docker exec zfs-sync id`
 
 ### Recommended First Steps

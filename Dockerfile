@@ -27,8 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN groupadd -r zfssync && useradd -r -g zfssync -u 1000 zfssync
+# Create non-root user for security (UID/GID 1001 to match host user)
+RUN groupadd -r -g 1001 zfssync && useradd -r -g zfssync -u 1001 zfssync
 
 # Copy Python dependencies from builder
 COPY --from=builder /root/.local /home/zfssync/.local
