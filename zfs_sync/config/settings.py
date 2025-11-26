@@ -19,7 +19,7 @@ except ImportError:
 def get_default_database_url() -> str:
     """Get default database URL based on platform."""
     system = platform.system().lower()
-    
+
     if system == "linux":
         # Linux: Use persistent system directory
         return "sqlite:////var/lib/zfs-sync/zfs_sync.db"
