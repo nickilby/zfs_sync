@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = Field(default="zfs-sync", description="Application name")
-    app_version: str = Field(default="0.1.9", description="Application version")
+    app_version: str = Field(default="0.1.10", description="Application version")
     debug: bool = Field(default=False, description="Enable debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
 
