@@ -6,7 +6,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from zfs_sync.api.schemas.sync import SyncStateResponse, SyncActionResponse, SyncStatusSummary
+from zfs_sync.api.schemas.sync import (
+    SyncStateResponse,
+    SyncActionResponse,
+    SyncStatusSummary,
+    SyncInstructionsResponse,
+)
 from zfs_sync.database import get_db
 from zfs_sync.database.repositories import SyncStateRepository
 from zfs_sync.logging_config import get_logger
@@ -63,24 +68,16 @@ async def get_sync_actions(
     return [SyncActionResponse(**action) for action in actions]
 
 
-@router.get("/sync/instructions/{system_id}")
+@router.get("/sync/instructions/{system_id}", response_model=SyncInstructionsResponse)
 async def get_sync_instructions(
     system_id: UUID,
     sync_group_id: Optional[UUID] = Query(None, description="Filter by sync group"),
-    include_commands: bool = Query(True, description="Include ready-to-execute sync commands"),
     db: Session = Depends(get_db),
 ):
-    """Get sync instructions for a system."""
+    """Get sync instructions for a system (dataset-grouped format)."""
     service = SyncCoordinationService(db)
     instructions = service.get_sync_instructions(system_id=system_id, sync_group_id=sync_group_id)
-
-    # If include_commands is False, remove sync_command from actions
-    if not include_commands and "actions" in instructions:
-        for action in instructions.get("actions", []):
-            if isinstance(action, dict) and "sync_command" in action:
-                action.pop("sync_command", None)
-
-    return instructions
+    return SyncInstructionsResponse(**instructions)
 
 
 @router.post("/sync/states", response_model=SyncStateResponse, status_code=status.HTTP_201_CREATED)

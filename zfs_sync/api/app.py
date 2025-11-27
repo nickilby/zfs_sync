@@ -69,11 +69,35 @@ async def startup_event():
     init_db()
     logger.info("Database initialized")
 
+    # Start sync scheduler if enabled
+    if settings.auto_sync_enabled:
+        try:
+            from zfs_sync.services.sync_scheduler import SyncSchedulerService
+
+            scheduler = SyncSchedulerService()
+            await scheduler.start_scheduler()
+            # Store scheduler instance in app state for shutdown
+            app.state.sync_scheduler = scheduler
+            logger.info("Sync scheduler started")
+        except Exception as e:
+            logger.error(f"Failed to start sync scheduler: {e}", exc_info=True)
+    else:
+        logger.info("Automatic sync is disabled")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
     logger.info(f"Shutting down {settings.app_name}")
+
+    # Stop sync scheduler if it was started
+    if hasattr(app.state, "sync_scheduler"):
+        try:
+            scheduler = app.state.sync_scheduler
+            await scheduler.stop_scheduler()
+            logger.info("Sync scheduler stopped")
+        except Exception as e:
+            logger.error(f"Error stopping sync scheduler: {e}", exc_info=True)
 
 
 # Import routes (must be after app creation)

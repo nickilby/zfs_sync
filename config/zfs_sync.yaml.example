@@ -3,7 +3,7 @@
 
 # Application settings
 app_name: "zfs-sync"
-app_version: "0.1.16"
+app_version: "0.1.18"
 debug: false
 log_level: "INFO"
 
@@ -34,4 +34,9 @@ api_key_length: 32
 # Sync settings
 default_sync_interval_seconds: 3600  # 1 hour
 heartbeat_timeout_seconds: 300  # 5 minutes
+
+# Sync automation
+sync_check_interval_seconds: 300  # Check every 5 minutes
+auto_sync_enabled: true
+incremental_sync_only: true  # Only auto-sync incremental snapshots
 

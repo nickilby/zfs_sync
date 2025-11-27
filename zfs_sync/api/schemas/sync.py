@@ -80,3 +80,30 @@ class SyncStatusSummary(BaseModel):
     conflict_count: int
     error_count: int
     last_updated: Optional[datetime] = None
+
+
+class DatasetSyncInstruction(BaseModel):
+    """Schema for a dataset sync instruction."""
+
+    pool: str = Field(..., description="Source ZFS pool name")
+    dataset: str = Field(..., description="Source ZFS dataset name")
+    target_pool: str = Field(..., description="Target ZFS pool name")
+    target_dataset: str = Field(..., description="Target ZFS dataset name")
+    starting_snapshot: Optional[str] = Field(
+        None, description="Starting snapshot name (incremental base, None for full sync)"
+    )
+    ending_snapshot: str = Field(..., description="Ending snapshot name (latest to sync)")
+    source_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for source system")
+    target_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for target system")
+    sync_group_id: str = Field(..., description="Sync group ID")
+
+
+class SyncInstructionsResponse(BaseModel):
+    """Schema for sync instructions response (dataset-grouped format)."""
+
+    system_id: str = Field(..., description="System ID requesting instructions")
+    timestamp: str = Field(..., description="Timestamp of instruction generation")
+    datasets: List[DatasetSyncInstruction] = Field(
+        ..., description="List of dataset sync instructions"
+    )
+    dataset_count: int = Field(..., description="Number of datasets requiring sync")

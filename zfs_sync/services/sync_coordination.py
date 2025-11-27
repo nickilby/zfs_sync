@@ -98,7 +98,10 @@ class SyncCoordinationService:
         return mismatches
 
     def determine_sync_actions(
-        self, sync_group_id: UUID, system_id: Optional[UUID] = None
+        self,
+        sync_group_id: UUID,
+        system_id: Optional[UUID] = None,
+        incremental_only: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Determine sync actions needed for a sync group or specific system.
@@ -140,6 +143,14 @@ class SyncCoordinationService:
                 source_system_id=source_system_id,
             )
             is_incremental = incremental_base is not None
+
+            # Filter out full syncs if incremental_only is True
+            if incremental_only and not is_incremental:
+                logger.debug(
+                    f"Skipping full sync for {mismatch['pool']}/{mismatch['dataset']}@{mismatch['missing_snapshot']} "
+                    f"(incremental_only=True)"
+                )
+                continue
 
             # Generate sync command if SSH details are available
             sync_command = None
@@ -203,7 +214,7 @@ class SyncCoordinationService:
         """
         Get sync instructions for a system.
 
-        Returns instructions for what snapshots need to be synced.
+        Returns dataset-grouped instructions for what snapshots need to be synced.
         """
         logger.info(f"Getting sync instructions for system {system_id}")
 
@@ -220,18 +231,19 @@ class SyncCoordinationService:
                 and group.enabled
             ]
 
-        all_actions = []
+        all_datasets = []
         for group in sync_groups:
             if group:
-                actions = self.determine_sync_actions(group.id, system_id=system_id)
-                all_actions.extend(actions)
+                dataset_result = self.generate_dataset_sync_instructions(
+                    sync_group_id=group.id, system_id=system_id, incremental_only=True
+                )
+                all_datasets.extend(dataset_result.get("datasets", []))
 
         return {
             "system_id": str(system_id),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "actions": all_actions,
-            "action_count": len(all_actions),
-            "sync_groups": [str(g.id) for g in sync_groups if g],
+            "datasets": all_datasets,
+            "dataset_count": len(all_datasets),
         }
 
     def update_sync_state(
@@ -434,3 +446,185 @@ class SyncCoordinationService:
             return common_snapshots[0][0]
 
         return None
+
+    def generate_dataset_sync_instructions(
+        self,
+        sync_group_id: UUID,
+        system_id: Optional[UUID] = None,
+        incremental_only: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Generate dataset-grouped sync instructions for a sync group or specific system.
+
+        Groups missing snapshots by dataset and returns simplified format with
+        starting and ending snapshots for incremental range sends.
+
+        Returns a dictionary with dataset-grouped instructions.
+        """
+        logger.info(
+            f"Generating dataset sync instructions for sync group {sync_group_id}, "
+            f"system_id={system_id}, incremental_only={incremental_only}"
+        )
+
+        sync_group = self.sync_group_repo.get(sync_group_id)
+        if not sync_group:
+            raise ValueError(f"Sync group '{sync_group_id}' not found")
+
+        if not sync_group.enabled:
+            logger.info(f"Sync group {sync_group_id} is disabled")
+            return {"datasets": [], "dataset_count": 0}
+
+        # Get all systems in the sync group
+        system_ids = [assoc.system_id for assoc in sync_group.system_associations]
+
+        if len(system_ids) < 2:
+            logger.warning(f"Sync group {sync_group_id} has less than 2 systems")
+            return {"datasets": [], "dataset_count": 0}
+
+        # Filter to target system if specified
+        if system_id:
+            if system_id not in system_ids:
+                logger.warning(f"System {system_id} is not in sync group {sync_group_id}")
+                return {"datasets": [], "dataset_count": 0}
+            target_system_ids = [system_id]
+        else:
+            target_system_ids = system_ids
+
+        # Get all datasets that should be synced
+        datasets = self._get_datasets_for_systems(system_ids)
+
+        dataset_instructions = []
+
+        for pool, dataset in datasets:
+            try:
+                # Compare snapshots for this dataset
+                comparison = self.comparison_service.compare_snapshots_by_dataset(
+                    pool=pool, dataset=dataset, system_ids=system_ids
+                )
+
+                # Process each target system
+                for target_system_id in target_system_ids:
+                    target_system_id_str = str(target_system_id)
+                    missing_snapshots = comparison["missing_snapshots"].get(
+                        target_system_id_str, []
+                    )
+
+                    if not missing_snapshots:
+                        continue
+
+                    # Find source system (use first system that has the missing snapshots)
+                    source_system_id = None
+                    for sid in system_ids:
+                        if sid == target_system_id:
+                            continue
+                        # Check directly from database if this system has the missing snapshots
+                        source_snapshots = self.snapshot_repo.get_by_pool_dataset(
+                            pool=pool, dataset=dataset, system_id=sid
+                        )
+                        source_snapshot_names = {
+                            self.comparison_service._extract_snapshot_name(s.name)
+                            for s in source_snapshots
+                        }
+                        if any(name in source_snapshot_names for name in missing_snapshots):
+                            source_system_id = sid
+                            break
+
+                    if not source_system_id:
+                        logger.warning(
+                            f"No source system found for missing snapshots in {pool}/{dataset} "
+                            f"for target system {target_system_id}"
+                        )
+                        continue
+
+                    # Find starting snapshot (most recent common snapshot)
+                    starting_snapshot = self._find_incremental_base(
+                        pool=pool,
+                        dataset=dataset,
+                        target_system_id=target_system_id,
+                        source_system_id=source_system_id,
+                    )
+
+                    if incremental_only and not starting_snapshot:
+                        logger.debug(
+                            f"Skipping {pool}/{dataset} for system {target_system_id} "
+                            f"(no common base snapshot, incremental_only=True)"
+                        )
+                        continue
+
+                    # Find ending snapshot (latest missing snapshot on source)
+                    source_snapshots = self.snapshot_repo.get_by_pool_dataset(
+                        pool=pool, dataset=dataset, system_id=source_system_id
+                    )
+                    source_snapshot_names = {
+                        self.comparison_service._extract_snapshot_name(s.name): s.timestamp
+                        for s in source_snapshots
+                    }
+
+                    # Get missing snapshots that exist on source, sorted by timestamp
+                    available_missing = [
+                        (name, source_snapshot_names[name])
+                        for name in missing_snapshots
+                        if name in source_snapshot_names
+                    ]
+                    available_missing.sort(key=lambda x: x[1], reverse=True)
+
+                    if not available_missing:
+                        continue
+
+                    ending_snapshot = available_missing[0][0]
+
+                    # Get source and target systems for SSH details
+                    source_system = self.system_repo.get(source_system_id)
+                    target_system = self.system_repo.get(target_system_id)
+
+                    if not source_system or not target_system:
+                        logger.warning(f"Source or target system not found for {pool}/{dataset}")
+                        continue
+
+                    # Determine target pool/dataset (may differ from source)
+                    # For now, assume same pool/dataset structure
+                    # This could be enhanced with mapping logic
+                    target_pool = pool
+                    target_dataset = dataset
+
+                    # Update sync states to 'syncing' for all missing snapshots
+                    for missing_snap in missing_snapshots:
+                        snapshot_id = self._find_snapshot_id(
+                            pool=pool,
+                            dataset=dataset,
+                            snapshot_name=missing_snap,
+                            system_id=source_system_id,
+                        )
+                        if snapshot_id:
+                            self.update_sync_state(
+                                sync_group_id=sync_group_id,
+                                snapshot_id=snapshot_id,
+                                system_id=target_system_id,
+                                status=SyncStatus.SYNCING,
+                            )
+
+                    # Create dataset instruction
+                    dataset_instruction = {
+                        "pool": pool,
+                        "dataset": dataset,
+                        "target_pool": target_pool,
+                        "target_dataset": target_dataset,
+                        "starting_snapshot": starting_snapshot,
+                        "ending_snapshot": ending_snapshot,
+                        "source_ssh_hostname": source_system.ssh_hostname,
+                        "target_ssh_hostname": target_system.ssh_hostname,
+                        "sync_group_id": str(sync_group_id),
+                    }
+
+                    dataset_instructions.append(dataset_instruction)
+
+            except Exception as e:
+                logger.error(
+                    f"Error processing dataset {pool}/{dataset} in sync group {sync_group_id}: {e}",
+                    exc_info=True,
+                )
+
+        return {
+            "datasets": dataset_instructions,
+            "dataset_count": len(dataset_instructions),
+        }

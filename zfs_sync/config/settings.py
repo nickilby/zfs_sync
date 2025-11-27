@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     heartbeat_timeout_seconds: int = Field(
         default=300, description="Timeout for system heartbeat in seconds"
     )
+    sync_check_interval_seconds: int = Field(
+        default=300, description="How often to check for sync needs in seconds"
+    )
+    auto_sync_enabled: bool = Field(default=True, description="Enable/disable automatic sync")
+    incremental_sync_only: bool = Field(
+        default=True, description="Only process incremental syncs (default True)"
+    )
 
     # File paths
     config_file: Optional[Path] = Field(
@@ -151,6 +158,14 @@ class Settings(BaseSettings):
         """Validate heartbeat timeout is positive."""
         if v <= 0:
             raise ValueError(f"heartbeat_timeout_seconds must be positive, got {v}")
+        return v
+
+    @field_validator("sync_check_interval_seconds")
+    @classmethod
+    def validate_sync_check_interval(cls, v: int) -> int:
+        """Validate sync check interval is positive."""
+        if v <= 0:
+            raise ValueError(f"sync_check_interval_seconds must be positive, got {v}")
         return v
 
     @field_validator("host")
