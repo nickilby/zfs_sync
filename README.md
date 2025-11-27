@@ -291,6 +291,63 @@ docker-compose down
 
 **Note:** The database is stored in `/var/lib/zfs-sync/` on the host system, ensuring it persists across container updates and app refreshes.
 
+#### Running Docker Directly (Without Docker Compose)
+
+If you prefer to use Docker directly instead of docker-compose:
+
+```bash
+# 1. Create persistent data directory (required, one-time setup)
+sudo mkdir -p /var/lib/zfs-sync
+sudo chown -R 1001:1001 /var/lib/zfs-sync
+sudo chmod 755 /var/lib/zfs-sync
+
+# 2. Build the Docker image
+cd /path/to/zfs_sync
+docker build -t zfs-sync .
+
+# 3. Stop and remove existing container (if it exists)
+docker stop zfs-sync 2>/dev/null || true
+docker rm zfs-sync 2>/dev/null || true
+
+# 4. Run the container
+docker run -d \
+  --name zfs-sync \
+  -p 8000:8000 \
+  -v /var/lib/zfs-sync:/data \
+  -v /path/to/zfs_sync/config:/config:ro \
+  -v /path/to/zfs_sync/logs:/logs \
+  -e ZFS_SYNC_DATABASE_URL=sqlite:////data/zfs_sync.db \
+  -e ZFS_SYNC_HOST=0.0.0.0 \
+  -e ZFS_SYNC_PORT=8000 \
+  -e ZFS_SYNC_LOG_LEVEL=INFO \
+  --restart unless-stopped \
+  zfs-sync
+
+# 5. View logs
+docker logs -f zfs-sync
+
+# 6. Check health
+curl http://localhost:8000/api/v1/health
+
+# 7. Stop the container
+docker stop zfs-sync
+
+# 8. Remove the container
+docker rm zfs-sync
+```
+
+**Important Notes for Docker Run:**
+
+- **Database URL**: You **must** set `ZFS_SYNC_DATABASE_URL=sqlite:////data/zfs_sync.db` to match the volume mount (`/var/lib/zfs-sync:/data`). The application will automatically create the database file and parent directory if needed.
+- **Volume Mounts**:
+  - `/var/lib/zfs-sync:/data` - Database storage (required)
+  - `/path/to/zfs_sync/config:/config:ro` - Configuration files (optional, read-only)
+  - `/path/to/zfs_sync/logs:/logs` - Application logs (optional)
+- **Permissions**: The `/var/lib/zfs-sync` directory must be owned by UID 1001 (matching the container user).
+- **Rebuilding**: To rebuild the image with changes: `docker build --no-cache -t zfs-sync .`
+
+The application will automatically create the database file and any required parent directories when it starts, as long as the mounted volume directory has the correct permissions.
+
 #### Production Deployment (with PostgreSQL)
 
 For production deployments, use the production override file which includes PostgreSQL:
@@ -493,11 +550,39 @@ sudo chown -R 1001:1001 /var/lib/zfs-sync
 sudo chmod 755 /var/lib/zfs-sync
 ```
 
-**Container won't start:**
+**Container won't start - Database file creation issues:**
+
+If you see errors like `unable to open database file` or `attempt to write a readonly database`:
+
+1. **Check database URL matches volume mount:**
+   - If using volume mount `/var/lib/zfs-sync:/data`, set `ZFS_SYNC_DATABASE_URL=sqlite:////data/zfs_sync.db`
+   - The application will automatically create the database file and parent directories if they don't exist
+
+2. **Verify permissions:**
+
+   ```bash
+   # Check directory ownership
+   ls -lah /var/lib/zfs-sync
+   
+   # Fix ownership if needed (UID 1001 matches container user)
+   sudo chown -R 1001:1001 /var/lib/zfs-sync
+   sudo chmod 755 /var/lib/zfs-sync
+   ```
+
+3. **Check container user:**
+
+   ```bash
+   docker exec zfs-sync id
+   # Should show: uid=1001(zfssync) gid=1001(zfssync)
+   ```
+
+**Container won't start - Other issues:**
 
 ```bash
 # Check logs
 docker-compose logs zfs-sync
+# Or for direct Docker:
+docker logs zfs-sync
 
 # Check container status
 docker ps -a
