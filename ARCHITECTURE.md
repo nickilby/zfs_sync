@@ -307,7 +307,7 @@ Container: zfs-sync
 
 ### Security Features
 
-- Non-root user (UID 1000)
+- Non-root user (UID 1001)
 - Health checks for container monitoring
 - Resource limits (CPU, memory)
 - Log rotation
