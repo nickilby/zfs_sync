@@ -141,23 +141,25 @@ class SyncSchedulerService:
                 logger.warning(f"Sync group {sync_group_id} not found")
                 return
 
-            # Get all datasets for this sync group
+            # Get all datasets for this sync group (now returns dataset_name -> [(pool, system_id), ...])
             system_ids = [assoc.system_id for assoc in sync_group.system_associations]
             sync_coord_service = SyncCoordinationService(db)
-            datasets = sync_coord_service._get_datasets_for_systems(system_ids)
+            dataset_mappings = sync_coord_service._get_datasets_for_systems(system_ids)
 
-            # Detect conflicts for each dataset and log them
-            for pool, dataset in datasets:
-                try:
-                    conflicts = conflict_service.detect_conflicts(
-                        sync_group_id=sync_group_id, pool=pool, dataset=dataset
-                    )
-                    for conflict in conflicts:
-                        self._log_conflict(conflict)
-                except Exception as e:
-                    logger.warning(
-                        f"Error detecting conflicts for {pool}/{dataset} in sync group {sync_group_id}: {e}"
-                    )
+            # Detect conflicts for each pool/dataset combination
+            # Note: Conflicts are still detected per pool/dataset, not just dataset name
+            for dataset_name, pool_systems in dataset_mappings.items():
+                for pool, system_id in pool_systems:
+                    try:
+                        conflicts = conflict_service.detect_conflicts(
+                            sync_group_id=sync_group_id, pool=pool, dataset=dataset_name
+                        )
+                        for conflict in conflicts:
+                            self._log_conflict(conflict)
+                    except Exception as e:
+                        logger.warning(
+                            f"Error detecting conflicts for {pool}/{dataset_name} in sync group {sync_group_id}: {e}"
+                        )
 
             # Generate sync instructions (incremental only) for all systems in the group
             # This will also update sync states

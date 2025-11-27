@@ -29,10 +29,10 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 ### Core Principles
 
 1. **Witness Pattern**: The service observes and coordinates but does not execute ZFS commands directly
-2. **Stateless API**: Systems report their state and receive instructions
-3. **Repository Pattern**: Data access is abstracted through repository classes
-4. **Service Layer**: Business logic is separated from API and data layers
-5. **Configuration-Driven**: Flexible configuration via files and environment variables
+1. **Stateless API**: Systems report their state and receive instructions
+1. **Repository Pattern**: Data access is abstracted through repository classes
+1. **Service Layer**: Business logic is separated from API and data layers
+1. **Configuration-Driven**: Flexible configuration via files and environment variables
 
 ## Component Design
 
@@ -43,6 +43,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 **Purpose**: HTTP interface for client systems
 
 **Components**:
+
 - **FastAPI Application** (`app.py`): Main application setup, middleware, routing
 - **Routes** (`routes/`): RESTful API endpoints
   - `health.py`: Health check endpoints
@@ -55,6 +56,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 - **Middleware** (`middleware/auth.py`): API key authentication
 
 **Key Features**:
+
 - OpenAPI/Swagger documentation (auto-generated)
 - CORS support
 - Request validation via Pydantic
@@ -65,6 +67,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 **Purpose**: Business logic and coordination
 
 **Services**:
+
 - **SyncCoordinationService**: Detects mismatches and generates sync instructions
 - **SnapshotComparisonService**: Compares snapshots across systems
 - **ConflictResolutionService**: Detects and resolves conflicts
@@ -74,6 +77,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 - **SSHCommandGenerator**: Generates SSH commands for sync operations
 
 **Design Patterns**:
+
 - Service classes receive database session via dependency injection
 - Services use repositories for data access
 - Business logic is isolated from API and data layers
@@ -83,6 +87,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 **Purpose**: Data persistence and access
 
 **Components**:
+
 - **Models** (`models.py`): SQLAlchemy ORM models
   - `SystemModel`: ZFS systems
   - `SnapshotModel`: ZFS snapshots
@@ -99,6 +104,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 - **Base** (`base.py`): Base model with common fields (id, created_at, updated_at)
 
 **Database Support**:
+
 - SQLite (default, for development)
 - PostgreSQL (production)
 
@@ -107,6 +113,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 **Purpose**: Application configuration management
 
 **Features**:
+
 - Environment variable support
 - YAML/TOML configuration file support
 - Platform-specific defaults (Linux, Windows, macOS)
@@ -117,6 +124,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 **Purpose**: Core business domain models
 
 **Models**:
+
 - `System`: ZFS system representation
 - `Snapshot`: ZFS snapshot representation
 - `SyncGroup`: Group of systems to synchronize
@@ -147,14 +155,20 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 ### Sync Coordination Flow
 
 ```
-1. System → GET /api/v1/sync/{sync_group_id}/instructions
+1. System → GET /api/v1/sync/instructions/{system_id}
 2. API → SyncCoordinationService.get_sync_instructions()
-3. Service → SnapshotComparisonService.compare_snapshots()
-4. Service → Detect mismatches
-5. Service → Generate sync actions (create, delete, sync)
-6. Service → SSHCommandGenerator.generate_commands()
-7. API → Return sync instructions with SSH commands
-8. System → Execute SSH commands locally
+3. Service → Group datasets by dataset name (pool-agnostic)
+4. Service → Compare snapshots across systems (normalized snapshot names)
+5. Service → Detect mismatches (preserving pool information)
+6. Service → Find incremental base snapshots (using correct pools)
+7. Service → Generate dataset-grouped sync instructions
+8. Service → Update sync states to 'syncing'
+9. API → Return dataset-grouped instructions with:
+   - Source pool and target pool
+   - Starting snapshot (incremental base)
+   - Ending snapshot (latest to sync)
+   - SSH hostnames for source and target
+10. System → Execute sync commands using provided information
 ```
 
 ### Conflict Detection Flow
@@ -200,25 +214,30 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 ### Key Tables
 
 **systems**
+
 - Stores registered ZFS systems
 - Includes SSH connection details for sync operations
 - Tracks connectivity status and last seen timestamp
 
 **snapshots**
+
 - Stores snapshot metadata (name, pool, dataset, timestamp, size)
 - Linked to systems via foreign key
 - Indexed for efficient querying
 
 **sync_groups**
+
 - Groups systems that should maintain synchronized snapshots
 - Configurable sync intervals
 - Enable/disable flag
 
 **sync_group_systems**
+
 - Many-to-many association between sync groups and systems
 - Allows systems to be in multiple sync groups
 
 **sync_states**
+
 - Tracks synchronization state for each snapshot in each sync group
 - Status: in_sync, out_of_sync, syncing, error
 - Tracks last sync and last check timestamps
@@ -230,11 +249,13 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 **Base URL**: `/api/v1`
 
 #### Health
+
 - `GET /health` - Health check
 - `GET /health/ready` - Readiness check
 - `GET /health/live` - Liveness check
 
 #### Systems
+
 - `POST /systems/register` - Register a new system
 - `GET /systems` - List all systems
 - `GET /systems/{id}` - Get system details
@@ -243,6 +264,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 - `POST /systems/{id}/heartbeat` - Update last seen timestamp
 
 #### Snapshots
+
 - `POST /snapshots` - Report single snapshot
 - `POST /snapshots/batch` - Report multiple snapshots
 - `GET /snapshots` - Query snapshots
@@ -251,6 +273,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 - `GET /snapshots/statistics` - Get snapshot statistics
 
 #### Sync Groups
+
 - `POST /sync-groups` - Create sync group
 - `GET /sync-groups` - List sync groups
 - `GET /sync-groups/{id}` - Get sync group details
@@ -260,12 +283,14 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 - `DELETE /sync-groups/{id}/systems/{system_id}` - Remove system from group
 
 #### Sync
-- `GET /sync/{sync_group_id}/instructions` - Get sync instructions
+
+- `GET /sync/instructions/{system_id}` - Get dataset-grouped sync instructions for a system
 - `GET /sync/states` - List sync states
 - `GET /sync/states/{id}` - Get sync state details
 - `POST /sync/{sync_group_id}/check` - Trigger sync check
 
 #### Conflicts
+
 - `GET /conflicts/{sync_group_id}` - Get conflicts for sync group
 - `POST /conflicts/{id}/resolve` - Resolve a conflict
 
@@ -303,7 +328,7 @@ Container: zfs-sync
 ### Multi-Stage Build
 
 1. **Build Stage**: Install dependencies and compile
-2. **Runtime Stage**: Minimal image with only runtime dependencies
+1. **Runtime Stage**: Minimal image with only runtime dependencies
 
 ### Security Features
 
@@ -355,12 +380,30 @@ Container: zfs-sync
 
 ## Synchronization Logic
 
+### Dataset Comparison Strategy
+
+The system uses **pool-agnostic dataset comparison**, meaning datasets are compared by dataset name only, regardless of pool differences. This allows systems with different pool names (e.g., `hqs10p1` vs `hqs7p1`) to synchronize the same logical dataset (e.g., `L1S4DAT1`).
+
+**Key Points:**
+
+- Datasets are grouped by dataset name across all systems in a sync group
+- Each system's pool name is preserved and used when generating sync commands
+- Snapshot names are normalized (pool/dataset prefix removed) for comparison
+- Sync instructions include both source pool and target pool information
+
+**Example:**
+
+- System A: `hqs10p1/L1S4DAT1@2025-11-26-000000`
+- System B: `hqs7p1/L1S4DAT1@2025-11-04-000000`
+- The system recognizes these as the same logical dataset and detects that System B is missing snapshots from `2025-11-04-120000` through `2025-11-26-000000`
+
 ### Mismatch Detection
 
 1. **Collect Snapshots**: Get all snapshots for systems in sync group
-2. **Group by Dataset**: Organize snapshots by pool/dataset
-3. **Compare**: Find common snapshots and missing snapshots
-4. **Generate Actions**: Create sync actions (create, delete, sync)
+1. **Group by Dataset Name**: Organize snapshots by dataset name (ignoring pool differences)
+1. **Map Pool Information**: Track which pool each system uses for each dataset
+1. **Compare**: Find common snapshots and missing snapshots (using normalized snapshot names)
+1. **Generate Actions**: Create sync actions with correct source and target pool information
 
 ### Sync Actions
 
@@ -409,16 +452,19 @@ Container: zfs-sync
 ### Configuration Sources (Priority Order)
 
 1. **Environment Variables** (highest priority)
+
    - Format: `ZFS_SYNC_<SETTING_NAME>`
    - Example: `ZFS_SYNC_DATABASE_URL`
 
-2. **Configuration File**
+1. **Configuration File**
+
    - YAML or TOML format
    - Locations checked in order:
      - `zfs_sync.yaml` (current directory)
      - `config/zfs_sync.yaml` (config directory)
 
-3. **Default Values** (lowest priority)
+1. **Default Values** (lowest priority)
+
    - Platform-specific defaults
    - Sensible defaults for all settings
 
@@ -466,6 +512,7 @@ Container: zfs-sync
 ### Repository Pattern
 
 Data access is abstracted through repository classes:
+
 - `BaseRepository`: Common CRUD operations
 - Specific repositories extend base for domain-specific queries
 - Services use repositories, never access models directly
@@ -473,6 +520,7 @@ Data access is abstracted through repository classes:
 ### Service Layer Pattern
 
 Business logic is separated into service classes:
+
 - Services receive database session via dependency injection
 - Services orchestrate multiple repositories
 - Services contain business rules and coordination logic
@@ -486,6 +534,7 @@ Business logic is separated into service classes:
 ### Witness Pattern
 
 The application acts as a witness:
+
 - Observes state from multiple systems
 - Coordinates synchronization
 - Does not execute ZFS commands directly
@@ -519,4 +568,3 @@ The application acts as a witness:
 - [HOW_TO_USE.md](HOW_TO_USE.md) - User guide
 - [QUICK_START.md](QUICK_START.md) - Quick setup guide
 - API Documentation: Available at `/docs` when running the service
-
