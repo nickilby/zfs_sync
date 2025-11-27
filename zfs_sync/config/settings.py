@@ -11,6 +11,8 @@ import yaml  # type: ignore[import-untyped]
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from zfs_sync import __version__
+
 # Optional TOML support
 try:
     import tomli
@@ -43,7 +45,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = Field(default="zfs-sync", description="Application name")
-    app_version: str = Field(default="0.1.14", description="Application version")
+    app_version: str = Field(default=__version__, description="Application version")
     debug: bool = Field(default=False, description="Enable debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
 
