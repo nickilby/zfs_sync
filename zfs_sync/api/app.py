@@ -43,13 +43,25 @@ async def startup_event():
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Database: {settings.database_url}")
 
-    # Skip database initialization if we're in a test environment
+    # Skip validation and database initialization if we're in a test environment
     # (tests handle their own database setup via fixtures)
     import os
 
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        logger.info("Skipping database initialization in test environment")
+        logger.info(
+            "Skipping configuration validation and database initialization in test environment"
+        )
         return
+
+    # Validate configuration before proceeding
+    try:
+        from zfs_sync.config.validation import validate_configuration
+
+        validate_configuration(settings)
+        logger.info("Configuration validation passed")
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        raise
 
     # Initialize database
     from zfs_sync.database import init_db

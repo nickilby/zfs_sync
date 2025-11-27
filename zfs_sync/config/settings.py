@@ -2,11 +2,13 @@
 
 import os
 import platform
+import re
+import socket
 from pathlib import Path
 from typing import Optional
 
 import yaml  # type: ignore[import-untyped]
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Optional TOML support
@@ -41,7 +43,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = Field(default="zfs-sync", description="Application name")
-    app_version: str = Field(default="0.1.12", description="Application version")
+    app_version: str = Field(default="0.1.14", description="Application version")
     debug: bool = Field(default=False, description="Enable debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
 
@@ -100,6 +102,95 @@ class Settings(BaseSettings):
                 "database_url must start with sqlite:///, postgresql://, or postgresql+psycopg2://"
             )
         return v
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        """Validate port number is in valid range."""
+        if not (1 <= v <= 65535):
+            raise ValueError(f"port must be between 1 and 65535, got {v}")
+        return v
+
+    @field_validator("api_prefix")
+    @classmethod
+    def validate_api_prefix(cls, v: str) -> str:
+        """Validate API prefix format."""
+        if not v.startswith("/"):
+            raise ValueError(f"api_prefix must start with '/', got '{v}'")
+        if not v.endswith("/") and len(v) > 1:
+            # Allow trailing slash but normalize
+            pass
+        # Check for valid URL path characters
+        if not re.match(r"^/[a-zA-Z0-9/_-]*$", v):
+            raise ValueError(
+                "api_prefix contains invalid characters. Use only alphanumeric, '/', '_', and '-'"
+            )
+        return v.rstrip("/") if v != "/" else v
+
+    @field_validator("api_key_length")
+    @classmethod
+    def validate_api_key_length(cls, v: int) -> int:
+        """Validate API key length is reasonable."""
+        if not (8 <= v <= 128):
+            raise ValueError(f"api_key_length must be between 8 and 128, got {v}")
+        return v
+
+    @field_validator("default_sync_interval_seconds")
+    @classmethod
+    def validate_sync_interval(cls, v: int) -> int:
+        """Validate sync interval is positive."""
+        if v <= 0:
+            raise ValueError(f"default_sync_interval_seconds must be positive, got {v}")
+        return v
+
+    @field_validator("heartbeat_timeout_seconds")
+    @classmethod
+    def validate_heartbeat_timeout(cls, v: int) -> int:
+        """Validate heartbeat timeout is positive."""
+        if v <= 0:
+            raise ValueError(f"heartbeat_timeout_seconds must be positive, got {v}")
+        return v
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, v: str) -> str:
+        """Validate host is a valid IP address or hostname."""
+        # Allow common special values
+        if v in ("0.0.0.0", "127.0.0.1", "localhost", "*"):
+            return v
+
+        # Try to validate as IP address
+        try:
+            socket.inet_aton(v)
+            return v
+        except (socket.error, OSError):
+            pass
+
+        # Validate as hostname (basic check)
+        if not re.match(
+            r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$",
+            v,
+        ):
+            raise ValueError(
+                f"host must be a valid IP address or hostname, got '{v}'. "
+                f"Valid examples: '0.0.0.0', '127.0.0.1', 'localhost', or a valid hostname"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_cross_fields(self) -> "Settings":
+        """Validate cross-field dependencies."""
+        # Ensure heartbeat timeout is less than sync interval (if both are set)
+        if (
+            self.heartbeat_timeout_seconds >= self.default_sync_interval_seconds
+            and self.default_sync_interval_seconds > 0
+        ):
+            raise ValueError(
+                f"heartbeat_timeout_seconds ({self.heartbeat_timeout_seconds}) should be "
+                f"less than default_sync_interval_seconds ({self.default_sync_interval_seconds}) "
+                f"to ensure systems are detected as offline before sync operations"
+            )
+        return self
 
     @classmethod
     def from_file(cls, config_path: Path) -> "Settings":
