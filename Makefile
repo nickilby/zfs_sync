@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test lint format clean docker-build docker-up docker-down docker-logs docker-shell
+.PHONY: help install install-dev test lint format clean docker-build docker-up docker-down docker-logs docker-shell docker-clean docker-rebuild docker-deploy
 
 help:
 	@echo "ZFS Sync - Development Commands"
@@ -17,6 +17,9 @@ help:
 	@echo "  make docker-down   - Stop container"
 	@echo "  make docker-logs   - View container logs"
 	@echo "  make docker-shell  - Open shell in container"
+	@echo "  make docker-clean  - Remove old containers and images"
+	@echo "  make docker-rebuild - Clean and rebuild image (no cache)"
+	@echo "  make docker-deploy - Full deployment: clean, rebuild, and start"
 
 # Local development
 install:
@@ -82,4 +85,29 @@ docker-shell:
 		exit 1; \
 	fi
 	$(DOCKER_COMPOSE) exec zfs-sync /bin/bash
+
+docker-clean:
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "Error: Docker is not installed or not in PATH"; \
+		exit 1; \
+	fi
+	@echo "Cleaning old Docker artifacts..."
+	$(DOCKER_COMPOSE) down 2>/dev/null || true
+	docker rmi zfs_sync-zfs-sync 2>/dev/null || true
+	docker rmi zfs-sync:latest 2>/dev/null || true
+	@echo "Cleanup complete"
+
+docker-rebuild: docker-clean
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "Error: Docker is not installed or not in PATH"; \
+		exit 1; \
+	fi
+	@echo "Rebuilding Docker image with --no-cache..."
+	$(DOCKER_COMPOSE) build --no-cache
+	@echo "Rebuild complete"
+
+docker-deploy: docker-rebuild docker-up
+	@echo "Deployment complete! Checking version..."
+	@sleep 3
+	@$(DOCKER_COMPOSE) logs zfs-sync | grep -i "Starting zfs-sync" | head -1 || echo "Container starting..."
 

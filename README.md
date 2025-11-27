@@ -291,6 +291,66 @@ docker-compose down
 
 **Note:** The database is stored in `/var/lib/zfs-sync/` on the host system, ensuring it persists across container updates and app refreshes.
 
+#### Ensuring Latest Version on Deployment
+
+To ensure you're always running the latest code version, use one of these methods:
+
+##### Option 1: Using Makefile (Recommended)
+
+```bash
+# Full deployment: clean, rebuild with no cache, and start
+make docker-deploy
+```
+
+##### Option 2: Manual Docker Compose
+
+```bash
+# Stop and remove containers
+docker compose down
+
+# Remove old images
+docker rmi zfs_sync-zfs-sync 2>/dev/null || true
+
+# Rebuild with no cache
+docker compose build --no-cache
+
+# Start with new image
+docker compose up -d
+
+# Verify version
+docker compose logs zfs-sync | grep "Starting zfs-sync"
+```
+
+##### Option 3: Using Docker Directly
+
+```bash
+# Stop and remove container
+docker stop zfs-sync 2>/dev/null || true
+docker rm zfs-sync 2>/dev/null || true
+
+# Remove old image
+docker rmi zfs-sync 2>/dev/null || true
+
+# Build fresh image (no cache)
+docker build --no-cache -t zfs-sync .
+
+# Run new container
+docker run -d \
+  --name zfs-sync \
+  -p 8000:8000 \
+  -v /var/lib/zfs-sync:/data \
+  -v /opt/zfs_sync/config:/config:ro \
+  -v /opt/zfs_sync/logs:/logs \
+  -e ZFS_SYNC_DATABASE_URL=sqlite:////data/zfs_sync.db \
+  -e ZFS_SYNC_HOST=0.0.0.0 \
+  -e ZFS_SYNC_PORT=8000 \
+  -e ZFS_SYNC_LOG_LEVEL=INFO \
+  --restart unless-stopped \
+  zfs-sync
+```
+
+> **Important:** Always use `--no-cache` when rebuilding for deployments to ensure the latest code is included. Docker's layer caching can cause old code to persist if not explicitly cleared.
+
 #### Running Docker Directly (Without Docker Compose)
 
 If you prefer to use Docker directly instead of docker-compose:
@@ -445,7 +505,7 @@ sudo chmod 755 /var/lib/zfs-sync
 
 **Ansible Deployment:**
 
-For Ansible playbooks, include the following tasks to set up the persistent data directory:
+For Ansible playbooks, include the following tasks to set up the persistent data directory and ensure fresh deployments:
 
 ```yaml
 - name: Create zfs-sync data directory
@@ -462,6 +522,40 @@ For Ansible playbooks, include the following tasks to set up the persistent data
     line: "# zfs-sync data directory - do not remove"
     create: yes
   when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+
+- name: Stop and remove existing zfs-sync containers
+  docker_compose_v2:
+    project_src: /opt/zfs_sync
+    state: absent
+  ignore_errors: yes
+
+- name: Remove old zfs-sync Docker images
+  shell: |
+    docker rmi zfs_sync-zfs-sync 2>/dev/null || true
+    docker rmi zfs-sync:latest 2>/dev/null || true
+  ignore_errors: yes
+
+- name: Build zfs-sync Docker image with no cache
+  docker_compose_v2:
+    project_src: /opt/zfs_sync
+    build:
+      no_cache: true
+    state: present
+
+- name: Start zfs-sync containers
+  docker_compose_v2:
+    project_src: /opt/zfs_sync
+    state: started
+    recreate: always
+
+- name: Verify deployment version
+  shell: docker compose -f /opt/zfs_sync/docker-compose.yml logs zfs-sync | grep "Starting zfs-sync" | head -1
+  register: version_output
+  changed_when: false
+
+- name: Display deployed version
+  debug:
+    msg: "{{ version_output.stdout }}"
 ```
 
 **Backup Recommendations:**
