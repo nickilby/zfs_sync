@@ -19,13 +19,13 @@ SessionLocal = None
 def _ensure_database_directory(database_url: str) -> None:
     """
     Ensure the parent directory for SQLite database exists.
-    
+
     SQLite doesn't create parent directories automatically, so we need to
     create them before attempting to create the database file.
-    
+
     Args:
         database_url: SQLite database URL (e.g., 'sqlite:////path/to/db.db')
-    
+
     Raises:
         OSError: If directory creation fails
         ValueError: If database URL format is invalid
@@ -33,12 +33,12 @@ def _ensure_database_directory(database_url: str) -> None:
     if not database_url.startswith("sqlite:///"):
         # Not a SQLite database, no directory creation needed
         return
-    
+
     # Extract file path from SQLite URL
     # sqlite:////absolute/path/to/db.db -> /absolute/path/to/db.db
     # sqlite:///relative/path/to/db.db -> relative/path/to/db.db
     file_path = database_url.replace("sqlite:///", "", 1)
-    
+
     # Handle absolute paths (starting with /)
     if file_path.startswith("/"):
         # Absolute path: sqlite:////path -> /path
@@ -46,10 +46,10 @@ def _ensure_database_directory(database_url: str) -> None:
     else:
         # Relative path: sqlite:///path -> path
         db_path = Path(file_path)
-    
+
     # Get parent directory
     parent_dir = db_path.parent
-    
+
     # Create parent directory if it doesn't exist
     if parent_dir and not parent_dir.exists():
         try:
@@ -63,7 +63,7 @@ def _ensure_database_directory(database_url: str) -> None:
             )
             logger.error(error_msg)
             raise OSError(error_msg) from e
-    
+
     # Verify the directory is writable
     if parent_dir.exists() and not os.access(parent_dir, os.W_OK):
         error_msg = (
@@ -77,20 +77,20 @@ def _ensure_database_directory(database_url: str) -> None:
 def create_engine() -> Engine:
     """
     Create and configure the database engine.
-    
+
     For SQLite databases, ensures the parent directory exists before creating the engine.
     """
     global SessionLocal
 
     settings = get_settings()
-    
+
     # Ensure database directory exists for SQLite databases
     try:
         _ensure_database_directory(settings.database_url)
     except (OSError, PermissionError) as e:
         logger.error(f"Database directory setup failed: {e}")
         raise
-    
+
     engine = sa_create_engine(
         settings.database_url,
         connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
@@ -104,23 +104,23 @@ def create_engine() -> Engine:
 def init_db() -> None:
     """
     Initialize the database by creating all tables.
-    
+
     Ensures the database directory exists before attempting to create tables.
     """
     # Import models to ensure they register with Base.metadata
     import zfs_sync.database.models  # noqa: F401
 
     settings = get_settings()
-    
+
     # Ensure database directory exists (create_engine also does this, but be explicit)
     try:
         _ensure_database_directory(settings.database_url)
     except (OSError, PermissionError) as e:
         logger.error(f"Failed to prepare database directory: {e}")
         raise RuntimeError(f"Cannot initialize database: {e}") from e
-    
+
     engine = create_engine()
-    
+
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
