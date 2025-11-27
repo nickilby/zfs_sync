@@ -372,6 +372,67 @@ jobs:
               sys.exit(1)
           EOF
       
+      - name: Get commit messages since last release
+        id: get_commits
+        if: steps.check_release.outputs.RELEASE_EXISTS == 'false'
+        run: |
+          python << 'EOF'
+          import os
+          import subprocess
+          import sys
+          
+          # Get all release tags sorted by version
+          result = subprocess.run(
+              ['git', 'tag', '--list', 'v*', '--sort=-version:refname'],
+              capture_output=True,
+              text=True
+          )
+          
+          tags = result.stdout.strip().split('\n')
+          tags = [t for t in tags if t]  # Remove empty strings
+          
+          if tags:
+              # Get commits since the latest release tag
+              last_tag = tags[0]
+              result = subprocess.run(
+                  ['git', 'log', f'{last_tag}..HEAD', '--pretty=format:%s', '--no-merges'],
+                  capture_output=True,
+                  text=True
+              )
+              commits = result.stdout.strip().split('\n')
+              commits = [c for c in commits if c]  # Remove empty strings
+              base_message = f"## Changes since {last_tag}\n\n"
+          else:
+              # No previous releases, get all commits
+              result = subprocess.run(
+                  ['git', 'log', '--pretty=format:%s', '--no-merges'],
+                  capture_output=True,
+                  text=True
+              )
+              commits = result.stdout.strip().split('\n')
+              commits = [c for c in commits if c]  # Remove empty strings
+              base_message = "## Initial Release\n\n"
+          
+          # Format commit messages
+          if commits:
+              commit_list = "\n".join([f"- {commit}" for commit in commits])
+              release_body = base_message + commit_list
+          else:
+              release_body = base_message + "No commits found."
+          
+          # Write to file for next step
+          with open('release_body.txt', 'w', encoding='utf-8') as f:
+              f.write(release_body)
+          
+          # Also write count to output
+          output_file = os.environ.get('GITHUB_OUTPUT')
+          if output_file:
+              with open(output_file, 'a') as f:
+                  f.write(f"COMMIT_COUNT={len(commits)}\n")
+          
+          print(f"Found {len(commits)} commits since last release")
+          EOF
+      
       - name: Create draft release
         if: steps.check_release.outputs.RELEASE_EXISTS == 'false'
         env:
@@ -394,6 +455,13 @@ jobs:
               print("Error: Missing required environment variables")
               sys.exit(1)
           
+          # Read release body from file
+          try:
+              with open('release_body.txt', 'r', encoding='utf-8') as f:
+                  release_body = f.read()
+          except FileNotFoundError:
+              release_body = f"Automated draft release for version {version}"
+          
           # Create draft release
           url = f"https://api.github.com/repos/{repo}/releases"
           headers = {
@@ -404,7 +472,7 @@ jobs:
           data = {
               "tag_name": tag,
               "name": f"Release {tag}",
-              "body": f"Automated draft release for version {version}",
+              "body": release_body,
               "draft": True,
               "prerelease": False,
               "target_commitish": sha
