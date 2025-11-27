@@ -49,3 +49,12 @@ class SnapshotResponse(SnapshotBase):
 
         from_attributes = True
         populate_by_name = True
+
+
+class SnapshotDeleteResponse(BaseModel):
+    """Schema for bulk snapshot deletion response."""
+
+    system_id: str = Field(..., description="System ID")
+    hostname: str = Field(..., description="System hostname")
+    deleted_count: int = Field(..., description="Number of snapshots deleted")
+    message: str = Field(..., description="Status message")

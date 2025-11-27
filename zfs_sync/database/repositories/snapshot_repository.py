@@ -53,3 +53,13 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
             .order_by(SnapshotModel.timestamp.desc())
             .first()
         )
+
+    def delete_by_system(self, system_id: UUID) -> int:
+        """Delete all snapshots for a system. Returns count of deleted snapshots."""
+        count = (
+            self.db.query(SnapshotModel)
+            .filter(SnapshotModel.system_id == system_id)
+            .delete(synchronize_session=False)
+        )
+        self.db.commit()
+        return count

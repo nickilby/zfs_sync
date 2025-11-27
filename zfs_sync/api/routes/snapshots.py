@@ -6,9 +6,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from zfs_sync.api.schemas.snapshot import SnapshotCreate, SnapshotResponse
+from zfs_sync.api.schemas.snapshot import (
+    SnapshotCreate,
+    SnapshotDeleteResponse,
+    SnapshotResponse,
+)
+from zfs_sync.api.middleware.auth import get_current_system
 from zfs_sync.database import get_db
-from zfs_sync.database.repositories import SnapshotRepository
+from zfs_sync.database.repositories import SnapshotRepository, SystemRepository
 from zfs_sync.logging_config import get_logger
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 from zfs_sync.services.snapshot_history import SnapshotHistoryService
@@ -60,6 +65,45 @@ async def get_snapshots_by_system(
     else:
         snapshots = repo.get_by_system(system_id, skip=skip, limit=limit)
     return [SnapshotResponse.model_validate(s) for s in snapshots]
+
+
+@router.delete(
+    "/snapshots/system/{system_id}",
+    response_model=SnapshotDeleteResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_snapshots_by_system(
+    system_id: UUID,
+    db: Session = Depends(get_db),
+    current_system: UUID = Depends(get_current_system),
+):
+    """
+    Delete all snapshots for a system.
+
+    This is useful when a system is re-registered and needs to clean up
+    old snapshots associated with a previous system_id.
+    """
+    # Verify the system exists
+    system_repo = SystemRepository(db)
+    system = system_repo.get(system_id)
+    if not system:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"System {system_id} not found",
+        )
+
+    # Delete all snapshots for this system
+    snapshot_repo = SnapshotRepository(db)
+    deleted_count = snapshot_repo.delete_by_system(system_id)
+
+    logger.info(f"Deleted {deleted_count} snapshots for system {system_id} ({system.hostname})")
+
+    return SnapshotDeleteResponse(
+        system_id=str(system_id),
+        hostname=system.hostname,
+        deleted_count=deleted_count,
+        message=f"Deleted {deleted_count} snapshots",
+    )
 
 
 @router.post(
