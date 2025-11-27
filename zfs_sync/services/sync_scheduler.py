@@ -1,7 +1,6 @@
 """Background scheduler service for automatic snapshot synchronization."""
 
 import asyncio
-from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 

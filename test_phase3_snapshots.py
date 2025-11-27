@@ -31,7 +31,9 @@ def create_test_data(db):
         platform="linux",
         connectivity_status="online",
     )
-    print(f"[OK] Created systems: {system1.hostname} ({system1.id}) and {system2.hostname} ({system2.id})")
+    print(
+        f"[OK] Created systems: {system1.hostname} ({system1.id}) and {system2.hostname} ({system2.id})"
+    )
 
     # Create snapshots for system1
     snapshot_repo = SnapshotRepository(db)
@@ -129,7 +131,9 @@ def test_comparison_service(db, system1, system2):
 
     print(f"   Found {len(gaps)} gaps")
     if gaps:
-        print(f"   Example gap: System {gaps[0]['system_id']} missing {gaps[0]['missing_snapshot']}")
+        print(
+            f"   Example gap: System {gaps[0]['system_id']} missing {gaps[0]['missing_snapshot']}"
+        )
     print("   [OK] Gap detection working")
 
 
@@ -247,4 +251,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -60,14 +60,18 @@ def test_api_imports():
 
     try:
         from zfs_sync.api import app
+
         print("✓ FastAPI app imported")
 
         from zfs_sync.api.routes import health, systems, snapshots, sync
+
         print("✓ API routes imported")
 
         # Check routes are registered
         routes = [route.path for route in app.routes]
-        assert "/api/v1/health" in routes or "/health" in routes, "Health route should be registered"
+        assert (
+            "/api/v1/health" in routes or "/health" in routes
+        ), "Health route should be registered"
         print("✓ API routes registered")
     except Exception as e:
         print(f"✗ API import error: {e}")
@@ -113,4 +117,3 @@ if __name__ == "__main__":
 
         traceback.print_exc()
         sys.exit(1)
-
