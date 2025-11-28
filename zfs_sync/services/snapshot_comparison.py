@@ -1,7 +1,7 @@
 """Service for comparing snapshot states across systems."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -193,6 +193,138 @@ class SnapshotComparisonService:
                 )
 
         return gaps
+
+    def compare_snapshots_by_dataset_name(
+        self, dataset_name: str, system_ids: List[UUID]
+    ) -> Dict[str, Any]:
+        """
+        Compare snapshots for a dataset name across multiple systems (pool-agnostic).
+
+        This method finds all snapshots with the given dataset name across different pools,
+        allowing comparison between systems that may use different pool names.
+
+        Returns:
+            Dictionary with comparison results including:
+            - dataset: The dataset name being compared
+            - systems: List of system information with:
+                - system_id: System UUID
+                - hostname: System hostname
+                - pool: Pool name for this system
+                - sync_status: "in_sync" or "out_of_sync"
+                - last_snapshot: Name of latest snapshot on this system
+                - missing_count: Number of snapshots missing compared to system with latest (0 if in sync)
+        """
+        logger.info(
+            f"Comparing snapshots for dataset '{dataset_name}' (pool-agnostic) across {len(system_ids)} systems"
+        )
+
+        # Get all snapshots for each system with this dataset name (any pool)
+        system_snapshots: Dict[UUID, List[SnapshotModel]] = {}
+        pool_by_system: Dict[UUID, str] = {}
+        system_info: Dict[UUID, Dict[str, Any]] = {}
+
+        for system_id in system_ids:
+            # Get all snapshots for this system
+            all_snapshots = self.snapshot_repo.get_by_system(system_id)
+            # Filter by dataset name (ignoring pool)
+            dataset_snapshots = [s for s in all_snapshots if s.dataset == dataset_name]
+            if dataset_snapshots:
+                system_snapshots[system_id] = dataset_snapshots
+                # Use the pool from the first snapshot (all should have same pool for a system)
+                pool_by_system[system_id] = dataset_snapshots[0].pool
+
+        # Get system info (hostname)
+        from zfs_sync.database.repositories import SystemRepository
+
+        system_repo = SystemRepository(self.db)
+        for system_id in system_ids:
+            system = system_repo.get(system_id)
+            if system:
+                system_info[system_id] = {
+                    "system_id": str(system_id),
+                    "hostname": system.hostname,
+                    "pool": pool_by_system.get(system_id),
+                }
+
+        # Extract snapshot names (normalized) for comparison
+        system_snapshot_names: Dict[UUID, Set[str]] = {}
+        for system_id, snapshots in system_snapshots.items():
+            names = {self._extract_snapshot_name(s.name) for s in snapshots}
+            system_snapshot_names[system_id] = names
+
+        if not system_snapshot_names:
+            # No snapshots found for this dataset on any system
+            return {
+                "dataset": dataset_name,
+                "systems": [
+                    {
+                        "system_id": str(sid),
+                        "hostname": system_info.get(sid, {}).get("hostname", "unknown"),
+                        "pool": system_info.get(sid, {}).get("pool"),
+                        "sync_status": "no_snapshots",
+                        "last_snapshot": None,
+                        "missing_count": 0,
+                    }
+                    for sid in system_ids
+                ],
+            }
+
+        # Find latest snapshot per system
+        latest_snapshots: Dict[UUID, Optional[str]] = {}
+        for system_id, snapshots in system_snapshots.items():
+            if snapshots:
+                latest = max(snapshots, key=lambda s: s.timestamp)
+                latest_snapshots[system_id] = self._extract_snapshot_name(latest.name)
+            else:
+                latest_snapshots[system_id] = None
+
+        # Check if all systems have the same snapshots (in sync)
+        all_in_sync = len(system_snapshot_names) > 0 and all(
+            names == system_snapshot_names[list(system_snapshot_names.keys())[0]]
+            for names in system_snapshot_names.values()
+        )
+
+        # Determine which system has the most snapshots (for missing_count calculation)
+        system_snapshot_counts = {sid: len(names) for sid, names in system_snapshot_names.items()}
+        if system_snapshot_counts:
+            system_with_most = max(system_snapshot_counts.items(), key=lambda x: x[1])[0]
+            most_snapshot_names = system_snapshot_names[system_with_most]
+        else:
+            system_with_most = None
+            most_snapshot_names = set()
+
+        # Build response for each system
+        systems_response = []
+        for system_id in system_ids:
+            system_names = system_snapshot_names.get(system_id, set())
+            missing_snapshots = most_snapshot_names - system_names if system_with_most else set()
+            missing_count = len(missing_snapshots)
+
+            # Determine sync status
+            if system_id not in system_snapshot_names:
+                sync_status = "no_snapshots"
+            elif all_in_sync:
+                # All systems have exactly the same snapshots
+                sync_status = "in_sync"
+            else:
+                # Systems have different snapshots
+                sync_status = "out_of_sync"
+
+            systems_response.append(
+                {
+                    "system_id": str(system_id),
+                    "hostname": system_info.get(system_id, {}).get("hostname", "unknown"),
+                    "pool": system_info.get(system_id, {}).get("pool"),
+                    "sync_status": sync_status,
+                    "last_snapshot": latest_snapshots.get(system_id),
+                    "missing_count": missing_count,
+                }
+            )
+
+        return {
+            "dataset": dataset_name,
+            "systems": systems_response,
+        }
 
     @staticmethod
     def _extract_snapshot_name(full_name: str) -> str:

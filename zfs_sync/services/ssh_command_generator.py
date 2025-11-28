@@ -144,37 +144,56 @@ class SSHCommandGenerator:
         pool: str,
         dataset: str,
         snapshot_name: str,
-        ssh_hostname: str,
-        ssh_user: Optional[str] = None,
-        ssh_port: int = 22,
+        target_ssh_hostname: str,
+        target_pool: Optional[str] = None,
+        target_dataset: Optional[str] = None,
     ) -> str:
         """
-        Generate complete sync command (SSH send piped to local receive).
+        Generate complete full sync command that runs on source system.
+
+        Command format: zfs send -c snapshot | ssh target "zfs receive -s target_pool/dataset"
 
         Args:
-            pool: ZFS pool name
-            dataset: ZFS dataset name
+            pool: Source ZFS pool name
+            dataset: Source ZFS dataset name
             snapshot_name: Snapshot name (without pool/dataset prefix)
-            ssh_hostname: SSH hostname/IP for source system
-            ssh_user: SSH username (optional)
-            ssh_port: SSH port (default: 22)
+            target_ssh_hostname: SSH hostname/alias for target system (where to send)
+            target_pool: Target ZFS pool name (defaults to source pool)
+            target_dataset: Target ZFS dataset name (defaults to source dataset)
 
         Returns:
-            Complete command string: ssh ... 'zfs send ...' | zfs receive ...
+            Complete full sync command string to run on source system
         """
-        send_cmd = SSHCommandGenerator.generate_zfs_send_command(
-            pool=pool,
-            dataset=dataset,
-            snapshot_name=snapshot_name,
-            ssh_hostname=ssh_hostname,
-            ssh_user=ssh_user,
-            ssh_port=ssh_port,
+        # Use target pool/dataset if provided, otherwise use source
+        tgt_pool = target_pool if target_pool else pool
+        tgt_dataset = target_dataset if target_dataset else dataset
+
+        # Build full snapshot path for source
+        if "/" in dataset:
+            full_snapshot = f"{dataset}@{snapshot_name}"
+        else:
+            full_snapshot = f"{pool}/{dataset}@{snapshot_name}"
+
+        # Build target dataset path
+        if "/" in tgt_dataset:
+            target_dataset_path = tgt_dataset
+        else:
+            target_dataset_path = f"{tgt_pool}/{tgt_dataset}"
+
+        # Generate zfs send command (runs locally on source)
+        # -c flag for compressed send
+        send_cmd = f"zfs send -c {SSHCommandGenerator.escape_shell_string(full_snapshot)}"
+
+        # Generate SSH receive command (runs on target)
+        # -s flag for sparse receive
+        receive_cmd = (
+            f"zfs receive -s {SSHCommandGenerator.escape_shell_string(target_dataset_path)}"
         )
-        receive_cmd = SSHCommandGenerator.generate_zfs_receive_command(
-            pool=pool, dataset=dataset, force=True
+        ssh_receive = (
+            f"ssh {target_ssh_hostname} {SSHCommandGenerator.escape_shell_string(receive_cmd)}"
         )
 
-        return f"{send_cmd} | {receive_cmd}"
+        return f"{send_cmd} | {ssh_receive}"
 
     @staticmethod
     def generate_incremental_sync_command(
@@ -182,36 +201,56 @@ class SSHCommandGenerator:
         dataset: str,
         snapshot_name: str,
         incremental_base: str,
-        ssh_hostname: str,
-        ssh_user: Optional[str] = None,
-        ssh_port: int = 22,
+        target_ssh_hostname: str,
+        target_pool: Optional[str] = None,
+        target_dataset: Optional[str] = None,
     ) -> str:
         """
-        Generate complete incremental sync command.
+        Generate complete incremental sync command that runs on source system.
+
+        Command format: zfs send -c -I base@snapshot latest@snapshot | ssh target "zfs receive -s target_pool/dataset"
 
         Args:
-            pool: ZFS pool name
-            dataset: ZFS dataset name
+            pool: Source ZFS pool name
+            dataset: Source ZFS dataset name
             snapshot_name: Snapshot name (without pool/dataset prefix)
             incremental_base: Base snapshot name for incremental send
-            ssh_hostname: SSH hostname/IP for source system
-            ssh_user: SSH username (optional)
-            ssh_port: SSH port (default: 22)
+            target_ssh_hostname: SSH hostname/alias for target system (where to send)
+            target_pool: Target ZFS pool name (defaults to source pool)
+            target_dataset: Target ZFS dataset name (defaults to source dataset)
 
         Returns:
-            Complete incremental sync command string
+            Complete incremental sync command string to run on source system
         """
-        send_cmd = SSHCommandGenerator.generate_zfs_send_command(
-            pool=pool,
-            dataset=dataset,
-            snapshot_name=snapshot_name,
-            ssh_hostname=ssh_hostname,
-            ssh_user=ssh_user,
-            ssh_port=ssh_port,
-            incremental_base=incremental_base,
+        # Use target pool/dataset if provided, otherwise use source
+        tgt_pool = target_pool if target_pool else pool
+        tgt_dataset = target_dataset if target_dataset else dataset
+
+        # Build full snapshot paths for source
+        if "/" in dataset:
+            full_snapshot = f"{dataset}@{snapshot_name}"
+            base_snapshot = f"{dataset}@{incremental_base}"
+        else:
+            full_snapshot = f"{pool}/{dataset}@{snapshot_name}"
+            base_snapshot = f"{pool}/{dataset}@{incremental_base}"
+
+        # Build target dataset path
+        if "/" in tgt_dataset:
+            target_dataset_path = tgt_dataset
+        else:
+            target_dataset_path = f"{tgt_pool}/{tgt_dataset}"
+
+        # Generate zfs send command (runs locally on source)
+        # -c flag for compressed send
+        send_cmd = f"zfs send -c -I {SSHCommandGenerator.escape_shell_string(base_snapshot)} {SSHCommandGenerator.escape_shell_string(full_snapshot)}"
+
+        # Generate SSH receive command (runs on target)
+        # -s flag for sparse receive
+        receive_cmd = (
+            f"zfs receive -s {SSHCommandGenerator.escape_shell_string(target_dataset_path)}"
         )
-        receive_cmd = SSHCommandGenerator.generate_zfs_receive_command(
-            pool=pool, dataset=dataset, force=True
+        ssh_receive = (
+            f"ssh {target_ssh_hostname} {SSHCommandGenerator.escape_shell_string(receive_cmd)}"
         )
 
-        return f"{send_cmd} | {receive_cmd}"
+        return f"{send_cmd} | {ssh_receive}"

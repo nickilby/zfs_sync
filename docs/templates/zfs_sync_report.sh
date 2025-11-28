@@ -391,18 +391,17 @@ send_heartbeat() {
 }
 
 # Build SSH command from sync instruction
+# Command runs locally on source system: zfs send | ssh target "zfs receive"
 build_ssh_sync_command() {
     local pool="$1"
     local dataset="$2"
     local ending_snapshot="$3"
     local starting_snapshot="${4:-}"
-    local ssh_hostname="$5"
-    local ssh_user="${6:-}"
-    local ssh_port="${7:-22}"
-    local target_pool="${8:-$pool}"
-    local target_dataset="${9:-$dataset}"
+    local target_ssh_hostname="$5"  # Target system SSH hostname/alias
+    local target_pool="${6:-$pool}"
+    local target_dataset="${7:-$dataset}"
     
-    # Build full snapshot paths
+    # Build full snapshot paths for source (local)
     local full_ending_snapshot
     if [[ "$dataset" == *"/"* ]]; then
         # Dataset already includes pool (e.g., "tank/data")
@@ -412,23 +411,10 @@ build_ssh_sync_command() {
         full_ending_snapshot="${pool}/${dataset}@${ending_snapshot}"
     fi
     
-    # Build SSH command parts
-    local ssh_cmd="ssh"
-    if [ "$ssh_port" != "22" ] && [ -n "$ssh_port" ]; then
-        ssh_cmd="${ssh_cmd} -p ${ssh_port}"
-    fi
-    
-    local ssh_target
-    if [ -n "$ssh_user" ]; then
-        ssh_target="${ssh_user}@${ssh_hostname}"
-    else
-        ssh_target="${ssh_hostname}"
-    fi
-    
-    # Build ZFS send command
+    # Build ZFS send command (runs locally on source)
     local zfs_send_cmd
     if [ -n "$starting_snapshot" ] && [ "$starting_snapshot" != "null" ]; then
-        # Incremental send
+        # Incremental send with compression
         local full_starting_snapshot
         if [[ "$dataset" == *"/"* ]]; then
             full_starting_snapshot="${dataset}@${starting_snapshot}"
@@ -438,14 +424,14 @@ build_ssh_sync_command() {
         # Escape snapshot names for shell
         full_starting_snapshot=$(printf '%q' "$full_starting_snapshot")
         full_ending_snapshot_escaped=$(printf '%q' "$full_ending_snapshot")
-        zfs_send_cmd="zfs send -I ${full_starting_snapshot} ${full_ending_snapshot_escaped}"
+        zfs_send_cmd="zfs send -c -I ${full_starting_snapshot} ${full_ending_snapshot_escaped}"
     else
-        # Full send
+        # Full send with compression
         full_ending_snapshot_escaped=$(printf '%q' "$full_ending_snapshot")
-        zfs_send_cmd="zfs send ${full_ending_snapshot_escaped}"
+        zfs_send_cmd="zfs send -c ${full_ending_snapshot_escaped}"
     fi
     
-    # Build ZFS receive command
+    # Build target dataset path
     local target_dataset_path
     if [[ "$target_dataset" == *"/"* ]]; then
         target_dataset_path="$target_dataset"
@@ -453,10 +439,14 @@ build_ssh_sync_command() {
         target_dataset_path="${target_pool}/${target_dataset}"
     fi
     target_dataset_path=$(printf '%q' "$target_dataset_path")
-    local zfs_receive_cmd="zfs receive -F ${target_dataset_path}"
     
-    # Combine: ssh ... 'zfs send ...' | zfs receive ...
-    echo "${ssh_cmd} ${ssh_target} '${zfs_send_cmd}' | ${zfs_receive_cmd}"
+    # Build SSH receive command (runs on target via SSH)
+    # -s flag for sparse receive
+    local zfs_receive_cmd="zfs receive -s ${target_dataset_path}"
+    local ssh_receive_cmd=$(printf 'ssh %q %q' "$target_ssh_hostname" "$zfs_receive_cmd")
+    
+    # Combine: zfs send ... | ssh target "zfs receive ..."
+    echo "${zfs_send_cmd} | ${ssh_receive_cmd}"
 }
 
 # Get sync instructions and process them
@@ -498,29 +488,23 @@ get_sync_instructions() {
         local target_dataset=$(echo "$dataset_instruction" | jq -r '.target_dataset // .dataset // ""')
         local starting_snapshot=$(echo "$dataset_instruction" | jq -r '.starting_snapshot // ""')
         local ending_snapshot=$(echo "$dataset_instruction" | jq -r '.ending_snapshot // ""')
-        local ssh_hostname=$(echo "$dataset_instruction" | jq -r '.source_ssh_hostname // ""')
+        local target_ssh_hostname=$(echo "$dataset_instruction" | jq -r '.target_ssh_hostname // ""')
         local sync_group_id=$(echo "$dataset_instruction" | jq -r '.sync_group_id // ""')
         
         # Skip if required fields are missing
-        if [ -z "$pool" ] || [ -z "$dataset" ] || [ -z "$ending_snapshot" ] || [ -z "$ssh_hostname" ]; then
+        if [ -z "$pool" ] || [ -z "$dataset" ] || [ -z "$ending_snapshot" ] || [ -z "$target_ssh_hostname" ]; then
             log_warning "Skipping incomplete dataset instruction: missing required fields"
             continue
         fi
         
-        # Get SSH details from source system (if not in instruction, we'd need to fetch from API)
-        # For now, assume they're in the instruction or use defaults
-        local ssh_user=$(echo "$dataset_instruction" | jq -r '.source_ssh_user // ""')
-        local ssh_port=$(echo "$dataset_instruction" | jq -r '.source_ssh_port // 22')
-        
         # Build the SSH sync command
+        # Command runs locally on this system (source) and pipes to target via SSH
         local sync_command=$(build_ssh_sync_command \
             "$pool" \
             "$dataset" \
             "$ending_snapshot" \
             "$starting_snapshot" \
-            "$ssh_hostname" \
-            "$ssh_user" \
-            "$ssh_port" \
+            "$target_ssh_hostname" \
             "$target_pool" \
             "$target_dataset" \
         )

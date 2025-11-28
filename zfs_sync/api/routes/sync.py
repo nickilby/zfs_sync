@@ -107,3 +107,22 @@ async def get_sync_status_summary(group_id: UUID, db: Session = Depends(get_db))
     service = SyncCoordinationService(db)
     summary = service.get_sync_status_summary(sync_group_id=group_id)
     return SyncStatusSummary(**summary)
+
+
+@router.get("/sync/groups/{group_id}/analysis")
+async def analyze_sync_group(group_id: UUID, db: Session = Depends(get_db)):
+    """
+    Analyze a sync group to show all datasets, snapshot counts per system, and detected mismatches.
+
+    This diagnostic endpoint provides detailed information about:
+    - All datasets in the sync group
+    - Snapshot counts per system for each dataset
+    - Sync status (in_sync/out_of_sync) for each dataset
+    - Detected mismatches
+    """
+    service = SyncCoordinationService(db)
+    try:
+        analysis = service.analyze_sync_group(sync_group_id=group_id)
+        return analysis
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

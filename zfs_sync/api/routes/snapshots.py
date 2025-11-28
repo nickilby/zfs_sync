@@ -207,6 +207,29 @@ async def compare_snapshots(
     return result
 
 
+@router.get("/snapshots/compare-dataset")
+async def compare_snapshots_by_dataset_name(
+    dataset: str = Query(..., description="Dataset name (pool-agnostic, e.g., 'L1S4DAT1')"),
+    system_ids: List[UUID] = Query(..., description="System IDs to compare"),
+    db: Session = Depends(get_db),
+):
+    """
+    Compare snapshots for a dataset name across multiple systems (pool-agnostic).
+
+    This endpoint compares snapshots by dataset name only, ignoring pool names.
+    Useful when systems use different pool names but have the same datasets.
+
+    Returns for each system:
+    - system_id and hostname
+    - sync_status: "in_sync", "out_of_sync", or "no_snapshots"
+    - last_snapshot: Name of the latest snapshot on that system
+    - missing_count: Number of snapshots missing compared to the system with the most snapshots
+    """
+    service = SnapshotComparisonService(db)
+    result = service.compare_snapshots_by_dataset_name(dataset=dataset, system_ids=system_ids)
+    return result
+
+
 @router.get("/snapshots/differences")
 async def get_snapshot_differences(
     system_id_1: UUID = Query(..., description="First system ID"),
