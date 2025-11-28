@@ -16,6 +16,16 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
         """Initialize snapshot repository."""
         super().__init__(SnapshotModel, db)
 
+    def get_all(self, skip: int = 0, limit: int = 100) -> List[SnapshotModel]:
+        """Get all snapshots with pagination, ordered by timestamp descending (most recent first)."""
+        return (
+            self.db.query(SnapshotModel)
+            .order_by(SnapshotModel.timestamp.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
     def get_by_system(
         self, system_id: UUID, skip: int = 0, limit: int = 100
     ) -> List[SnapshotModel]:

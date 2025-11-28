@@ -108,13 +108,89 @@ async def delete_snapshots_by_system(
     "/snapshots/batch", response_model=List[SnapshotResponse], status_code=status.HTTP_201_CREATED
 )
 async def create_snapshots_batch(snapshots: List[SnapshotCreate], db: Session = Depends(get_db)):
-    """Report multiple snapshots in a single request."""
+    """
+    Report multiple snapshots in a single request.
+
+    Validates that all system_ids exist before creating any snapshots.
+    Continues processing even if individual snapshots fail, collecting
+    both successful and failed snapshots for reporting.
+    """
+    if not snapshots:
+        logger.warning("Empty snapshot batch received")
+        return []
+
+    # Validate all system_ids exist before attempting any creates
+    system_repo = SystemRepository(db)
+    unique_system_ids = {snapshot.system_id for snapshot in snapshots}
+    invalid_system_ids = []
+
+    for system_id in unique_system_ids:
+        if not system_repo.get(system_id):
+            invalid_system_ids.append(str(system_id))
+
+    if invalid_system_ids:
+        error_msg = (
+            f"Invalid system_id(s) found: {', '.join(invalid_system_ids)}. "
+            "These systems do not exist in the database. "
+            "This often happens after system re-registration when the system_id changes. "
+            "Please update your system configuration with the new system_id."
+        )
+        logger.error(f"Batch snapshot creation failed: {error_msg}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        )
+
+    # Process snapshots with individual error handling
     repo = SnapshotRepository(db)
     created = []
-    for snapshot_data in snapshots:
-        db_snapshot = repo.create(**snapshot_data.model_dump(by_alias=True))
-        created.append(SnapshotResponse.model_validate(db_snapshot))
-    logger.info(f"Created {len(created)} snapshots in batch")
+    failed = []
+
+    for idx, snapshot_data in enumerate(snapshots):
+        try:
+            db_snapshot = repo.create(**snapshot_data.model_dump(by_alias=True))
+            created.append(SnapshotResponse.model_validate(db_snapshot))
+        except ValueError as e:
+            # Handle constraint violations (e.g., duplicate snapshots)
+            error_detail = str(e)
+            logger.warning(
+                f"Failed to create snapshot {idx + 1}/{len(snapshots)}: "
+                f"{snapshot_data.name} on {snapshot_data.pool}/{snapshot_data.dataset} - {error_detail}"
+            )
+            failed.append(
+                {
+                    "snapshot": snapshot_data.name,
+                    "pool": snapshot_data.pool,
+                    "dataset": snapshot_data.dataset,
+                    "error": error_detail,
+                }
+            )
+        except Exception as e:
+            # Handle other unexpected errors
+            error_detail = str(e)
+            logger.error(
+                f"Unexpected error creating snapshot {idx + 1}/{len(snapshots)}: "
+                f"{snapshot_data.name} on {snapshot_data.pool}/{snapshot_data.dataset} - {error_detail}",
+                exc_info=True,
+            )
+            failed.append(
+                {
+                    "snapshot": snapshot_data.name,
+                    "pool": snapshot_data.pool,
+                    "dataset": snapshot_data.dataset,
+                    "error": error_detail,
+                }
+            )
+
+    # Log summary
+    logger.info(
+        f"Batch snapshot creation completed: {len(created)} successful, {len(failed)} failed out of {len(snapshots)} total"
+    )
+
+    if failed:
+        logger.warning(f"Failed snapshots: {failed}")
+
+    # Return only successfully created snapshots
     return created
 
 
