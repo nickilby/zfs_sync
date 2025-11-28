@@ -11,7 +11,6 @@ from zfs_sync.api.schemas.snapshot import (
     SnapshotDeleteResponse,
     SnapshotResponse,
 )
-from zfs_sync.api.middleware.auth import get_current_system
 from zfs_sync.database import get_db
 from zfs_sync.database.repositories import SnapshotRepository, SystemRepository
 from zfs_sync.logging_config import get_logger
@@ -75,25 +74,13 @@ async def get_snapshots_by_system(
 async def delete_snapshots_by_system(
     system_id: UUID,
     db: Session = Depends(get_db),
-    current_system: UUID = Depends(get_current_system),
 ):
     """
     Delete all snapshots for a system.
 
-    Requires authentication via X-API-Key header. The API key must belong to
-    the system specified in the URL path (system_id). This ensures only the
-    system itself can delete its own snapshots.
-
     This is useful when a system is re-registered and needs to clean up
     old snapshots associated with a previous system_id.
     """
-    # Verify the authenticated system matches the system_id in the URL
-    if current_system != system_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Can only delete snapshots for your own system",
-        )
-
     # Verify the system exists
     system_repo = SystemRepository(db)
     system = system_repo.get(system_id)
