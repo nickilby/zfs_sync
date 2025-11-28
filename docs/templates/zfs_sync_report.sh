@@ -480,7 +480,8 @@ get_sync_instructions() {
     log_info "Maximum parallel syncs: $MAX_PARALLEL_SYNCS"
     
     # Process each dataset instruction with parallel execution
-    echo "$response" | jq -r '.datasets[]?' | while IFS= read -r dataset_instruction; do
+    # Use -c (compact) instead of -r (raw) to output JSON objects that can be parsed
+    echo "$response" | jq -c '.datasets[]?' | while IFS= read -r dataset_instruction; do
         # Extract fields from dataset instruction
         local pool=$(echo "$dataset_instruction" | jq -r '.pool // ""')
         local dataset=$(echo "$dataset_instruction" | jq -r '.dataset // ""')
