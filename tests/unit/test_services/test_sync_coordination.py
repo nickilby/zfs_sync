@@ -65,11 +65,11 @@ class TestSyncCoordinationService:
         snapshot_data["system_id"] = system.id
         snapshot = snapshot_repo.create(**snapshot_data)
 
-        # Update sync state
+        # Update sync state using dataset instead of snapshot_id
         service = SyncCoordinationService(test_db)
         service.update_sync_state(
             sync_group_id=sync_group.id,
-            snapshot_id=snapshot.id,
+            dataset=snapshot.dataset,
             system_id=system.id,
             status=SyncStatus.IN_SYNC,
         )
