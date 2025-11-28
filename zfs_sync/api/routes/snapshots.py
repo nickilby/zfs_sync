@@ -80,9 +80,20 @@ async def delete_snapshots_by_system(
     """
     Delete all snapshots for a system.
 
+    Requires authentication via X-API-Key header. The API key must belong to
+    the system specified in the URL path (system_id). This ensures only the
+    system itself can delete its own snapshots.
+
     This is useful when a system is re-registered and needs to clean up
     old snapshots associated with a previous system_id.
     """
+    # Verify the authenticated system matches the system_id in the URL
+    if current_system != system_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Can only delete snapshots for your own system",
+        )
+
     # Verify the system exists
     system_repo = SystemRepository(db)
     system = system_repo.get(system_id)
