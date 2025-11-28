@@ -26,6 +26,44 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+
+def custom_openapi():
+    """Customize OpenAPI schema to include API key security scheme."""
+    from fastapi.openapi.utils import get_openapi
+
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=settings.app_name,
+        version=settings.app_version,
+        description="A witness service to keep ZFS snapshots in sync across different platforms",
+        routes=app.routes,
+    )
+
+    # Ensure components section exists
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+
+    # Add or update API key security scheme
+    if "securitySchemes" not in openapi_schema["components"]:
+        openapi_schema["components"]["securitySchemes"] = {}
+
+    # Add API key security scheme (will merge with any auto-generated schemes)
+    openapi_schema["components"]["securitySchemes"]["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key for system authentication. Get your API key when registering a system.",
+    }
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+# Override OpenAPI schema to include security scheme
+app.openapi = custom_openapi
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
