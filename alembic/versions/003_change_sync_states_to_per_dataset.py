@@ -19,6 +19,10 @@ depends_on = None
 
 def upgrade():
     """Change sync_states table to use dataset instead of snapshot_id."""
+    # Clear all existing sync_states since they're ephemeral and will be regenerated
+    # This is safe because sync_states track current sync status, not historical data
+    op.execute("DELETE FROM sync_states")
+
     # Drop the foreign key constraint first
     op.drop_constraint("sync_states_snapshot_id_fkey", "sync_states", type_="foreignkey")
 
