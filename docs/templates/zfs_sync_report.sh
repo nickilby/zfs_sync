@@ -5,6 +5,12 @@
 # This script reports ZFS snapshots to the witness service and retrieves sync instructions.
 # Fixed version with proper dataset parsing, timestamp conversion, batch endpoint, and error handling.
 #
+# Debugging:
+#   - Enable verbose mode: DEBUG=1 ./zfs_sync_report.sh or VERBOSE=1 ./zfs_sync_report.sh
+#   - Check server logs: docker logs zfs-sync (if using Docker)
+#   - Check host logs: ./logs/ directory (if configured)
+#   - View container logs: docker logs zfs-sync --tail 100 -f
+#
 # Configuration
 API_URL="{{ zfs_sync_api_url }}/api/v1"
 {% set server_config = zfs_sync_server_list | selectattr('name', 'equalto', inventory_hostname) | first %}
@@ -14,6 +20,15 @@ SYSTEM_ID="{{ server_config.id | default('') }}"
 # Parallel sync configuration
 MAX_PARALLEL_SYNCS="${MAX_PARALLEL_SYNCS:-5}"
 SYNC_LOG_DIR="${SYNC_LOG_DIR:-/var/log/zfs-sync}"
+
+# Batch chunking configuration (for large snapshot batches)
+# Set to 0 to disable chunking and send all snapshots in one request
+SNAPSHOT_BATCH_CHUNK_SIZE="${SNAPSHOT_BATCH_CHUNK_SIZE:-1000}"
+
+# Debug/Verbose mode
+# Set to 1 to enable verbose curl output and detailed diagnostics
+DEBUG="${DEBUG:-0}"
+VERBOSE="${VERBOSE:-${DEBUG}}"
 
 # Error handling
 set -euo pipefail
@@ -65,6 +80,48 @@ if [ -z "$SYSTEM_ID" ]; then
     exit 1
 fi
 
+# Test API connectivity
+test_api_connectivity() {
+    log_info "Testing API connectivity to ${API_URL}"
+    
+    # Try a simple GET request to health endpoint (no auth required)
+    local health_url="${API_URL}/health"
+    local curl_opts=(-s -w "\n%{http_code}" --max-time 5)
+    
+    if [ "${VERBOSE:-0}" = "1" ]; then
+        curl_opts+=(-v)
+        log_info "Testing connection to: $health_url"
+    fi
+    
+    local response=$(curl "${curl_opts[@]}" "$health_url" 2>&1) || {
+        local exit_code=$?
+        log_error "Cannot connect to API server at ${API_URL}"
+        log_error "Curl exit code: $exit_code"
+        case $exit_code in
+            6)  log_error "Could not resolve host. Check DNS or API_URL setting." ;;
+            7)  log_error "Failed to connect to host. Check if server is running and reachable." ;;
+            28) log_error "Connection timeout. Check network connectivity and firewall settings." ;;
+            *)  log_error "Connection failed. Check API_URL: ${API_URL}" ;;
+        esac
+        log_error ""
+        log_error "Troubleshooting:"
+        log_error "  1. Verify API server is running: curl ${API_URL}/health"
+        log_error "  2. Check API_URL setting: ${API_URL}"
+        log_error "  3. Check network connectivity: ping $(echo ${API_URL} | sed -e 's|http://||' -e 's|https://||' -e 's|:.*||')"
+        log_error "  4. Check server logs: docker logs zfs-sync (if using Docker)"
+        return $exit_code
+    }
+    
+    local http_code=$(echo "$response" | tail -n1)
+    if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+        log_info "API connectivity test passed"
+        return 0
+    else
+        log_error "API connectivity test failed (HTTP $http_code)"
+        return 1
+    fi
+}
+
 # API request helper with error handling
 api_request() {
     local method="$1"
@@ -80,17 +137,57 @@ api_request() {
         -H "Content-Type: application/json"
     )
     
+    # Add verbose mode if enabled
+    if [ "${VERBOSE:-0}" = "1" ]; then
+        curl_opts+=(-v)
+        log_info "API Request: $method $url"
+    fi
+    
     local response
     if [ "$method" = "POST" ] && [ -n "$data" ]; then
-        response=$(curl "${curl_opts[@]}" -d "$data" "$url" 2>&1) || {
+        # Use stdin for data to avoid command-line argument length limits
+        # This is critical for large payloads (1000+ snapshots)
+        response=$(echo "$data" | curl "${curl_opts[@]}" --data-binary @- "$url" 2>&1) || {
             local exit_code=$?
-            log_error "API request failed: $endpoint (exit code: $exit_code)"
+            log_error "API request failed: $method $endpoint"
+            log_error "URL: $url"
+            log_error "Curl exit code: $exit_code"
+            
+            # Provide helpful error messages based on exit code
+            case $exit_code in
+                6)  log_error "Error: Could not resolve host. Check DNS or API_URL setting." ;;
+                7)  log_error "Error: Failed to connect to host. Server may be down or unreachable." ;;
+                22) log_error "Error: HTTP error response from server." ;;
+                28) log_error "Error: Connection timeout. Server may be overloaded or network slow." ;;
+                *)  log_error "Error: Connection failed (exit code: $exit_code)" ;;
+            esac
+            
+            if [ "${VERBOSE:-0}" = "1" ]; then
+                log_error "Full curl output: $response"
+            fi
+            
             return $exit_code
         }
     else
         response=$(curl "${curl_opts[@]}" "$url" 2>&1) || {
             local exit_code=$?
-            log_error "API request failed: $endpoint (exit code: $exit_code)"
+            log_error "API request failed: $method $endpoint"
+            log_error "URL: $url"
+            log_error "Curl exit code: $exit_code"
+            
+            # Provide helpful error messages based on exit code
+            case $exit_code in
+                6)  log_error "Error: Could not resolve host. Check DNS or API_URL setting." ;;
+                7)  log_error "Error: Failed to connect to host. Server may be down or unreachable." ;;
+                22) log_error "Error: HTTP error response from server." ;;
+                28) log_error "Error: Connection timeout. Server may be overloaded or network slow." ;;
+                *)  log_error "Error: Connection failed (exit code: $exit_code)" ;;
+            esac
+            
+            if [ "${VERBOSE:-0}" = "1" ]; then
+                log_error "Full curl output: $response"
+            fi
+            
             return $exit_code
         }
     fi
@@ -103,7 +200,8 @@ api_request() {
         echo "$body"
         return 0
     else
-        log_error "API request failed: $endpoint (HTTP $http_code)"
+        log_error "API request failed: $method $endpoint (HTTP $http_code)"
+        log_error "URL: $url"
         log_error "Response: $body"
         return 1
     fi
@@ -183,6 +281,17 @@ get_local_snapshots() {
 report_snapshots() {
     log_info "Reporting snapshot state to witness service"
     
+    # Test API connectivity before attempting large batch operations
+    if ! test_api_connectivity; then
+        log_error "Cannot connect to API server. Aborting snapshot report."
+        log_error ""
+        log_error "Server logs can be found at:"
+        log_error "  - Docker: docker logs zfs-sync"
+        log_error "  - Host logs: ./logs/ (if configured)"
+        log_error "  - Container logs: docker logs zfs-sync --tail 100 -f"
+        return 1
+    fi
+    
     local snapshots_json=$(get_local_snapshots)
     local snapshot_count=$(echo "$snapshots_json" | jq 'length')
     
@@ -193,15 +302,78 @@ report_snapshots() {
         return 0
     fi
     
-    # Use batch endpoint to report all snapshots at once
-    local response=$(api_request "POST" "/snapshots/batch" "$snapshots_json")
+    # Determine if chunking is needed
+    local chunk_size=${SNAPSHOT_BATCH_CHUNK_SIZE:-1000}
+    local total_created=0
+    local total_failed=0
     
-    if [ $? -eq 0 ]; then
-        log_info "Successfully reported $snapshot_count snapshots"
-        return 0
+    if [ "$chunk_size" -gt 0 ] && [ "$snapshot_count" -gt "$chunk_size" ]; then
+        # Split into chunks and process sequentially
+        log_info "Splitting $snapshot_count snapshots into chunks of $chunk_size"
+        
+        local chunk_num=0
+        local offset=0
+        
+        while [ $offset -lt $snapshot_count ]; do
+            chunk_num=$((chunk_num + 1))
+            local chunk=$(echo "$snapshots_json" | jq ".[$offset:$((offset + chunk_size))]")
+            local chunk_length=$(echo "$chunk" | jq 'length')
+            
+            log_info "Processing chunk $chunk_num: $chunk_length snapshots (offset $offset)"
+            
+            local response
+            local api_exit_code
+            response=$(api_request "POST" "/snapshots/batch" "$chunk")
+            api_exit_code=$?
+            
+            if [ $api_exit_code -eq 0 ]; then
+                local created_count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
+                total_created=$((total_created + created_count))
+                log_info "Chunk $chunk_num: Successfully reported $created_count snapshots"
+            else
+                total_failed=$((total_failed + chunk_length))
+                log_error "Chunk $chunk_num: Failed to report $chunk_length snapshots"
+                if [ -n "$response" ]; then
+                    log_error "Error details: $response"
+                fi
+                # Continue with next chunk even if this one failed
+            fi
+            
+            offset=$((offset + chunk_size))
+        done
+        
+        # Summary
+        if [ $total_failed -eq 0 ]; then
+            log_info "Successfully reported all $total_created snapshots in $chunk_num chunks"
+            return 0
+        else
+            log_warning "Reported $total_created snapshots successfully, $total_failed failed (in $chunk_num chunks)"
+            return 1
+        fi
     else
-        log_error "Failed to report snapshots"
-        return 1
+        # Send all snapshots in one request (no chunking needed or disabled)
+        local response
+        local api_exit_code
+        response=$(api_request "POST" "/snapshots/batch" "$snapshots_json")
+        api_exit_code=$?
+        
+        if [ $api_exit_code -eq 0 ]; then
+            # Check if response contains actual data (successful creation)
+            local created_count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
+            if [ "$created_count" -gt 0 ]; then
+                log_info "Successfully reported $created_count snapshots (out of $snapshot_count total)"
+            else
+                log_warning "API returned success but no snapshots were created. Response: $response"
+            fi
+            return 0
+        else
+            log_error "Failed to report snapshots"
+            # Log the error response if available
+            if [ -n "$response" ]; then
+                log_error "Error details: $response"
+            fi
+            return 1
+        fi
     fi
 }
 
