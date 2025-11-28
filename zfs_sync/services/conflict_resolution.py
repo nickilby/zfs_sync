@@ -421,9 +421,9 @@ class ConflictResolutionService:
         # Mark all systems involved in the conflict
         systems_involved = conflict.get("systems", {})
         sync_group_id = UUID(conflict.get("sync_group_id"))
+        dataset = conflict.get("dataset")
 
-        for system_id_str, system_info in systems_involved.items():
-            snapshot_id = UUID(system_info.get("snapshot_id"))
+        for system_id_str in systems_involved.keys():
             system_id = UUID(system_id_str)
 
             # Update sync state to reflect conflict resolution
@@ -433,7 +433,7 @@ class ConflictResolutionService:
                 if system_id in target_system_ids:
                     sync_service.update_sync_state(
                         sync_group_id=sync_group_id,
-                        snapshot_id=snapshot_id,
+                        dataset=dataset,
                         system_id=system_id,
                         status=SyncStatus.SYNCING,  # Will be updated to IN_SYNC after actual sync
                     )
@@ -441,7 +441,7 @@ class ConflictResolutionService:
                 # If no actions, mark as resolved (conflict acknowledged)
                 sync_service.update_sync_state(
                     sync_group_id=sync_group_id,
-                    snapshot_id=snapshot_id,
+                    dataset=dataset,
                     system_id=system_id,
                     status=SyncStatus.OUT_OF_SYNC,  # Reset to out_of_sync for re-evaluation
                 )
@@ -468,13 +468,15 @@ class ConflictResolutionService:
 
         for conflict in conflicts:
             systems = conflict.get("systems", {})
-            for system_id_str, system_info in systems.items():
-                snapshot_id = UUID(system_info.get("snapshot_id"))
+            dataset = conflict.get("dataset")
+            sync_group_id = UUID(conflict.get("sync_group_id"))
+
+            for system_id_str in systems.keys():
                 system_id = UUID(system_id_str)
 
                 sync_service.update_sync_state(
-                    sync_group_id=UUID(conflict.get("sync_group_id")),
-                    snapshot_id=snapshot_id,
+                    sync_group_id=sync_group_id,
+                    dataset=dataset,
                     system_id=system_id,
                     status=SyncStatus.CONFLICT,
                     error_message=f"Conflict detected: {conflict.get('type')}",

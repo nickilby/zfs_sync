@@ -14,7 +14,7 @@ class SyncStateResponse(BaseModel):
 
     id: UUID
     sync_group_id: UUID
-    snapshot_id: UUID
+    dataset: str
     system_id: UUID
     status: SyncStatus
     last_sync: Optional[datetime] = None

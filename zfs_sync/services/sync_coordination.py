@@ -306,25 +306,19 @@ class SyncCoordinationService:
     def update_sync_state(
         self,
         sync_group_id: UUID,
-        snapshot_id: UUID,
+        dataset: str,
         system_id: UUID,
         status: SyncStatus,
         error_message: Optional[str] = None,
     ) -> SyncStateModel:
         """
-        Update or create a sync state record.
+        Update or create a sync state record for a dataset.
 
         Returns the updated or created sync state.
         """
         # Check if sync state already exists
-        existing_states = self.sync_state_repo.get_by_sync_group(sync_group_id)
-        existing = next(
-            (
-                s
-                for s in existing_states
-                if s.snapshot_id == snapshot_id and s.system_id == system_id
-            ),
-            None,
+        existing = self.sync_state_repo.get_by_dataset(
+            sync_group_id=sync_group_id, dataset=dataset, system_id=system_id
         )
 
         if existing:
@@ -344,7 +338,7 @@ class SyncCoordinationService:
             # Create new
             return self.sync_state_repo.create(
                 sync_group_id=sync_group_id,
-                snapshot_id=snapshot_id,
+                dataset=dataset,
                 system_id=system_id,
                 status=status.value,
                 last_check=datetime.now(timezone.utc),
@@ -741,21 +735,13 @@ class SyncCoordinationService:
                         )
                         continue
 
-                    # Update sync states to 'syncing' for all missing snapshots
-                    for missing_snap in missing_snapshots:
-                        snapshot_id = self._find_snapshot_id(
-                            pool=source_pool,
-                            dataset=dataset_name,
-                            snapshot_name=missing_snap,
-                            system_id=source_system_id,
-                        )
-                        if snapshot_id:
-                            self.update_sync_state(
-                                sync_group_id=sync_group_id,
-                                snapshot_id=snapshot_id,
-                                system_id=target_system_id,
-                                status=SyncStatus.SYNCING,
-                            )
+                    # Update sync state to 'syncing' for the dataset
+                    self.update_sync_state(
+                        sync_group_id=sync_group_id,
+                        dataset=dataset_name,
+                        system_id=target_system_id,
+                        status=SyncStatus.SYNCING,
+                    )
 
                     # Create dataset instruction
                     dataset_instruction = {

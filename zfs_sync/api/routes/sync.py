@@ -83,17 +83,17 @@ async def get_sync_instructions(
 @router.post("/sync/states", response_model=SyncStateResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_sync_state(
     sync_group_id: UUID,
-    snapshot_id: UUID,
+    dataset: str,
     system_id: UUID,
     status: SyncStatus,
     error_message: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Create or update a sync state."""
+    """Create or update a sync state for a dataset."""
     service = SyncCoordinationService(db)
     sync_state = service.update_sync_state(
         sync_group_id=sync_group_id,
-        snapshot_id=snapshot_id,
+        dataset=dataset,
         system_id=system_id,
         status=status,
         error_message=error_message,

@@ -45,9 +45,6 @@ class SnapshotModel(BaseModel):
 
     # Relationships
     system = relationship("SystemModel", back_populates="snapshots")
-    sync_states = relationship(
-        "SyncStateModel", back_populates="snapshot", cascade="all, delete-orphan"
-    )
 
 
 class SyncGroupModel(BaseModel):
@@ -86,7 +83,7 @@ class SyncStateModel(BaseModel):
     __tablename__ = "sync_states"
 
     sync_group_id = Column(GUID(), ForeignKey("sync_groups.id"), nullable=False, index=True)  # type: ignore[assignment]
-    snapshot_id = Column(GUID(), ForeignKey("snapshots.id"), nullable=False, index=True)  # type: ignore[assignment]
+    dataset = Column(String(255), nullable=False, index=True)  # type: ignore[assignment]
     system_id = Column(GUID(), ForeignKey("systems.id"), nullable=False, index=True)  # type: ignore[assignment]
     status = Column(String(20), nullable=False, default="out_of_sync", index=True)  # type: ignore[assignment]
     last_sync = Column(DateTime(timezone=True), nullable=True)  # type: ignore[assignment]
@@ -96,5 +93,4 @@ class SyncStateModel(BaseModel):
 
     # Relationships
     sync_group = relationship("SyncGroupModel")
-    snapshot = relationship("SnapshotModel", back_populates="sync_states")
     system = relationship("SystemModel", back_populates="sync_states")
