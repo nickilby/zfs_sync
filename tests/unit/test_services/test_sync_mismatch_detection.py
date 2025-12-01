@@ -219,8 +219,11 @@ class TestSyncMismatchDetection:
         assert (
             l1s4dat1_instruction["ending_snapshot"] == "2025-11-30-000000"
         ), f"Ending snapshot should be 2025-11-30-000000, got {l1s4dat1_instruction['ending_snapshot']}"
-        # Starting snapshot should be the most recent common snapshot (2025-11-04-000000)
-        assert l1s4dat1_instruction["starting_snapshot"] == "2025-11-04-000000", (
-            f"Starting snapshot should be 2025-11-04-000000 (most recent common), "
+        # Starting snapshot should be the most recent common midnight snapshot
+        # HQS10 has weekly snapshots (2025-10-30, 2025-11-06, etc.)
+        # HQS7 has daily snapshots (2025-10-08 through 2025-11-04)
+        # The most recent common midnight snapshot is 2025-10-30-000000
+        assert l1s4dat1_instruction["starting_snapshot"] == "2025-10-30-000000", (
+            f"Starting snapshot should be 2025-10-30-000000 (most recent common midnight snapshot), "
             f"got {l1s4dat1_instruction['starting_snapshot']}"
         )
