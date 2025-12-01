@@ -12,6 +12,7 @@ from zfs_sync.api.schemas.snapshot import (
     SnapshotResponse,
 )
 from zfs_sync.database import get_db
+from zfs_sync.database.models import SnapshotModel
 from zfs_sync.database.repositories import SnapshotRepository, SystemRepository
 from zfs_sync.logging_config import get_logger
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
@@ -36,72 +37,6 @@ async def list_snapshots(skip: int = 0, limit: int = 100, db: Session = Depends(
     repo = SnapshotRepository(db)
     snapshots = repo.get_all(skip=skip, limit=limit)
     return [SnapshotResponse.model_validate(s) for s in snapshots]
-
-
-@router.get("/snapshots/{snapshot_id}", response_model=SnapshotResponse)
-async def get_snapshot(snapshot_id: UUID, db: Session = Depends(get_db)):
-    """Get a snapshot by ID."""
-    repo = SnapshotRepository(db)
-    snapshot = repo.get(snapshot_id)
-    if not snapshot:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
-    return SnapshotResponse.model_validate(snapshot)
-
-
-@router.get("/snapshots/system/{system_id}", response_model=List[SnapshotResponse])
-async def get_snapshots_by_system(
-    system_id: UUID,
-    skip: int = 0,
-    limit: int = 100,
-    pool: Optional[str] = None,
-    dataset: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    """Get all snapshots for a system with optional filters."""
-    repo = SnapshotRepository(db)
-    if pool and dataset:
-        snapshots = repo.get_by_pool_dataset(pool=pool, dataset=dataset, system_id=system_id)
-    else:
-        snapshots = repo.get_by_system(system_id, skip=skip, limit=limit)
-    return [SnapshotResponse.model_validate(s) for s in snapshots]
-
-
-@router.delete(
-    "/snapshots/system/{system_id}",
-    response_model=SnapshotDeleteResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def delete_snapshots_by_system(
-    system_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """
-    Delete all snapshots for a system.
-
-    This is useful when a system is re-registered and needs to clean up
-    old snapshots associated with a previous system_id.
-    """
-    # Verify the system exists
-    system_repo = SystemRepository(db)
-    system = system_repo.get(system_id)
-    if not system:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"System {system_id} not found",
-        )
-
-    # Delete all snapshots for this system
-    snapshot_repo = SnapshotRepository(db)
-    deleted_count = snapshot_repo.delete_by_system(system_id)
-
-    logger.info(f"Deleted {deleted_count} snapshots for system {system_id} ({system.hostname})")
-
-    return SnapshotDeleteResponse(
-        system_id=str(system_id),
-        hostname=system.hostname,
-        deleted_count=deleted_count,
-        message=f"Deleted {deleted_count} snapshots",
-    )
 
 
 @router.post(
@@ -262,6 +197,79 @@ async def get_snapshot_gaps(
     return {"gaps": gaps, "count": len(gaps)}
 
 
+@router.get("/snapshots/timeline")
+async def get_snapshot_timeline(
+    pool: str = Query(..., description="ZFS pool name"),
+    dataset: str = Query(..., description="ZFS dataset name"),
+    system_ids: List[UUID] = Query(..., description="System IDs"),
+    db: Session = Depends(get_db),
+):
+    """Get a timeline of snapshots across multiple systems."""
+    service = SnapshotHistoryService(db)
+    timeline = service.get_snapshot_timeline(pool=pool, dataset=dataset, system_ids=system_ids)
+    return timeline
+
+
+@router.get("/snapshots/system/{system_id}", response_model=List[SnapshotResponse])
+async def get_snapshots_by_system(
+    system_id: UUID,
+    skip: int = 0,
+    limit: int = 100,
+    pool: Optional[str] = Query(None, description="Filter by pool"),
+    dataset: Optional[str] = Query(None, description="Filter by dataset"),
+    db: Session = Depends(get_db),
+):
+    """Get all snapshots for a system with optional filters."""
+    repo = SnapshotRepository(db)
+    query = repo.db.query(SnapshotModel).filter(SnapshotModel.system_id == system_id)
+
+    if dataset:
+        query = query.filter(SnapshotModel.dataset == dataset)
+    if pool:
+        query = query.filter(SnapshotModel.pool == pool)
+
+    snapshots = query.order_by(SnapshotModel.timestamp.desc()).offset(skip).limit(limit).all()
+    return [SnapshotResponse.model_validate(s) for s in snapshots]
+
+
+@router.delete(
+    "/snapshots/system/{system_id}",
+    response_model=SnapshotDeleteResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_snapshots_by_system(
+    system_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete all snapshots for a system.
+
+    This is useful when a system is re-registered and needs to clean up
+    old snapshots associated with a previous system_id.
+    """
+    # Verify the system exists
+    system_repo = SystemRepository(db)
+    system = system_repo.get(system_id)
+    if not system:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"System {system_id} not found",
+        )
+
+    # Delete all snapshots for this system
+    snapshot_repo = SnapshotRepository(db)
+    deleted_count = snapshot_repo.delete_by_system(system_id)
+
+    logger.info(f"Deleted {deleted_count} snapshots for system {system_id} ({system.hostname})")
+
+    return SnapshotDeleteResponse(
+        system_id=str(system_id),
+        hostname=system.hostname,
+        deleted_count=deleted_count,
+        message=f"Deleted {deleted_count} snapshots",
+    )
+
+
 @router.get("/snapshots/history/{system_id}")
 async def get_snapshot_history(
     system_id: UUID,
@@ -279,19 +287,6 @@ async def get_snapshot_history(
     return {"history": history, "count": len(history)}
 
 
-@router.get("/snapshots/timeline")
-async def get_snapshot_timeline(
-    pool: str = Query(..., description="ZFS pool name"),
-    dataset: str = Query(..., description="ZFS dataset name"),
-    system_ids: List[UUID] = Query(..., description="System IDs"),
-    db: Session = Depends(get_db),
-):
-    """Get a timeline of snapshots across multiple systems."""
-    service = SnapshotHistoryService(db)
-    timeline = service.get_snapshot_timeline(pool=pool, dataset=dataset, system_ids=system_ids)
-    return timeline
-
-
 @router.get("/snapshots/statistics/{system_id}")
 async def get_snapshot_statistics(
     system_id: UUID,
@@ -302,3 +297,13 @@ async def get_snapshot_statistics(
     service = SnapshotHistoryService(db)
     stats = service.get_snapshot_statistics(system_id=system_id, days=days)
     return stats
+
+
+@router.get("/snapshots/{snapshot_id}", response_model=SnapshotResponse)
+async def get_snapshot(snapshot_id: UUID, db: Session = Depends(get_db)):
+    """Get a snapshot by ID."""
+    repo = SnapshotRepository(db)
+    snapshot = repo.get(snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
+    return SnapshotResponse.model_validate(snapshot)
