@@ -39,6 +39,32 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
             .all()
         )
 
+    def get_by_system_and_dataset(
+        self, system_id: UUID, dataset: str, skip: int = 0, limit: Optional[int] = None
+    ) -> List[SnapshotModel]:
+        """
+        Get all snapshots for a system and dataset, ordered by timestamp descending.
+
+        Args:
+            system_id: System UUID
+            dataset: Dataset name
+            skip: Number of records to skip (for pagination)
+            limit: Maximum number of records to return (None for all)
+
+        Returns:
+            List of snapshots matching the system and dataset
+        """
+        query = (
+            self.db.query(SnapshotModel)
+            .filter(SnapshotModel.system_id == system_id, SnapshotModel.dataset == dataset)
+            .order_by(SnapshotModel.timestamp.desc())
+        )
+        if skip > 0:
+            query = query.offset(skip)
+        if limit:
+            query = query.limit(limit)
+        return query.all()
+
     def get_by_pool_dataset(
         self, pool: str, dataset: str, system_id: Optional[UUID] = None
     ) -> List[SnapshotModel]:

@@ -224,10 +224,11 @@ class SnapshotComparisonService:
         system_info: Dict[UUID, Dict[str, Any]] = {}
 
         for system_id in system_ids:
-            # Get all snapshots for this system
-            all_snapshots = self.snapshot_repo.get_by_system(system_id)
-            # Filter by dataset name (ignoring pool)
-            dataset_snapshots = [s for s in all_snapshots if s.dataset == dataset_name]
+            # Get all snapshots for this system with this dataset name (any pool)
+            # Query directly at database level to avoid pagination issues
+            dataset_snapshots = self.snapshot_repo.get_by_system_and_dataset(
+                system_id=system_id, dataset=dataset_name
+            )
             if dataset_snapshots:
                 system_snapshots[system_id] = dataset_snapshots
                 # Use the pool from the first snapshot (all should have same pool for a system)
