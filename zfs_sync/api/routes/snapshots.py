@@ -161,7 +161,7 @@ async def compare_snapshots_by_dataset_name(
     - missing_count: Number of snapshots missing compared to the system with the most snapshots
     """
     service = SnapshotComparisonService(db)
-    result = service.compare_snapshots_by_dataset_name(dataset=dataset, system_ids=system_ids)
+    result = service.compare_snapshots_by_dataset_name(dataset_name=dataset, system_ids=system_ids)
     return result
 
 

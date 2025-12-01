@@ -12,6 +12,7 @@ from zfs_sync.database.repositories import SyncGroupRepository
 from zfs_sync.logging_config import get_logger
 from zfs_sync.services.conflict_resolution import ConflictResolutionService
 from zfs_sync.services.sync_coordination import SyncCoordinationService
+from zfs_sync.services.sync_queries import get_datasets_for_systems
 
 logger = get_logger(__name__)
 
@@ -144,22 +145,30 @@ class SyncSchedulerService:
             # Get all datasets for this sync group (now returns dataset_name -> [(pool, system_id), ...])
             system_ids = [assoc.system_id for assoc in sync_group.system_associations]
             sync_coord_service = SyncCoordinationService(db)
-            dataset_mappings = sync_coord_service._get_datasets_for_systems(system_ids)
+            dataset_mappings = get_datasets_for_systems(
+                system_ids, sync_coord_service.snapshot_repo
+            )
 
             # Detect conflicts for each pool/dataset combination
             # Note: Conflicts are still detected per pool/dataset, not just dataset name
+            # Deduplicate (pool, dataset_name) pairs since detect_conflicts operates on all systems in the sync group
+            unique_pool_datasets = set()
             for dataset_name, pool_systems in dataset_mappings.items():
-                for pool, system_id in pool_systems:
-                    try:
-                        conflicts = conflict_service.detect_conflicts(
-                            sync_group_id=sync_group_id, pool=pool, dataset=dataset_name
-                        )
-                        for conflict in conflicts:
-                            self._log_conflict(conflict)
-                    except Exception as e:
-                        logger.warning(
-                            f"Error detecting conflicts for {pool}/{dataset_name} in sync group {sync_group_id}: {e}"
-                        )
+                for pool, _ in pool_systems:
+                    unique_pool_datasets.add((pool, dataset_name))
+
+            # Call detect_conflicts once per unique (pool, dataset_name) combination
+            for pool, dataset_name in unique_pool_datasets:
+                try:
+                    conflicts = conflict_service.detect_conflicts(
+                        sync_group_id=sync_group_id, pool=pool, dataset=dataset_name
+                    )
+                    for conflict in conflicts:
+                        self._log_conflict(conflict)
+                except Exception as e:
+                    logger.warning(
+                        f"Error detecting conflicts for {pool}/{dataset_name} in sync group {sync_group_id}: {e}"
+                    )
 
             # Generate sync instructions (incremental only) for all systems in the group
             # This will also update sync states
