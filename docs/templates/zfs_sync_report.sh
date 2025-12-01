@@ -424,7 +424,11 @@ build_ssh_sync_command() {
         # Escape snapshot names for shell
         full_starting_snapshot=$(printf '%q' "$full_starting_snapshot")
         full_ending_snapshot_escaped=$(printf '%q' "$full_ending_snapshot")
-        zfs_send_cmd="zfs send -c -I ${full_starting_snapshot} ${full_ending_snapshot_escaped}"
+        # -I flag requires: first snapshot (common/base/older), second snapshot (ending/newer)
+        # The starting snapshot should be the common snapshot (older) and the ending snapshot should be the latest (newer)
+        # ZFS requires: zfs send -I <base_snapshot> <ending_snapshot>
+        # Swap the order to ensure correct sequence: base (older) first, then ending (newer)
+        zfs_send_cmd="zfs send -c -I ${full_ending_snapshot_escaped} ${full_starting_snapshot}"
     else
         # Full send with compression
         full_ending_snapshot_escaped=$(printf '%q' "$full_ending_snapshot")
@@ -530,8 +534,8 @@ get_sync_instructions() {
             echo "Dataset: $dataset"
             echo "Snapshot: $ending_snapshot"
             echo "Starting Snapshot: ${starting_snapshot:-none (full sync)}"
-            echo "Target: ${target_pool}/${target_dataset}"
-            echo "Source: ${ssh_user:+${ssh_user}@}${ssh_hostname}:${ssh_port}"
+            echo "Source: $(hostname) (local)"
+            echo "Target: ${target_ssh_hostname}:${target_pool}/${target_dataset}"
             echo "Started: $(date)"
             echo "Command: $sync_command"
             echo "=================================="
