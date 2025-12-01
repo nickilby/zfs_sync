@@ -297,7 +297,10 @@ class SyncCoordinationService:
         return actions
 
     def get_sync_instructions(
-        self, system_id: UUID, sync_group_id: Optional[UUID] = None
+        self,
+        system_id: UUID,
+        sync_group_id: Optional[UUID] = None,
+        include_diagnostics: bool = False,
     ) -> Dict[str, Any]:
         """
         Get sync instructions for a system.
@@ -320,19 +323,30 @@ class SyncCoordinationService:
             ]
 
         all_datasets = []
+        all_diagnostics = []
         for group in sync_groups:
             if group:
                 dataset_result = self.generate_dataset_sync_instructions(
-                    sync_group_id=group.id, system_id=system_id, incremental_only=True
+                    sync_group_id=group.id,
+                    system_id=system_id,
+                    incremental_only=True,
+                    include_diagnostics=include_diagnostics,
                 )
                 all_datasets.extend(dataset_result.get("datasets", []))
+                if include_diagnostics and "diagnostics" in dataset_result:
+                    all_diagnostics.extend(dataset_result["diagnostics"])
 
-        return {
+        result = {
             "system_id": str(system_id),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "datasets": all_datasets,
             "dataset_count": len(all_datasets),
         }
+
+        if include_diagnostics:
+            result["diagnostics"] = all_diagnostics
+
+        return result
 
     def initialize_sync_states_for_group(self, sync_group_id: UUID) -> Dict[str, Any]:
         """
@@ -620,6 +634,7 @@ class SyncCoordinationService:
         sync_group_id: UUID,
         system_id: Optional[UUID] = None,
         incremental_only: bool = True,
+        include_diagnostics: bool = False,
     ) -> Dict[str, Any]:
         """
         Generate dataset-grouped sync instructions for a sync group or specific system.
@@ -676,6 +691,7 @@ class SyncCoordinationService:
         dataset_mappings = get_datasets_for_systems(system_ids, self.snapshot_repo)
 
         dataset_instructions = []
+        diagnostics: List[Dict[str, Any]] = [] if include_diagnostics else []
 
         for dataset_name, pool_systems in dataset_mappings.items():
             try:
@@ -703,11 +719,31 @@ class SyncCoordinationService:
                     system_snapshot_names[system_id] = names
 
                 if not system_snapshot_names:
+                    reason = "no midnight snapshots found on any system"
+                    logger.info(
+                        "Skipping dataset %s: %s in sync group %s",
+                        dataset_name,
+                        reason,
+                        sync_group_id,
+                    )
+                    if include_diagnostics:
+                        diagnostics.append(
+                            {
+                                "dataset": dataset_name,
+                                "reason": reason,
+                                "guardrail": "midnight_snapshot_filter",
+                            }
+                        )
                     continue
 
                 # Process each SOURCE system (who will send snapshots)
                 for source_system_id in source_system_ids:
                     if source_system_id not in system_snapshot_names:
+                        logger.info(
+                            "Skipping source system %s for dataset %s: no midnight snapshots found",
+                            source_system_id,
+                            dataset_name,
+                        )
                         continue
 
                     source_names = system_snapshot_names[source_system_id]
@@ -718,6 +754,11 @@ class SyncCoordinationService:
                         if target_system_id == source_system_id:
                             continue
                         if target_system_id not in system_snapshot_names:
+                            logger.info(
+                                "Skipping target system %s for dataset %s: no midnight snapshots found",
+                                target_system_id,
+                                dataset_name,
+                            )
                             continue
 
                         target_names = system_snapshot_names[target_system_id]
@@ -746,12 +787,24 @@ class SyncCoordinationService:
                             target_snapshot_names=target_names,
                             comparison_service=self.comparison_service,
                         ):
-                            logger.debug(
-                                "Skipping %s from source %s to target %s (not more than 24 hours out of sync)",
+                            reason = "not more than 24 hours out of sync"
+                            logger.info(
+                                "GUARDRAIL 1: Skipping %s from source %s to target %s (%s)",
                                 dataset_name,
                                 source_system_id,
                                 target_system_id,
+                                reason,
                             )
+                            if include_diagnostics:
+                                diagnostics.append(
+                                    {
+                                        "dataset": dataset_name,
+                                        "source_system_id": str(source_system_id),
+                                        "target_system_id": str(target_system_id),
+                                        "reason": reason,
+                                        "guardrail": "24_hour_out_of_sync_check",
+                                    }
+                                )
                             continue
 
                         # Find starting snapshot (most recent common midnight snapshot)
@@ -765,14 +818,66 @@ class SyncCoordinationService:
                             comparison_service=self.comparison_service,
                         )
 
+                        # FIX: If no common base but incremental_only, try to find oldest target snapshot that exists on source
                         if incremental_only and not starting_snapshot:
-                            logger.debug(
-                                "Skipping %s from source %s to target %s (no common base snapshot, incremental_only=True)",
-                                dataset_name,
-                                source_system_id,
-                                target_system_id,
-                            )
-                            continue
+                            # Try to find oldest target midnight snapshot that also exists on source
+                            target_snapshots = all_snapshots_by_system[target_system_id]
+                            target_midnight_snapshots = [
+                                s
+                                for s in target_snapshots
+                                if is_midnight_snapshot(
+                                    self.comparison_service._extract_snapshot_name(s.name)
+                                )
+                            ]
+
+                            if target_midnight_snapshots:
+                                # Sort by timestamp (oldest first)
+                                target_midnight_snapshots.sort(key=lambda s: s.timestamp)
+
+                                # Check each target snapshot to see if it exists on source
+                                for target_snap in target_midnight_snapshots:
+                                    target_snap_name = (
+                                        self.comparison_service._extract_snapshot_name(
+                                            target_snap.name
+                                        )
+                                    )
+                                    if target_snap_name in source_names:
+                                        starting_snapshot = target_snap_name
+                                        logger.info(
+                                            "Using oldest common midnight snapshot %s as base for %s from source %s to target %s "
+                                            "(no more recent common base found)",
+                                            starting_snapshot,
+                                            dataset_name,
+                                            source_system_id,
+                                            target_system_id,
+                                        )
+                                        break
+
+                            if not starting_snapshot:
+                                reason = (
+                                    f"no common base midnight snapshot (incremental_only=True). "
+                                    f"Source has {len(source_names)} midnight snapshots, target has {len(target_names)} midnight snapshots"
+                                )
+                                logger.info(
+                                    "GUARDRAIL 2: Skipping %s from source %s to target %s (%s)",
+                                    dataset_name,
+                                    source_system_id,
+                                    target_system_id,
+                                    reason,
+                                )
+                                if include_diagnostics:
+                                    diagnostics.append(
+                                        {
+                                            "dataset": dataset_name,
+                                            "source_system_id": str(source_system_id),
+                                            "target_system_id": str(target_system_id),
+                                            "reason": reason,
+                                            "guardrail": "incremental_base_requirement",
+                                            "source_midnight_snapshot_count": len(source_names),
+                                            "target_midnight_snapshot_count": len(target_names),
+                                        }
+                                    )
+                                continue
 
                         # GUARDRAIL 2: Validate starting snapshot exists on source
                         if starting_snapshot:
@@ -784,13 +889,24 @@ class SyncCoordinationService:
                                 snapshot_repo=self.snapshot_repo,
                                 comparison_service=self.comparison_service,
                             ):
-                                logger.warning(
-                                    "Starting snapshot %s does not exist on source system %s for %s/%s, skipping sync",
-                                    starting_snapshot,
-                                    source_system_id,
+                                reason = f"starting snapshot {starting_snapshot} does not exist on source system"
+                                logger.info(
+                                    "GUARDRAIL 3: %s for %s/%s, skipping sync",
+                                    reason,
                                     source_pool,
                                     dataset_name,
                                 )
+                                if include_diagnostics:
+                                    diagnostics.append(
+                                        {
+                                            "dataset": dataset_name,
+                                            "source_system_id": str(source_system_id),
+                                            "target_system_id": str(target_system_id),
+                                            "reason": reason,
+                                            "guardrail": "starting_snapshot_validation",
+                                            "starting_snapshot": starting_snapshot,
+                                        }
+                                    )
                                 continue
 
                         # Find ending snapshot (latest missing midnight snapshot on source)
@@ -812,6 +928,12 @@ class SyncCoordinationService:
                         available_missing.sort(key=lambda x: x[1], reverse=True)
 
                         if not available_missing:
+                            logger.info(
+                                "Skipping %s from source %s to target %s: no missing midnight snapshots available on source",
+                                dataset_name,
+                                source_system_id,
+                                target_system_id,
+                            )
                             continue
 
                         ending_snapshot = available_missing[0][0]
@@ -825,13 +947,26 @@ class SyncCoordinationService:
                             snapshot_repo=self.snapshot_repo,
                             comparison_service=self.comparison_service,
                         ):
-                            logger.warning(
-                                "Ending snapshot %s does not exist on source system %s for %s/%s, skipping sync",
-                                ending_snapshot,
-                                source_system_id,
+                            reason = (
+                                f"ending snapshot {ending_snapshot} does not exist on source system"
+                            )
+                            logger.info(
+                                "GUARDRAIL 4: %s for %s/%s, skipping sync",
+                                reason,
                                 source_pool,
                                 dataset_name,
                             )
+                            if include_diagnostics:
+                                diagnostics.append(
+                                    {
+                                        "dataset": dataset_name,
+                                        "source_system_id": str(source_system_id),
+                                        "target_system_id": str(target_system_id),
+                                        "reason": reason,
+                                        "guardrail": "ending_snapshot_validation",
+                                        "ending_snapshot": ending_snapshot,
+                                    }
+                                )
                             continue
 
                         # GUARDRAIL 4: Ensure starting snapshot is older than ending snapshot
@@ -841,13 +976,23 @@ class SyncCoordinationService:
 
                             if starting_timestamp and ending_timestamp:
                                 if starting_timestamp >= ending_timestamp:
-                                    logger.warning(
-                                        "Starting snapshot %s (%s) is not older than ending snapshot %s (%s), skipping sync",
-                                        starting_snapshot,
-                                        starting_timestamp,
-                                        ending_snapshot,
-                                        ending_timestamp,
+                                    reason = f"starting snapshot {starting_snapshot} is not older than ending snapshot {ending_snapshot}"
+                                    logger.info(
+                                        "GUARDRAIL 5: %s, skipping sync",
+                                        reason,
                                     )
+                                    if include_diagnostics:
+                                        diagnostics.append(
+                                            {
+                                                "dataset": dataset_name,
+                                                "source_system_id": str(source_system_id),
+                                                "target_system_id": str(target_system_id),
+                                                "reason": reason,
+                                                "guardrail": "snapshot_ordering_validation",
+                                                "starting_snapshot": starting_snapshot,
+                                                "ending_snapshot": ending_snapshot,
+                                            }
+                                        )
                                     continue
 
                         # GUARDRAIL 5: Validate minimum 24-hour gap between starting and ending snapshots
@@ -858,15 +1003,27 @@ class SyncCoordinationService:
                                 source_snapshot_names=source_snapshot_names,
                                 min_gap_hours=self.MIN_SNAPSHOT_GAP_HOURS,
                             ):
-                                logger.debug(
-                                    "Skipping %s from source %s to target %s (snapshot gap less than %d hours between %s and %s)",
+                                reason = f"snapshot gap less than {self.MIN_SNAPSHOT_GAP_HOURS} hours between {starting_snapshot} and {ending_snapshot}"
+                                logger.info(
+                                    "GUARDRAIL 6: Skipping %s from source %s to target %s (%s)",
                                     dataset_name,
                                     source_system_id,
                                     target_system_id,
-                                    self.MIN_SNAPSHOT_GAP_HOURS,
-                                    starting_snapshot,
-                                    ending_snapshot,
+                                    reason,
                                 )
+                                if include_diagnostics:
+                                    diagnostics.append(
+                                        {
+                                            "dataset": dataset_name,
+                                            "source_system_id": str(source_system_id),
+                                            "target_system_id": str(target_system_id),
+                                            "reason": reason,
+                                            "guardrail": "snapshot_gap_validation",
+                                            "min_gap_hours": self.MIN_SNAPSHOT_GAP_HOURS,
+                                            "starting_snapshot": starting_snapshot,
+                                            "ending_snapshot": ending_snapshot,
+                                        }
+                                    )
                                 continue
 
                         # Get source and target systems for SSH details
@@ -874,17 +1031,31 @@ class SyncCoordinationService:
                         target_system = self.system_repo.get(target_system_id)
 
                         if not source_system or not target_system:
-                            logger.warning(
-                                "Source or target system not found for dataset %s", dataset_name
+                            logger.info(
+                                "GUARDRAIL 7: Source or target system not found for dataset %s",
+                                dataset_name,
                             )
                             continue
 
                         if not target_system.ssh_hostname:
-                            logger.warning(
-                                "Target system %s has no SSH hostname configured, skipping sync instruction for dataset %s",
-                                target_system_id,
+                            reason = (
+                                f"target system {target_system_id} has no SSH hostname configured"
+                            )
+                            logger.info(
+                                "GUARDRAIL 8: %s, skipping sync instruction for dataset %s",
+                                reason,
                                 dataset_name,
                             )
+                            if include_diagnostics:
+                                diagnostics.append(
+                                    {
+                                        "dataset": dataset_name,
+                                        "source_system_id": str(source_system_id),
+                                        "target_system_id": str(target_system_id),
+                                        "reason": reason,
+                                        "guardrail": "ssh_configuration",
+                                    }
+                                )
                             continue
 
                         # Update sync state to 'syncing' for the target dataset
@@ -920,7 +1091,12 @@ class SyncCoordinationService:
                     exc_info=True,
                 )
 
-        return {
+        result = {
             "datasets": dataset_instructions,
             "dataset_count": len(dataset_instructions),
         }
+
+        if include_diagnostics:
+            result["diagnostics"] = diagnostics
+
+        return result

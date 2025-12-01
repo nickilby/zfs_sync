@@ -72,11 +72,16 @@ async def get_sync_actions(
 async def get_sync_instructions(
     system_id: UUID,
     sync_group_id: Optional[UUID] = Query(None, description="Filter by sync group"),
+    include_diagnostics: bool = Query(
+        False, description="Include diagnostic information about why datasets were skipped"
+    ),
     db: Session = Depends(get_db),
 ):
     """Get sync instructions for a system (dataset-grouped format)."""
     service = SyncCoordinationService(db)
-    instructions = service.get_sync_instructions(system_id=system_id, sync_group_id=sync_group_id)
+    instructions = service.get_sync_instructions(
+        system_id=system_id, sync_group_id=sync_group_id, include_diagnostics=include_diagnostics
+    )
     return SyncInstructionsResponse(**instructions)
 
 

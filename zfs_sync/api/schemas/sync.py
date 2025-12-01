@@ -107,3 +107,7 @@ class SyncInstructionsResponse(BaseModel):
         ..., description="List of dataset sync instructions"
     )
     dataset_count: int = Field(..., description="Number of datasets requiring sync")
+    diagnostics: Optional[List[dict]] = Field(
+        None,
+        description="Diagnostic information about why datasets were skipped (only included if include_diagnostics=true)",
+    )
