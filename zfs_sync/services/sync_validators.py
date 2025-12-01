@@ -40,19 +40,21 @@ def is_snapshot_out_of_sync_by_24h(
     Args:
         source_snapshots: List of snapshots from source system
         target_snapshots: List of snapshots from target system
-        source_snapshot_names: Set of normalized snapshot names from source
-        target_snapshot_names: Set of normalized snapshot names from target
+        source_snapshot_names: Set of normalized snapshot names from source (already filtered to midnight snapshots)
+        target_snapshot_names: Set of normalized snapshot names from target (already filtered to midnight snapshots)
         comparison_service: SnapshotComparisonService instance for extracting snapshot names
 
     Returns:
         True if datasets are more than 24 hours out of sync, False otherwise
     """
     # Find the latest midnight snapshot on source
+    # Note: source_snapshot_names is already filtered to midnight snapshots, so we just need to check is_midnight_snapshot
     source_midnight_snapshots = []
     for s in source_snapshots:
         # pylint: disable=protected-access
         snapshot_name = comparison_service._extract_snapshot_name(s.name)  # type: ignore[attr-defined]
-        if snapshot_name in source_snapshot_names and is_midnight_snapshot(snapshot_name):
+        # source_snapshot_names is already filtered to midnight snapshots, so if it's in the set, it's a midnight snapshot
+        if snapshot_name in source_snapshot_names:
             source_midnight_snapshots.append(s)
 
     if not source_midnight_snapshots:
@@ -63,14 +65,18 @@ def is_snapshot_out_of_sync_by_24h(
 
     # Check if target has this snapshot
     if latest_source_name in target_snapshot_names:
+        # Target has the latest source snapshot, but we should still check if there are missing intermediate snapshots
+        # However, for the 24-hour guardrail, if target has the latest, they're considered in sync
         return False  # Target has the latest, so not out of sync
 
     # Find the latest midnight snapshot on target
+    # Note: target_snapshot_names is already filtered to midnight snapshots
     target_midnight_snapshots = []
     for s in target_snapshots:
         # pylint: disable=protected-access
         snapshot_name = comparison_service._extract_snapshot_name(s.name)  # type: ignore[attr-defined]
-        if snapshot_name in target_snapshot_names and is_midnight_snapshot(snapshot_name):
+        # target_snapshot_names is already filtered to midnight snapshots, so if it's in the set, it's a midnight snapshot
+        if snapshot_name in target_snapshot_names:
             target_midnight_snapshots.append(s)
 
     if not target_midnight_snapshots:
@@ -82,10 +88,29 @@ def is_snapshot_out_of_sync_by_24h(
 
     latest_target = max(target_midnight_snapshots, key=lambda s: s.timestamp)  # type: ignore[arg-type,return-value]
 
-    # Calculate the time difference
+    # Calculate the time difference between latest source and latest target
     time_diff = latest_source.timestamp - latest_target.timestamp  # type: ignore[operator]
     hours_diff: float = time_diff.total_seconds() / 3600
-    return hours_diff > 24
+
+    # Log the comparison for debugging
+    logger.debug(
+        "Sync check: source latest=%s (%s), target latest=%s (%s), diff=%.2f hours",
+        latest_source_name,
+        latest_source.timestamp.isoformat(),
+        comparison_service._extract_snapshot_name(latest_target.name),
+        latest_target.timestamp.isoformat(),
+        hours_diff,
+    )
+
+    # If source is ahead by more than 24 hours, systems are out of sync
+    result = hours_diff > 24
+    logger.debug(
+        "Sync check result: %s (hours_diff=%.2f > 24=%s)",
+        result,
+        hours_diff,
+        hours_diff > 24,
+    )
+    return result
 
 
 def validate_snapshot_exists(
