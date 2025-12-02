@@ -1,7 +1,7 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import Dict, Set
+from typing import Set
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
