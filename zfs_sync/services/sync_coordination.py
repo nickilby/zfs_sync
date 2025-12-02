@@ -150,10 +150,9 @@ class SyncCoordinationService:
                     dataset=dataset, system_id=hub_system_id
                 )
                 hub_snapshot_names = {
-                    self.comparison_service.extract_snapshot_name(s.name)
-                    for s in hub_snapshots
+                    self.comparison_service.extract_snapshot_name(s.name) for s in hub_snapshots
                 }
-                
+
                 for source_system_id in source_system_ids:
                     source_missing = comparison["missing_snapshots"].get(str(source_system_id), [])
                     logger.debug(
@@ -171,15 +170,13 @@ class SyncCoordinationService:
                             mismatch = {
                                 "sync_group_id": str(sync_group_id),
                                 "dataset": dataset,
-                                    "target_system_id": str(source_system_id),
-                                    "missing_snapshot": missing_snapshot,
-                                    "source_system_ids": [str(hub_system_id)],
-                                    "priority": self._calculate_priority(
-                                        missing_snapshot, comparison
-                                    ),
-                                    "directional": True,
-                                    "reason": "source_missing_from_hub",
-                                }
+                                "target_system_id": str(source_system_id),
+                                "missing_snapshot": missing_snapshot,
+                                "source_system_ids": [str(hub_system_id)],
+                                "priority": self._calculate_priority(missing_snapshot, comparison),
+                                "directional": True,
+                                "reason": "source_missing_from_hub",
+                            }
                             mismatches.append(mismatch)
                             logger.debug(
                                 "Created mismatch: target=%s (source), snapshot=%s, source=%s (hub)",

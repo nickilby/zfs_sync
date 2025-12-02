@@ -147,9 +147,9 @@ class TestSyncCoordinationService:
         )
 
         # No mismatches should be created when hub has no snapshots
-        assert len(mismatches) == 0, (
-            f"No sync actions should occur when hub has no snapshots. Found {len(mismatches)} mismatches"
-        )
+        assert (
+            len(mismatches) == 0
+        ), f"No sync actions should occur when hub has no snapshots. Found {len(mismatches)} mismatches"
 
     def test_bidirectional_sync_still_works(
         self, test_db, sample_system_data, sample_snapshot_data
