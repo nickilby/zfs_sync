@@ -87,36 +87,75 @@ class SyncCoordinationService:
 
         # Handle directional sync logic
         if sync_group.directional and sync_group.hub_system_id:
-            # For directional sync, only check for missing snapshots on source systems
-            # Hub system should replicate TO the sources, not FROM them
-            system_ids = [
+            # For directional sync, check mismatches for both:
+            # 1. Source systems missing snapshots from hub (hub -> sources)
+            # 2. Hub system missing snapshots from sources (sources -> hub)
+            hub_system_id = sync_group.hub_system_id
+            source_system_ids = [
                 sid for sid in all_system_ids if sid != hub_system_id
-            ]  # Only check mismatches for the source systems
+            ]  # Source systems for mismatch detection
+            logger.debug(
+                "Directional sync: hub_system_id=%s, source systems: %s",
+                hub_system_id,
+                [str(sid) for sid in source_system_ids],
+            )
+            # For dataset discovery, use all systems to find all datasets
+            system_ids_for_datasets = all_system_ids
         else:
-            system_ids = all_system_ids
+            source_system_ids = None
+            hub_system_id = None
+            system_ids_for_datasets = all_system_ids
+            logger.debug(
+                "Bidirectional sync: checking mismatches for all systems: %s",
+                [str(sid) for sid in system_ids_for_datasets],
+            )
 
         # Get all datasets that should be synced (from existing snapshots)
-        datasets = self._get_datasets_for_systems(system_ids)
+        # Use all systems to discover datasets, not just source systems
+        datasets = self._get_datasets_for_systems(system_ids_for_datasets)
+        logger.debug(
+            "Found %d datasets for systems %s: %s",
+            len(datasets),
+            [str(sid) for sid in system_ids_for_datasets],
+            datasets,
+        )
 
         mismatches = []
         for dataset in datasets:
-            if sync_group.directional and sync_group.hub_system_id:
-                # For directional sync, only consider mismatches where source systems are targets
-                hub_system_id = sync_group.hub_system_id
-                source_system_ids = [sid for sid in all_system_ids if sid != hub_system_id]
+            if sync_group.directional and sync_group.hub_system_id and hub_system_id:
+                # For directional sync, check mismatches in both directions:
+                # 1. Source systems missing snapshots from hub (hub -> sources)
+                # 2. Hub system missing snapshots from sources (sources -> hub)
+                # hub_system_id and source_system_ids are already defined above
+                logger.debug(
+                    "Directional sync: checking dataset %s, hub=%s, sources=%s",
+                    dataset,
+                    hub_system_id,
+                    [str(sid) for sid in source_system_ids],
+                )
 
-                # Get comparison for all systems to find what the sources are missing
+                # Get comparison for all systems to find what each system is missing
                 comparison = self.comparison_service.compare_snapshots_by_dataset(
                     dataset=dataset, system_ids=all_system_ids
                 )
+                logger.debug(
+                    "Comparison for dataset %s: missing_snapshots keys=%s",
+                    dataset,
+                    list(comparison.get("missing_snapshots", {}).keys()),
+                )
 
-                # Only create mismatches for snapshots missing on source systems
+                # 1. Create mismatches for source systems missing snapshots from hub
                 for source_system_id in source_system_ids:
                     source_missing = comparison["missing_snapshots"].get(str(source_system_id), [])
+                    logger.debug(
+                        "Source system %s missing %d snapshots for dataset %s",
+                        source_system_id,
+                        len(source_missing),
+                        dataset,
+                    )
 
                     for missing_snapshot in source_missing:
-                        # Check if hub has this snapshot by looking at what the source is missing
-                        # If the source is missing it and it's not unique to other sources, then hub should have it
+                        # Check if hub or other sources have this snapshot
                         all_snapshots_except_source = set()
                         for sys_id in all_system_ids:
                             if sys_id != source_system_id:
@@ -129,9 +168,19 @@ class SyncCoordinationService:
                                 }
                                 all_snapshots_except_source.update(sys_snapshot_names)
 
+                        # Prefer hub as source, but allow other sources if hub doesn't have it
                         if missing_snapshot in all_snapshots_except_source:
-                            mismatches.append(
-                                {
+                            # Check if hub has this snapshot
+                            hub_snapshots = self.snapshot_repo.get_by_dataset(
+                                dataset=dataset, system_id=hub_system_id
+                            )
+                            hub_snapshot_names = {
+                                self.comparison_service.extract_snapshot_name(s.name)
+                                for s in hub_snapshots
+                            }
+                            if missing_snapshot in hub_snapshot_names:
+                                # Hub has it, create mismatch with hub as source
+                                mismatch = {
                                     "sync_group_id": str(sync_group_id),
                                     "dataset": dataset,
                                     "target_system_id": str(source_system_id),
@@ -143,7 +192,71 @@ class SyncCoordinationService:
                                     "directional": True,
                                     "reason": "source_missing_from_hub",
                                 }
-                            )
+                                mismatches.append(mismatch)
+                                logger.debug(
+                                    "Created mismatch: target=%s (source), snapshot=%s, source=%s (hub)",
+                                    source_system_id,
+                                    missing_snapshot,
+                                    hub_system_id,
+                                )
+                            else:
+                                # Hub doesn't have it, but another source does - create mismatch with that source
+                                source_systems_with_snapshot = self._find_systems_with_snapshot(
+                                    dataset, missing_snapshot, source_system_ids
+                                )
+                                if source_systems_with_snapshot:
+                                    mismatch = {
+                                        "sync_group_id": str(sync_group_id),
+                                        "dataset": dataset,
+                                        "target_system_id": str(source_system_id),
+                                        "missing_snapshot": missing_snapshot,
+                                        "source_system_ids": [str(sid) for sid in source_systems_with_snapshot],
+                                        "priority": self._calculate_priority(
+                                            missing_snapshot, comparison
+                                        ),
+                                        "directional": True,
+                                        "reason": "source_missing_from_other_source",
+                                    }
+                                    mismatches.append(mismatch)
+                                    logger.debug(
+                                        "Created mismatch: target=%s (source), snapshot=%s, source=%s (other source)",
+                                        source_system_id,
+                                        missing_snapshot,
+                                        source_systems_with_snapshot[0],
+                                    )
+
+                # 2. Create mismatches for hub system missing snapshots from sources
+                hub_missing = comparison["missing_snapshots"].get(str(hub_system_id), [])
+                logger.debug(
+                    "Hub system %s missing %d snapshots for dataset %s",
+                    hub_system_id,
+                    len(hub_missing),
+                    dataset,
+                )
+
+                for missing_snapshot in hub_missing:
+                    # Find which source systems have this snapshot
+                    source_systems_with_snapshot = self._find_systems_with_snapshot(
+                        dataset, missing_snapshot, source_system_ids
+                    )
+                    if source_systems_with_snapshot:
+                        mismatch = {
+                            "sync_group_id": str(sync_group_id),
+                            "dataset": dataset,
+                            "target_system_id": str(hub_system_id),
+                            "missing_snapshot": missing_snapshot,
+                            "source_system_ids": [str(sid) for sid in source_systems_with_snapshot],
+                            "priority": self._calculate_priority(missing_snapshot, comparison),
+                            "directional": True,
+                            "reason": "hub_missing_from_source",
+                        }
+                        mismatches.append(mismatch)
+                        logger.debug(
+                            "Created mismatch: target=%s (hub), snapshot=%s, source=%s",
+                            hub_system_id,
+                            missing_snapshot,
+                            source_systems_with_snapshot[0],
+                        )
             else:
                 # Bidirectional sync: existing logic
                 comparison = self.comparison_service.compare_snapshots_by_dataset(
@@ -154,6 +267,12 @@ class SyncCoordinationService:
                 for system_id_str, missing_snapshots in comparison["missing_snapshots"].items():
                     if missing_snapshots:
                         system_id = UUID(system_id_str)
+                        logger.debug(
+                            "System %s missing %d snapshots for dataset %s",
+                            system_id,
+                            len(missing_snapshots),
+                            dataset,
+                        )
                         for missing_snapshot in missing_snapshots:
                             # Find which systems have this snapshot
                             source_systems = self._find_systems_with_snapshot(
@@ -161,20 +280,35 @@ class SyncCoordinationService:
                             )
 
                             if source_systems:
-                                mismatches.append(
-                                    {
-                                        "sync_group_id": str(sync_group_id),
-                                        "dataset": dataset,
-                                        "target_system_id": str(system_id),
-                                        "missing_snapshot": missing_snapshot,
-                                        "source_system_ids": [str(sid) for sid in source_systems],
-                                        "priority": self._calculate_priority(
-                                            missing_snapshot, comparison
-                                        ),
-                                        "directional": False,
-                                        "reason": "bidirectional_mismatch",
-                                    }
+                                mismatch = {
+                                    "sync_group_id": str(sync_group_id),
+                                    "dataset": dataset,
+                                    "target_system_id": str(system_id),
+                                    "missing_snapshot": missing_snapshot,
+                                    "source_system_ids": [str(sid) for sid in source_systems],
+                                    "priority": self._calculate_priority(
+                                        missing_snapshot, comparison
+                                    ),
+                                    "directional": False,
+                                    "reason": "bidirectional_mismatch",
+                                }
+                                mismatches.append(mismatch)
+                                logger.debug(
+                                    "Created mismatch: target=%s, snapshot=%s, sources=%s",
+                                    system_id,
+                                    missing_snapshot,
+                                    source_systems,
                                 )
+
+        logger.info(
+            "Detected %d mismatches for sync group %s (directional=%s)",
+            len(mismatches),
+            sync_group_id,
+            sync_group.directional if sync_group else False,
+        )
+        if mismatches:
+            target_systems = {m["target_system_id"] for m in mismatches}
+            logger.debug("Mismatches target systems: %s", target_systems)
 
         return mismatches
 
@@ -189,10 +323,24 @@ class SyncCoordinationService:
         logger.info("Determining sync actions for sync group %s", sync_group_id)
 
         mismatches = self.detect_sync_mismatches(sync_group_id)
+        logger.debug("Found %d total mismatches", len(mismatches))
 
         if system_id:
             # Filter to actions for specific system
+            mismatches_before_filter = len(mismatches)
             mismatches = [m for m in mismatches if UUID(m["target_system_id"]) == system_id]
+            logger.debug(
+                "Filtered mismatches for system %s: %d -> %d",
+                system_id,
+                mismatches_before_filter,
+                len(mismatches),
+            )
+            if mismatches_before_filter > 0 and len(mismatches) == 0:
+                logger.warning(
+                    "No mismatches target system %s. Mismatches target: %s",
+                    system_id,
+                    {m["target_system_id"] for m in self.detect_sync_mismatches(sync_group_id)},
+                )
 
         actions = []
         for mismatch in mismatches:
@@ -345,6 +493,7 @@ class SyncCoordinationService:
         # Get all sync groups this system belongs to
         if sync_group_id:
             sync_groups = [self.sync_group_repo.get(sync_group_id)]
+            logger.debug("Filtering to sync group %s", sync_group_id)
         else:
             # Find all sync groups containing this system
             all_groups = self.sync_group_repo.get_all()
@@ -354,13 +503,62 @@ class SyncCoordinationService:
                 if any(assoc.system_id == system_id for assoc in group.system_associations)
                 and group.enabled
             ]
+            logger.debug("Found %d sync groups containing system %s", len(sync_groups), system_id)
+
+        # Log sync group details
+        for group in sync_groups:
+            if group:
+                logger.debug(
+                    "Processing sync group %s (name=%s, directional=%s, hub_system_id=%s, enabled=%s)",
+                    group.id,
+                    group.name,
+                    group.directional,
+                    group.hub_system_id,
+                    group.enabled,
+                )
+                system_ids_in_group = [assoc.system_id for assoc in group.system_associations]
+                logger.debug(
+                    "Sync group %s contains systems: %s",
+                    group.id,
+                    [str(sid) for sid in system_ids_in_group],
+                )
+                if group.directional and group.hub_system_id:
+                    logger.debug(
+                        "Directional sync: hub=%s, requesting instructions for=%s",
+                        group.hub_system_id,
+                        system_id,
+                    )
 
         # Collect all actions for this system across sync groups
         all_actions: List[Dict[str, Any]] = []
         for group in sync_groups:
             if group:
+                logger.debug(
+                    "Determining sync actions for group %s, system %s", group.id, system_id
+                )
                 group_actions = self.determine_sync_actions(group.id, system_id=system_id)
+                logger.debug(
+                    "Found %d actions for system %s in group %s",
+                    len(group_actions),
+                    system_id,
+                    group.id,
+                )
                 all_actions.extend(group_actions)
+
+        logger.debug("Total actions collected: %d", len(all_actions))
+        if len(all_actions) == 0:
+            logger.warning(
+                "No sync actions found for system %s. This may indicate a bug in mismatch detection.",
+                system_id,
+            )
+            self.diagnostics.append(
+                {
+                    "level": "warning",
+                    "message": f"No sync actions found for system {system_id}",
+                    "sync_groups_checked": len(sync_groups),
+                    "suggestion": "Check if system is hub in directional sync (hub systems may not receive instructions)",
+                }
+            )
 
         # Consolidate to one instruction per dataset using earliest incremental_base and latest snapshot
         consolidated: Dict[str, Dict[str, Any]] = {}
@@ -448,6 +646,12 @@ class SyncCoordinationService:
             instruction["commands"] = commands
 
         dataset_instructions = list(consolidated.values())
+        logger.info(
+            "Consolidated %d actions into %d dataset instructions for system %s",
+            len(all_actions),
+            len(dataset_instructions),
+            system_id,
+        )
 
         response: Dict[str, Any] = {
             "system_id": str(system_id),
