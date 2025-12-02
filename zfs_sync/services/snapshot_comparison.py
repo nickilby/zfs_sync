@@ -21,9 +21,7 @@ class SnapshotComparisonService:
         self.db = db
         self.snapshot_repo = SnapshotRepository(db)
 
-    def compare_snapshots_by_dataset(
-        self, dataset: str, system_ids: List[UUID]
-    ) -> Dict[str, Any]:
+    def compare_snapshots_by_dataset(self, dataset: str, system_ids: List[UUID]) -> Dict[str, Any]:
         """
         Compare snapshots for a specific dataset across multiple systems.
 
@@ -39,9 +37,7 @@ class SnapshotComparisonService:
         # Get snapshots for each system
         system_snapshots: Dict[UUID, List[SnapshotModel]] = {}
         for system_id in system_ids:
-            snapshots = self.snapshot_repo.get_by_dataset(
-                dataset=dataset, system_id=system_id
-            )
+            snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=system_id)
             system_snapshots[system_id] = snapshots
 
         # Extract snapshot names (normalize by removing pool/dataset prefix)
@@ -117,12 +113,8 @@ class SnapshotComparisonService:
             - only_in_system_2: Snapshots only in second system
             - in_both: Snapshots in both systems
         """
-        snapshots_1 = self.snapshot_repo.get_by_dataset(
-            dataset=dataset, system_id=system_id_1
-        )
-        snapshots_2 = self.snapshot_repo.get_by_dataset(
-            dataset=dataset, system_id=system_id_2
-        )
+        snapshots_1 = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=system_id_1)
+        snapshots_2 = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=system_id_2)
 
         names_1 = {self.extract_snapshot_name(s.name) for s in snapshots_1}
         names_2 = {self.extract_snapshot_name(s.name) for s in snapshots_2}
@@ -141,9 +133,7 @@ class SnapshotComparisonService:
             "comparison_timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    def get_snapshot_gaps(
-        self, system_ids: List[UUID], dataset: str
-    ) -> List[Dict[str, Any]]:
+    def get_snapshot_gaps(self, system_ids: List[UUID], dataset: str) -> List[Dict[str, Any]]:
         """
         Identify gaps in snapshot sequences across systems.
 
@@ -201,4 +191,3 @@ class SnapshotComparisonService:
         if "@" in full_name:
             return full_name.split("@")[-1]
         return full_name
-

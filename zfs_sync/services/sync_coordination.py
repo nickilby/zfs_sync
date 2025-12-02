@@ -170,7 +170,9 @@ class SyncCoordinationService:
                         # If the snapshot doesn't exist on the target, we can't know the pool.
                         # We'll assume it's the same as the source for command generation.
                         # This might need a better strategy, like a configured default pool per system.
-                        target_snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=target_system_id)
+                        target_snapshots = self.snapshot_repo.get_by_dataset(
+                            dataset=dataset, system_id=target_system_id
+                        )
                         if target_snapshots:
                             target_pool = target_snapshots[0].pool
                         else:
@@ -387,9 +389,7 @@ class SyncCoordinationService:
         """Find which systems have a specific snapshot."""
         systems_with_snapshot = []
         for system_id in system_ids:
-            snapshots = self.snapshot_repo.get_by_dataset(
-                dataset=dataset, system_id=system_id
-            )
+            snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=system_id)
             for snapshot in snapshots:
                 if self.comparison_service.extract_snapshot_name(snapshot.name) == snapshot_name:
                     systems_with_snapshot.append(system_id)
@@ -432,9 +432,7 @@ class SyncCoordinationService:
 
         Returns the snapshot ID and pool if found, otherwise (None, None).
         """
-        snapshots = self.snapshot_repo.get_by_dataset(
-            dataset=dataset, system_id=system_id
-        )
+        snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=system_id)
         for snapshot in snapshots:
             if self.comparison_service.extract_snapshot_name(snapshot.name) == snapshot_name:
                 return snapshot.id, snapshot.pool
@@ -450,9 +448,7 @@ class SyncCoordinationService:
         self, dataset: str, snapshot_name: str, source_system_id: UUID
     ) -> Optional[int]:
         """Estimate the size of a snapshot for transfer planning."""
-        snapshots = self.snapshot_repo.get_by_dataset(
-            dataset=dataset, system_id=source_system_id
-        )
+        snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=source_system_id)
         for snapshot in snapshots:
             if self.comparison_service.extract_snapshot_name(snapshot.name) == snapshot_name:
                 return snapshot.size
@@ -602,4 +598,3 @@ class SyncCoordinationService:
             "total_datasets": len(datasets_analysis),
             "total_mismatches": len(mismatches),
         }
-
