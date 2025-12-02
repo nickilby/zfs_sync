@@ -89,7 +89,9 @@ class SyncCoordinationService:
         if sync_group.directional and sync_group.hub_system_id:
             # For directional sync, only check for missing snapshots on source systems
             # Hub system should replicate TO the sources, not FROM them
-            system_ids = [sid for sid in all_system_ids if sid != hub_system_id]  # Only check mismatches for the source systems
+            system_ids = [
+                sid for sid in all_system_ids if sid != hub_system_id
+            ]  # Only check mismatches for the source systems
         else:
             system_ids = all_system_ids
 
@@ -118,10 +120,15 @@ class SyncCoordinationService:
                         all_snapshots_except_source = set()
                         for sys_id in all_system_ids:
                             if sys_id != source_system_id:
-                                sys_snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=sys_id)
-                                sys_snapshot_names = {self.comparison_service.extract_snapshot_name(s.name) for s in sys_snapshots}
+                                sys_snapshots = self.snapshot_repo.get_by_dataset(
+                                    dataset=dataset, system_id=sys_id
+                                )
+                                sys_snapshot_names = {
+                                    self.comparison_service.extract_snapshot_name(s.name)
+                                    for s in sys_snapshots
+                                }
                                 all_snapshots_except_source.update(sys_snapshot_names)
-                        
+
                         if missing_snapshot in all_snapshots_except_source:
                             mismatches.append(
                                 {
@@ -130,7 +137,9 @@ class SyncCoordinationService:
                                     "target_system_id": str(source_system_id),
                                     "missing_snapshot": missing_snapshot,
                                     "source_system_ids": [str(hub_system_id)],
-                                    "priority": self._calculate_priority(missing_snapshot, comparison),
+                                    "priority": self._calculate_priority(
+                                        missing_snapshot, comparison
+                                    ),
                                     "directional": True,
                                     "reason": "source_missing_from_hub",
                                 }
