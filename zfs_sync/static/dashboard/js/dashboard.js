@@ -112,7 +112,7 @@ async function updateOverviewData() {
     const loadingEl = document.getElementById('overview-loading');
     const contentEl = document.getElementById('overview-content');
     const errorEl = document.getElementById('overview-error');
-    
+
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (contentEl) contentEl.classList.add('hidden');
     if (errorEl) errorEl.classList.add('hidden');
@@ -166,7 +166,7 @@ async function updateOverviewData() {
         if (health && health.length > 0) {
             updateSystemStatusChart(health);
         }
-        
+
         if (syncGroupsArray.length > 0) {
             const allStatus = await Promise.all(syncGroupsArray.map(g => api.getSyncGroupStatus(g.id).catch(() => null)));
             const validStatus = allStatus.filter(s => s !== null);
@@ -224,7 +224,7 @@ function loadSystems() {
             <button onclick="updateSystemsTable()" class="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Retry</button>
         </div>
     `;
-    
+
     // Wire up search functionality
     const searchInput = document.getElementById('system-search');
     if (searchInput) {
@@ -236,7 +236,7 @@ function loadSystems() {
             }, 300);
         });
     }
-    
+
     updateSystemsTable();
 }
 
@@ -247,7 +247,7 @@ async function updateSystemsTable() {
     const contentEl = document.getElementById('systems-content');
     const errorEl = document.getElementById('systems-error');
     const emptyEl = document.getElementById('systems-empty');
-    
+
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (contentEl) contentEl.classList.add('hidden');
     if (errorEl) errorEl.classList.add('hidden');
@@ -301,17 +301,17 @@ async function updateSystemsTable() {
 function renderSystemsTable(data) {
     const tableBody = document.getElementById('systems-table-body');
     const emptyEl = document.getElementById('systems-empty');
-    
+
     if (!tableBody) return;
-    
+
     if (data.length === 0) {
         tableBody.innerHTML = '';
         if (emptyEl) emptyEl.classList.remove('hidden');
         return;
     }
-    
+
     if (emptyEl) emptyEl.classList.add('hidden');
-    
+
     tableBody.innerHTML = data.map(({system, health, stats, isOnline}) => `
         <tr>
             <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">${system.hostname}</td>
@@ -331,12 +331,12 @@ function filterSystemsTable(searchTerm) {
         renderSystemsTable(allSystemsData);
         return;
     }
-    
+
     const term = searchTerm.toLowerCase().trim();
-    const filtered = allSystemsData.filter(({system}) => 
+    const filtered = allSystemsData.filter(({system}) =>
         system.hostname.toLowerCase().includes(term)
     );
-    
+
     renderSystemsTable(filtered);
 }
 
@@ -369,7 +369,7 @@ async function updateSyncGroupsGrid() {
     const errorEl = document.getElementById('sync-groups-error');
     const emptyEl = document.getElementById('sync-groups-empty');
     const grid = document.getElementById('sync-groups-grid');
-    
+
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (contentEl) contentEl.classList.add('hidden');
     if (errorEl) errorEl.classList.add('hidden');
@@ -378,14 +378,14 @@ async function updateSyncGroupsGrid() {
     try {
         const syncGroups = await api.getSyncGroups();
         const syncGroupsArray = syncGroups || [];
-        
+
         if (syncGroupsArray.length === 0) {
             if (loadingEl) loadingEl.classList.add('hidden');
             if (contentEl) contentEl.classList.remove('hidden');
             if (emptyEl) emptyEl.classList.remove('hidden');
             return;
         }
-        
+
         const cardPromises = syncGroupsArray.map(async group => {
             try {
                 const status = await api.getSyncGroupStatus(group.id).catch(() => ({
@@ -394,10 +394,10 @@ async function updateSyncGroupsGrid() {
                     syncing_count: 0,
                     error_count: 0
                 }));
-                
+
                 // Fix: Use system_ids instead of systems
                 const systemIds = group.system_ids || [];
-                const systemPromises = systemIds.map(id => 
+                const systemPromises = systemIds.map(id =>
                     api.getSystem(id).catch(() => ({ hostname: 'Unknown' }))
                 );
                 const systems = await Promise.all(systemPromises);
@@ -490,7 +490,7 @@ async function updateConflictsTable() {
     const contentEl = document.getElementById('conflicts-content');
     const errorEl = document.getElementById('conflicts-error');
     const container = document.getElementById('conflicts-table-container');
-    
+
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (contentEl) contentEl.classList.add('hidden');
     if (errorEl) errorEl.classList.add('hidden');
@@ -578,7 +578,7 @@ async function updateStatisticsCharts() {
     const loadingEl = document.getElementById('statistics-loading');
     const contentEl = document.getElementById('statistics-content');
     const errorEl = document.getElementById('statistics-error');
-    
+
     if (loadingEl) loadingEl.classList.remove('hidden');
     if (contentEl) contentEl.classList.add('hidden');
     if (errorEl) errorEl.classList.add('hidden');
@@ -586,7 +586,7 @@ async function updateStatisticsCharts() {
     try {
         const stats = await api.getSnapshotStatsAll();
         const statsArray = stats || [];
-        
+
         // This is a placeholder for real historical data
         const snapshotHistory = {
             labels: Array.from({length: 30}, (_, i) => new Date(Date.now() - (29-i) * 86400000).toLocaleDateString()),
@@ -607,7 +607,7 @@ async function updateStatisticsCharts() {
             }, [])
             .sort((a, b) => b.count - a.count)
             .slice(0, 5);
-        
+
         updateTopPoolsChart(poolData);
 
         if (loadingEl) loadingEl.classList.add('hidden');
@@ -626,7 +626,7 @@ function addActivity(message, type = 'info') {
 
     const item = document.createElement('li');
     item.className = 'flex items-center space-x-3';
-    
+
     const icon = {
         info: '<svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>',
         heartbeat: '<svg class="h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>',

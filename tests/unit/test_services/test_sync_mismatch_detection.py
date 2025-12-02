@@ -410,29 +410,15 @@ class TestSyncMismatchDetection:
             f"Diagnostics: {source_instructions.get('diagnostics', [])}"
         )
 
-        # Hub system should also receive instructions (sources -> hub)
-        # After the fix, hub should receive instructions to sync missing snapshots from sources
-        assert hub_instructions["dataset_count"] > 0, (
-            f"Hub system should receive instructions to sync missing snapshots from sources. "
+        # In new distribution pattern (hub -> sources), hub is source of truth
+        # Hub should NOT receive instructions - it only pushes to sources
+        assert hub_instructions["dataset_count"] == 0, (
+            f"Hub system should not receive instructions in distribution mode (hub is source of truth). "
             f"Got {hub_instructions['dataset_count']} datasets. "
             f"Diagnostics: {hub_instructions.get('diagnostics', [])}"
         )
 
-        # Verify hub instructions contain L1S4DAT1 dataset
-        hub_datasets = [d["dataset"] for d in hub_instructions["datasets"]]
-        assert "L1S4DAT1" in hub_datasets, (
-            f"Hub instructions should include L1S4DAT1 dataset. " f"Found datasets: {hub_datasets}"
-        )
-
-        # Find the instruction for L1S4DAT1
-        hub_l1s4dat1_instruction = None
-        for dataset in hub_instructions["datasets"]:
-            if dataset["dataset"] == "L1S4DAT1":
-                hub_l1s4dat1_instruction = dataset
-                break
-
-        assert hub_l1s4dat1_instruction is not None, "Hub should have instruction for L1S4DAT1"
-        assert hub_l1s4dat1_instruction["target_pool"] == "hubp1", "Target pool should be hubp1"
+        # Verify hub has appropriate diagnostic message
         assert (
-            hub_l1s4dat1_instruction["ending_snapshot"] is not None
-        ), "Should have an ending snapshot"
+            len(hub_instructions.get("diagnostics", [])) > 0
+        ), "Hub should have diagnostic explaining why it has no instructions"

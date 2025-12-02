@@ -132,7 +132,7 @@ function updateSyncHealthChart(syncStatusData) {
 }
 
 function updateSnapshotGrowthChart(historyData) {
-    if (!historyData || !historyData.labels || !historyData.data || 
+    if (!historyData || !historyData.labels || !historyData.data ||
         !Array.isArray(historyData.labels) || !Array.isArray(historyData.data) ||
         historyData.labels.length === 0) {
         const ctx = document.getElementById('snapshot-growth-chart');

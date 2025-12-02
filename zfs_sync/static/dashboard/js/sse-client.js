@@ -26,7 +26,7 @@ function updateLastUpdated() {
 
 function startFallbackPolling() {
     if (fallbackPollingInterval) return;
-    
+
     console.log('Starting fallback polling');
     fallbackPollingInterval = setInterval(() => {
         // Refresh data when SSE is down
@@ -87,10 +87,10 @@ function connectSSE() {
             sseStatus.classList.remove('bg-green-500', 'bg-gray-500');
             sseStatus.classList.add('bg-red-500');
             sseStatus.title = 'Connection closed';
-            
+
             // Start fallback polling
             startFallbackPolling();
-            
+
             // Attempt reconnection with exponential backoff
             if (sseReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                 const delay = Math.min(
@@ -98,10 +98,10 @@ function connectSSE() {
                     MAX_RECONNECT_DELAY
                 );
                 sseReconnectAttempts++;
-                
+
                 console.log(`SSE connection lost. Reconnecting in ${delay}ms (attempt ${sseReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
                 addActivity(`Real-time connection lost. Reconnecting in ${Math.round(delay/1000)}s...`, 'error');
-                
+
                 sseReconnectTimeout = setTimeout(() => {
                     connectSSE();
                 }, delay);
@@ -163,7 +163,7 @@ function connectSSE() {
 
 function initSSE() {
     connectSSE();
-    
+
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
         if (sseSource) {
