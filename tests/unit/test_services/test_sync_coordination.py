@@ -108,7 +108,7 @@ class TestSyncCoordinationService:
         sync_group_repo.add_system(sync_group.id, source1_system.id)
         sync_group_repo.add_system(sync_group.id, source2_system.id)
 
-        # Create snapshots only on source systems
+        # Create snapshots only on source systems (hub has no snapshots)
         snapshot_repo = SnapshotRepository(test_db)
 
         # Snapshot on source1 (hqs8)
@@ -129,19 +129,28 @@ class TestSyncCoordinationService:
         service = SyncCoordinationService(test_db)
         mismatches = service.detect_sync_mismatches(sync_group_id=sync_group.id)
 
-        # In directional mode, only source systems should be targets of sync actions
+        # In directional mode, both hub and source systems can be targets:
+        # - Hub can receive snapshots from sources (sources -> hub)
+        # - Sources can receive snapshots from hub (hub -> sources)
         hub_targets = [m for m in mismatches if m.get("target_system_id") == str(hub_system.id)]
         source_targets = [m for m in mismatches if m.get("target_system_id") != str(hub_system.id)]
 
-        # Should have mismatches for source systems (missing snapshots from hub)
-        # but no mismatches targeting hub system
-        assert len(hub_targets) == 0, "Directional sync should not target hub system"
-        assert len(source_targets) >= 0, "Source systems should be targets for missing snapshots"
+        # Hub should be targeted because it's missing snapshots from sources
+        assert len(hub_targets) > 0, (
+            "Hub system should be targeted when it's missing snapshots from sources. "
+            f"Found {len(hub_targets)} hub targets, {len(source_targets)} source targets"
+        )
+        # Sources should NOT be targeted because hub has no snapshots to send
+        assert len(source_targets) == 0, (
+            "Source systems should not be targeted when hub has no snapshots. "
+            f"Found {len(source_targets)} source targets"
+        )
 
-        # Verify directional flag is set on mismatches
-        for mismatch in source_targets:
+        # Verify directional flag and reason are set correctly on hub mismatches
+        for mismatch in hub_targets:
             assert mismatch.get("directional") is True
-            assert mismatch.get("reason") == "source_missing_from_hub"
+            assert mismatch.get("reason") == "hub_missing_from_source"
+            assert mismatch.get("target_system_id") == str(hub_system.id)
 
     def test_bidirectional_sync_still_works(
         self, test_db, sample_system_data, sample_snapshot_data
