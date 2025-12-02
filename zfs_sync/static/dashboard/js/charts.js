@@ -2,17 +2,38 @@ let charts = {};
 
 function createOrUpdateChart(chartId, chartConfig) {
     const ctx = document.getElementById(chartId);
-    if (!ctx) return;
+    if (!ctx) {
+        console.warn(`Chart canvas element '${chartId}' not found`);
+        return;
+    }
 
-    if (charts[chartId]) {
-        charts[chartId].data = chartConfig.data;
-        charts[chartId].update();
-    } else {
-        charts[chartId] = new Chart(ctx, chartConfig);
+    try {
+        // Validate chart config
+        if (!chartConfig || !chartConfig.data) {
+            console.warn(`Invalid chart config for '${chartId}'`);
+            return;
+        }
+
+        if (charts[chartId]) {
+            charts[chartId].data = chartConfig.data;
+            charts[chartId].update();
+        } else {
+            charts[chartId] = new Chart(ctx, chartConfig);
+        }
+    } catch (error) {
+        console.error(`Error creating/updating chart '${chartId}':`, error);
     }
 }
 
 function updateSystemStatusChart(healthData) {
+    if (!healthData || !Array.isArray(healthData) || healthData.length === 0) {
+        const ctx = document.getElementById('system-status-chart');
+        if (ctx) {
+            ctx.parentElement.innerHTML = '<p class="text-gray-500 text-center py-4">No data available</p>';
+        }
+        return;
+    }
+
     const online = healthData.filter(s => s.status === 'online').length;
     const offline = healthData.length - online;
 
@@ -44,6 +65,14 @@ function updateSystemStatusChart(healthData) {
 }
 
 function updateSyncHealthChart(syncStatusData) {
+    if (!syncStatusData || !Array.isArray(syncStatusData) || syncStatusData.length === 0) {
+        const ctx = document.getElementById('sync-health-chart');
+        if (ctx) {
+            ctx.parentElement.innerHTML = '<p class="text-gray-500 text-center py-4">No data available</p>';
+        }
+        return;
+    }
+
     const statusCounts = {
         in_sync: 0,
         out_of_sync: 0,
@@ -53,11 +82,12 @@ function updateSyncHealthChart(syncStatusData) {
     };
 
     syncStatusData.forEach(status => {
-        statusCounts.in_sync += status.in_sync_count;
-        statusCounts.out_of_sync += status.out_of_sync_count;
-        statusCounts.syncing += status.syncing_count;
-        statusCounts.error += status.error_count;
-        // Assuming conflicts are tracked separately or implied
+        if (status) {
+            statusCounts.in_sync += (status.in_sync_count || 0);
+            statusCounts.out_of_sync += (status.out_of_sync_count || 0);
+            statusCounts.syncing += (status.syncing_count || 0);
+            statusCounts.error += (status.error_count || 0);
+        }
     });
 
     const chartConfig = {
@@ -102,6 +132,16 @@ function updateSyncHealthChart(syncStatusData) {
 }
 
 function updateSnapshotGrowthChart(historyData) {
+    if (!historyData || !historyData.labels || !historyData.data || 
+        !Array.isArray(historyData.labels) || !Array.isArray(historyData.data) ||
+        historyData.labels.length === 0) {
+        const ctx = document.getElementById('snapshot-growth-chart');
+        if (ctx) {
+            ctx.parentElement.innerHTML = '<p class="text-gray-500 text-center py-4">No data available</p>';
+        }
+        return;
+    }
+
     const chartConfig = {
         type: 'line',
         data: {
@@ -127,13 +167,21 @@ function updateSnapshotGrowthChart(historyData) {
 }
 
 function updateTopPoolsChart(poolData) {
+    if (!poolData || !Array.isArray(poolData) || poolData.length === 0) {
+        const ctx = document.getElementById('top-pools-chart');
+        if (ctx) {
+            ctx.parentElement.innerHTML = '<p class="text-gray-500 text-center py-4">No data available</p>';
+        }
+        return;
+    }
+
     const chartConfig = {
         type: 'bar',
         data: {
-            labels: poolData.map(p => p.name),
+            labels: poolData.map(p => p.name || 'Unknown'),
             datasets: [{
                 label: 'Snapshot Count',
-                data: poolData.map(p => p.count),
+                data: poolData.map(p => p.count || 0),
                 backgroundColor: '#3B82F6',
             }]
         },

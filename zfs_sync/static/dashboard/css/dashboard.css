@@ -1,11 +1,8 @@
 /* Custom styles for ZFS Sync Dashboard */
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 .nav-link.active {
-    @apply bg-gray-900 text-white;
+    background-color: #111827;
+    color: white;
 }
 
 .view {
