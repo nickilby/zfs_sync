@@ -131,3 +131,4 @@ async def analyze_sync_group(group_id: UUID, db: Session = Depends(get_db)):
         return analysis
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
