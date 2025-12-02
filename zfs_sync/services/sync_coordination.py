@@ -210,7 +210,9 @@ class SyncCoordinationService:
                                         "dataset": dataset,
                                         "target_system_id": str(source_system_id),
                                         "missing_snapshot": missing_snapshot,
-                                        "source_system_ids": [str(sid) for sid in source_systems_with_snapshot],
+                                        "source_system_ids": [
+                                            str(sid) for sid in source_systems_with_snapshot
+                                        ],
                                         "priority": self._calculate_priority(
                                             missing_snapshot, comparison
                                         ),

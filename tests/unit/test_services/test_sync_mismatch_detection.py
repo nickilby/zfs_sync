@@ -373,12 +373,12 @@ class TestSyncMismatchDetection:
         comparison = comparison_service.compare_snapshots_by_dataset(
             dataset="L1S4DAT1", system_ids=[hub_system.id, source_system.id]
         )
-        assert len(comparison["missing_snapshots"].get(str(hub_system.id), [])) > 0, (
-            "Hub system should be missing snapshots from source system"
-        )
-        assert len(comparison["missing_snapshots"].get(str(source_system.id), [])) > 0, (
-            "Source system should be missing snapshots from hub system"
-        )
+        assert (
+            len(comparison["missing_snapshots"].get(str(hub_system.id), [])) > 0
+        ), "Hub system should be missing snapshots from source system"
+        assert (
+            len(comparison["missing_snapshots"].get(str(source_system.id), [])) > 0
+        ), "Source system should be missing snapshots from hub system"
 
         # Test requesting instructions for hub system (this is the bug scenario)
         service = SyncCoordinationService(test_db)
@@ -421,8 +421,7 @@ class TestSyncMismatchDetection:
         # Verify hub instructions contain L1S4DAT1 dataset
         hub_datasets = [d["dataset"] for d in hub_instructions["datasets"]]
         assert "L1S4DAT1" in hub_datasets, (
-            f"Hub instructions should include L1S4DAT1 dataset. "
-            f"Found datasets: {hub_datasets}"
+            f"Hub instructions should include L1S4DAT1 dataset. " f"Found datasets: {hub_datasets}"
         )
 
         # Find the instruction for L1S4DAT1
@@ -434,4 +433,6 @@ class TestSyncMismatchDetection:
 
         assert hub_l1s4dat1_instruction is not None, "Hub should have instruction for L1S4DAT1"
         assert hub_l1s4dat1_instruction["target_pool"] == "hubp1", "Target pool should be hubp1"
-        assert hub_l1s4dat1_instruction["ending_snapshot"] is not None, "Should have an ending snapshot"
+        assert (
+            hub_l1s4dat1_instruction["ending_snapshot"] is not None
+        ), "Should have an ending snapshot"
