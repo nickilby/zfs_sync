@@ -227,6 +227,7 @@ class SyncCoordinationService:
                 "source_ssh_hostname": source_system.ssh_hostname,
                 "source_ssh_user": source_system.ssh_user,
                 "source_ssh_port": source_system.ssh_port,
+                "target_ssh_hostname": target_system.ssh_hostname if target_system else None,
                 "sync_command": sync_command,
                 "incremental_base": incremental_base,
                 "is_incremental": is_incremental,
@@ -263,39 +264,110 @@ class SyncCoordinationService:
                 and group.enabled
             ]
 
-        all_actions = []
+        # Collect all actions for this system across sync groups
+        all_actions: List[Dict[str, Any]] = []
         for group in sync_groups:
             if group:
-                actions = self.determine_sync_actions(group.id, system_id=system_id)
-                all_actions.extend(actions)
+                group_actions = self.determine_sync_actions(group.id, system_id=system_id)
+                all_actions.extend(group_actions)
 
-        # Group actions by dataset
-        datasets_instructions: Dict[str, Dict[str, Any]] = {}
+        # Consolidate to one instruction per dataset using earliest incremental_base and latest snapshot
+        consolidated: Dict[str, Dict[str, Any]] = {}
         for action in all_actions:
-            dataset_name = action["dataset"]
-            if dataset_name not in datasets_instructions:
-                datasets_instructions[dataset_name] = {
-                    "dataset": dataset_name,
-                    "pool": action.get("target_pool"),
-                    "commands": [],
-                    "total_size_bytes": 0,
+            dataset = action.get("dataset")
+            if not dataset:
+                continue
+            entry = consolidated.get(dataset)
+            snapshot_name = action.get("snapshot_name")
+            incremental_base = action.get("incremental_base") if action.get("is_incremental") else None
+            target_pool = action.get("target_pool") or action.get("pool")
+
+            if entry is None:
+                consolidated[dataset] = {
+                    "pool": action.get("pool"),
+                    "dataset": dataset,
+                    "target_pool": target_pool,
+                    "target_dataset": dataset,
+                    "starting_snapshot": incremental_base,
+                    "ending_snapshot": snapshot_name,
+                    "source_ssh_hostname": action.get("source_ssh_hostname"),
+                    "target_ssh_hostname": action.get("target_ssh_hostname"),
+                    "sync_group_id": action.get("sync_group_id"),
                 }
-            if action["sync_command"]:
-                datasets_instructions[dataset_name]["commands"].append(action["sync_command"])
-            if action["estimated_size"]:
-                datasets_instructions[dataset_name]["total_size_bytes"] += action["estimated_size"]
+            else:
+                # Update ending snapshot if this snapshot is newer (lexical compare may suffice due to timestamp naming)
+                if snapshot_name and snapshot_name > entry["ending_snapshot"]:
+                    entry["ending_snapshot"] = snapshot_name
+                # Prefer having a starting_snapshot if any incremental action exists
+                if not entry["starting_snapshot"] and incremental_base:
+                    entry["starting_snapshot"] = incremental_base
+                # If target_pool becomes known later, set it
+                if not entry["target_pool"] and target_pool:
+                    entry["target_pool"] = target_pool
+
+        dataset_instructions = list(consolidated.values())
 
         response: Dict[str, Any] = {
             "system_id": str(system_id),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "datasets": list(datasets_instructions.values()),
-            "dataset_count": len(datasets_instructions),
+            "datasets": dataset_instructions,
+            "dataset_count": len(dataset_instructions),
         }
 
         if include_diagnostics:
             response["diagnostics"] = self.diagnostics
 
         return response
+
+    def generate_dataset_sync_instructions(
+        self,
+        sync_group_id: UUID,
+        system_id: Optional[UUID] = None,
+        incremental_only: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Generate dataset-level sync instructions for a sync group.
+
+        Args:
+            sync_group_id: The sync group to process.
+            system_id: If provided, limit instructions to actions targeting this system.
+            incremental_only: If True, only include incremental actions (skip full sends).
+
+        Returns:
+            List of dataset instruction dicts matching `DatasetSyncInstruction` schema.
+        """
+        actions = self.determine_sync_actions(sync_group_id, system_id=system_id)
+        # Consolidate per dataset
+        consolidated: Dict[str, Dict[str, Any]] = {}
+        for action in actions:
+            if incremental_only and not action.get("is_incremental"):
+                continue
+            dataset = action.get("dataset")
+            if not dataset:
+                continue
+            snapshot_name = action.get("snapshot_name")
+            incremental_base = action.get("incremental_base") if action.get("is_incremental") else None
+            target_pool = action.get("target_pool") or action.get("pool")
+            entry = consolidated.get(dataset)
+            if entry is None:
+                consolidated[dataset] = {
+                    "pool": action.get("pool"),
+                    "dataset": dataset,
+                    "target_pool": target_pool,
+                    "target_dataset": dataset,
+                    "starting_snapshot": incremental_base,
+                    "ending_snapshot": snapshot_name,
+                    "source_ssh_hostname": action.get("source_ssh_hostname"),
+                    "target_ssh_hostname": action.get("target_ssh_hostname"),
+                    "sync_group_id": action.get("sync_group_id"),
+                }
+            else:
+                if snapshot_name and snapshot_name > entry["ending_snapshot"]:
+                    entry["ending_snapshot"] = snapshot_name
+                if not entry["starting_snapshot"] and incremental_base:
+                    entry["starting_snapshot"] = incremental_base
+                if not entry["target_pool"] and target_pool:
+                    entry["target_pool"] = target_pool
+        return list(consolidated.values())
 
     def update_sync_state(
         self,
