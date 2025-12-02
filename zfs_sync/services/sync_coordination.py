@@ -115,7 +115,6 @@ class SyncCoordinationService:
                     for missing_snapshot in source_missing:
                         # Check if hub has this snapshot by looking at what the source is missing
                         # If the source is missing it and it's not unique to other sources, then hub should have it
-                        hub_unique = comparison["unique_snapshots"].get(str(hub_system_id), [])
                         all_snapshots_except_source = set()
                         for sys_id in all_system_ids:
                             if sys_id != source_system_id:
