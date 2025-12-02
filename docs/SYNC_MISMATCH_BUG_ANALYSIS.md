@@ -17,7 +17,7 @@ The system should detect that HQS7 is missing snapshots and generate sync instru
 
 ## Root Cause Analysis
 
-The issue is in the `is_snapshot_out_of_sync_by_24h` function in `zfs_sync/services/sync_validators.py`. The function had a redundant check that was filtering snapshots incorrectly.
+The issue is in the `is_snapshot_out_of_sync_by_72h` function in `zfs_sync/services/sync_validators.py`. The function had a redundant check that was filtering snapshots incorrectly.
 
 ### The Bug
 
@@ -53,17 +53,17 @@ To verify the fix works:
 
 ## Additional Notes
 
-The function `is_snapshot_out_of_sync_by_24h` is a guardrail that prevents syncing systems that are only slightly out of sync (\< 24 hours). The logic:
+The function `is_snapshot_out_of_sync_by_72h` is a guardrail that prevents syncing systems that are only slightly out of sync (\< 72 hours). The logic:
 
 1. Finds the latest midnight snapshot on the source
 1. Checks if the target has this snapshot (if yes, returns False - not out of sync)
 1. Finds the latest midnight snapshot on the target
 1. Calculates the time difference between the two
-1. Returns True if the difference is > 24 hours
+1. Returns True if the difference is > 72 hours
 
 In the HQS7/HQS10 case:
 
 - Latest HQS10: 2025-11-30-000000
 - Latest HQS7: 2025-11-04-000000
-- Time difference: 26 days = 624 hours > 24 hours
+- Time difference: 26 days = 624 hours > 72 hours
 - Should return: True (out of sync)

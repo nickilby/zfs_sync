@@ -9,8 +9,8 @@ from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 
 logger = get_logger(__name__)
 
-# Minimum time gap between starting and ending snapshots (24 hours)
-MIN_SNAPSHOT_GAP_HOURS = 24
+# Minimum time gap between starting and ending snapshots (72 hours)
+MIN_SNAPSHOT_GAP_HOURS = 72
 
 
 def is_midnight_snapshot(snapshot_name: str) -> bool:
@@ -27,7 +27,7 @@ def is_midnight_snapshot(snapshot_name: str) -> bool:
     return snapshot_name.endswith("-000000")
 
 
-def is_snapshot_out_of_sync_by_24h(
+def is_snapshot_out_of_sync_by_72h(
     source_snapshots: List[SnapshotModel],
     target_snapshots: List[SnapshotModel],
     source_snapshot_names: Set[str],
@@ -35,7 +35,7 @@ def is_snapshot_out_of_sync_by_24h(
     comparison_service: SnapshotComparisonService,
 ) -> bool:
     """
-    Check if datasets are more than 24 hours out of sync.
+    Check if datasets are more than 72 hours out of sync.
 
     Args:
         source_snapshots: List of snapshots from source system
@@ -45,7 +45,7 @@ def is_snapshot_out_of_sync_by_24h(
         comparison_service: SnapshotComparisonService instance for extracting snapshot names
 
     Returns:
-        True if datasets are more than 24 hours out of sync, False otherwise
+        True if datasets are more than 72 hours out of sync, False otherwise
     """
     # Find the latest midnight snapshot on source
     # Note: source_snapshot_names is already filtered to midnight snapshots, so we just need to check is_midnight_snapshot
@@ -66,7 +66,7 @@ def is_snapshot_out_of_sync_by_24h(
     # Check if target has this snapshot
     if latest_source_name in target_snapshot_names:
         # Target has the latest source snapshot, but we should still check if there are missing intermediate snapshots
-        # However, for the 24-hour guardrail, if target has the latest, they're considered in sync
+        # However, for the 72-hour guardrail, if target has the latest, they're considered in sync
         return False  # Target has the latest, so not out of sync
 
     # Find the latest midnight snapshot on target
@@ -83,7 +83,7 @@ def is_snapshot_out_of_sync_by_24h(
         # Target has no midnight snapshots, check age of source's latest
         now = datetime.now(timezone.utc)
         age_hours: float = (now - latest_source.timestamp).total_seconds() / 3600  # type: ignore[operator]
-        result: bool = age_hours > 24
+        result: bool = age_hours > 72
         return result
 
     latest_target = max(target_midnight_snapshots, key=lambda s: s.timestamp)  # type: ignore[arg-type,return-value]
@@ -102,13 +102,13 @@ def is_snapshot_out_of_sync_by_24h(
         hours_diff,
     )
 
-    # If source is ahead by more than 24 hours, systems are out of sync
-    result = hours_diff > 24
+    # If source is ahead by more than 72 hours, systems are out of sync
+    result = hours_diff > 72
     logger.debug(
-        "Sync check result: %s (hours_diff=%.2f > 24=%s)",
+        "Sync check result: %s (hours_diff=%.2f > 72=%s)",
         result,
         hours_diff,
-        hours_diff > 24,
+        hours_diff > 72,
     )
     return result
 
@@ -158,7 +158,7 @@ def validate_snapshot_gap(
         starting_snapshot: Starting snapshot name (None for full sync)
         ending_snapshot: Ending snapshot name
         source_snapshot_names: Dictionary mapping snapshot names to timestamps
-        min_gap_hours: Minimum gap in hours (default: 24)
+        min_gap_hours: Minimum gap in hours (default: 72)
 
     Returns:
         True if gap is sufficient or no starting snapshot, False otherwise

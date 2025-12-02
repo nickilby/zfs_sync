@@ -9,7 +9,7 @@ from zfs_sync.database.repositories import (
     SystemRepository,
 )
 from zfs_sync.services.sync_coordination import SyncCoordinationService
-from zfs_sync.services.sync_validators import is_snapshot_out_of_sync_by_24h
+from zfs_sync.services.sync_validators import is_snapshot_out_of_sync_by_72h
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 
 
@@ -148,7 +148,7 @@ class TestSyncMismatchDetection:
                 size=50 * 1024 * 1024 * 1024,  # 50GB
             )
 
-        # Test the is_snapshot_out_of_sync_by_24h function directly
+        # Test the is_snapshot_out_of_sync_by_72h function directly
         hqs10_snapshot_models = snapshot_repo.get_by_pool_dataset(
             pool="hqs10p1", dataset="L1S4DAT1", system_id=hqs10.id
         )
@@ -169,7 +169,7 @@ class TestSyncMismatchDetection:
         }
 
         # Test the validator function
-        is_out_of_sync = is_snapshot_out_of_sync_by_24h(
+        is_out_of_sync = is_snapshot_out_of_sync_by_72h(
             source_snapshots=hqs10_snapshot_models,
             target_snapshots=hqs7_snapshot_models,
             source_snapshot_names=hqs10_midnight_names,
@@ -180,7 +180,7 @@ class TestSyncMismatchDetection:
         # HQS7 is missing snapshots from 2025-11-05 onwards, so it should be out of sync
         # Latest HQS10: 2025-11-30-000000
         # Latest HQS7: 2025-11-04-000000
-        # Time difference: 26 days = 624 hours > 24 hours
+        # Time difference: 26 days = 624 hours > 72 hours
         assert is_out_of_sync, (
             "HQS7 should be detected as out of sync (missing snapshots from 2025-11-05 onwards, "
             "latest HQS10 snapshot is 2025-11-30, latest HQS7 is 2025-11-04, "
