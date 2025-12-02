@@ -141,6 +141,7 @@ async def shutdown_event():
 # Import routes (must be after app creation)
 from zfs_sync.api.routes import (  # noqa: E402
     conflicts,
+    dashboard,
     health,
     snapshots,
     sync,
@@ -185,8 +186,8 @@ for route_name, route_module, tag in routers_to_include:
 # Root route - redirect to API docs
 @app.get("/")
 async def root():
-    """Redirect root to API documentation."""
-    return RedirectResponse(url="/docs")
+    """Redirect root to dashboard."""
+    return RedirectResponse(url="/dashboard")
 
 
 # Static file serving (for future frontend assets)
@@ -223,6 +224,9 @@ async def favicon():
 
     return Response(status_code=204)  # No content
 
+
+# Include the dashboard router without a prefix
+app.include_router(dashboard.router, tags=["Dashboard"])
 
 # Catch-all for assets if not mounted (returns 204 to avoid 404 spam in logs)
 if not assets_mounted:
