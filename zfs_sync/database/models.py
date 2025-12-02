@@ -56,12 +56,17 @@ class SyncGroupModel(BaseModel):
     description = Column(Text, nullable=True)  # type: ignore[assignment]
     enabled = Column(Boolean, default=True, nullable=False)  # type: ignore[assignment]
     sync_interval_seconds = Column(Integer, default=3600, nullable=False)  # type: ignore[assignment]
+    directional = Column(Boolean, default=False, nullable=False)  # type: ignore[assignment]
+    hub_system_id = Column(GUID(), ForeignKey("systems.id"), nullable=True, index=True)  # type: ignore[assignment]
     extra_metadata = Column("metadata", JSON, default=dict)  # type: ignore[assignment]
 
     # Many-to-many relationship with systems
     system_associations = relationship(
         "SyncGroupSystemModel", back_populates="sync_group", cascade="all, delete-orphan"
     )
+    
+    # Relationship to hub system
+    hub_system = relationship("SystemModel", foreign_keys=[hub_system_id])
 
 
 class SyncGroupSystemModel(BaseModel):

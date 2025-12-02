@@ -65,38 +65,99 @@ class SyncCoordinationService:
             logger.warning("Sync group %s has less than 2 systems", sync_group_id)
             return []
 
+        # Handle directional sync logic
+        if sync_group.directional and sync_group.hub_system_id:
+            hub_system_id = sync_group.hub_system_id
+            if hub_system_id not in system_ids:
+                logger.warning(
+                    "Hub system %s not in sync group %s, falling back to bidirectional sync",
+                    hub_system_id,
+                    sync_group_id,
+                )
+                # Continue with bidirectional logic
+            else:
+                logger.info(
+                    "Using directional sync for group %s with hub system %s",
+                    sync_group_id,
+                    hub_system_id,
+                )
+                # For directional sync, only check for missing snapshots on the hub
+                # Source systems should replicate TO the hub, not FROM it
+                system_ids = [hub_system_id]  # Only check mismatches for the hub system
+
         # Get all datasets that should be synced (from existing snapshots)
         datasets = self._get_datasets_for_systems(system_ids)
 
+        # Get all systems for snapshot source checking (even in directional mode)
+        all_system_ids = [assoc.system_id for assoc in sync_group.system_associations]
+        
         mismatches = []
         for dataset in datasets:
-            comparison = self.comparison_service.compare_snapshots_by_dataset(
-                dataset=dataset, system_ids=system_ids
-            )
-
-            # Find systems with missing snapshots
-            for system_id_str, missing_snapshots in comparison["missing_snapshots"].items():
-                if missing_snapshots:
-                    system_id = UUID(system_id_str)
-                    for missing_snapshot in missing_snapshots:
-                        # Find which systems have this snapshot
-                        source_systems = self._find_systems_with_snapshot(
-                            dataset, missing_snapshot, system_ids
+            if sync_group.directional and sync_group.hub_system_id:
+                # For directional sync, only consider mismatches where hub is the target
+                hub_system_id = sync_group.hub_system_id
+                source_system_ids = [sid for sid in all_system_ids if sid != hub_system_id]
+                
+                # Get comparison for all systems to find what the hub is missing
+                comparison = self.comparison_service.compare_snapshots_by_dataset(
+                    dataset=dataset, system_ids=all_system_ids
+                )
+                
+                # Only create mismatches for snapshots missing on the hub
+                hub_missing = comparison["missing_snapshots"].get(str(hub_system_id), [])
+                
+                for missing_snapshot in hub_missing:
+                    # Find which source systems have this snapshot
+                    source_systems = self._find_systems_with_snapshot(
+                        dataset, missing_snapshot, source_system_ids
+                    )
+                    
+                    if source_systems:
+                        mismatches.append(
+                            {
+                                "sync_group_id": str(sync_group_id),
+                                "dataset": dataset,
+                                "target_system_id": str(hub_system_id),
+                                "missing_snapshot": missing_snapshot,
+                                "source_system_ids": [str(sid) for sid in source_systems],
+                                "priority": self._calculate_priority(
+                                    missing_snapshot, comparison
+                                ),
+                                "directional": True,
+                                "reason": "hub_missing_from_source",
+                            }
                         )
+            else:
+                # Bidirectional sync: existing logic
+                comparison = self.comparison_service.compare_snapshots_by_dataset(
+                    dataset=dataset, system_ids=system_ids
+                )
 
-                        if source_systems:
-                            mismatches.append(
-                                {
-                                    "sync_group_id": str(sync_group_id),
-                                    "dataset": dataset,
-                                    "target_system_id": str(system_id),
-                                    "missing_snapshot": missing_snapshot,
-                                    "source_system_ids": [str(sid) for sid in source_systems],
-                                    "priority": self._calculate_priority(
-                                        missing_snapshot, comparison
-                                    ),
-                                }
+                # Find systems with missing snapshots
+                for system_id_str, missing_snapshots in comparison["missing_snapshots"].items():
+                    if missing_snapshots:
+                        system_id = UUID(system_id_str)
+                        for missing_snapshot in missing_snapshots:
+                            # Find which systems have this snapshot
+                            source_systems = self._find_systems_with_snapshot(
+                                dataset, missing_snapshot, system_ids
                             )
+
+                            if source_systems:
+                                mismatches.append(
+                                    {
+                                        "sync_group_id": str(sync_group_id),
+                                        "dataset": dataset,
+                                        "target_system_id": str(system_id),
+                                        "missing_snapshot": missing_snapshot,
+                                        "source_system_ids": [str(sid) for sid in source_systems],
+                                        "priority": self._calculate_priority(
+                                            missing_snapshot, comparison
+                                        ),
+                                        "directional": False,
+                                        "reason": "bidirectional_mismatch",
+                                    }
+                                )
 
         return mismatches
 
@@ -319,6 +380,55 @@ class SyncCoordinationService:
                 # If target_pool becomes known later, set it
                 if not entry["target_pool"] and target_pool:
                     entry["target_pool"] = target_pool
+
+        # Generate commands for each dataset instruction
+        for instruction in consolidated.values():
+            commands = []
+            dataset = instruction["dataset"]
+            starting_snapshot = instruction.get("starting_snapshot")
+            ending_snapshot = instruction.get("ending_snapshot")
+            source_ssh_hostname = instruction.get("source_ssh_hostname")
+            target_ssh_hostname = instruction.get("target_ssh_hostname")
+            
+            if ending_snapshot and source_ssh_hostname and target_ssh_hostname:
+                # Find source pool by looking up actions for this dataset
+                source_pool = None
+                for action in all_actions:
+                    if action.get("dataset") == dataset:
+                        source_pool = action.get("pool")  # This is the source pool from the action
+                        break
+                
+                target_pool = instruction.get("target_pool")
+                
+                if source_pool and target_pool:
+                    try:
+                        if starting_snapshot:
+                            # Incremental sync command
+                            command = SSHCommandGenerator.generate_incremental_sync_command(
+                                pool=source_pool,
+                                dataset=dataset,
+                                snapshot_name=ending_snapshot,
+                                incremental_base=starting_snapshot,
+                                target_ssh_hostname=target_ssh_hostname,
+                                target_pool=target_pool,
+                                target_dataset=dataset,
+                            )
+                            commands.append(command)
+                        else:
+                            # Full sync command
+                            command = SSHCommandGenerator.generate_full_sync_command(
+                                pool=source_pool,
+                                dataset=dataset,
+                                snapshot_name=ending_snapshot,
+                                target_ssh_hostname=target_ssh_hostname,
+                                target_pool=target_pool,
+                                target_dataset=dataset,
+                            )
+                            commands.append(command)
+                    except (ValueError, TypeError, AttributeError) as e:
+                        logger.warning("Failed to generate sync command for %s: %s", dataset, e)
+            
+            instruction["commands"] = commands
 
         dataset_instructions = list(consolidated.values())
 
@@ -681,6 +791,8 @@ class SyncCoordinationService:
             "sync_group_id": str(sync_group_id),
             "sync_group_name": sync_group.name,
             "enabled": sync_group.enabled,
+            "directional": sync_group.directional,
+            "hub_system_id": str(sync_group.hub_system_id) if sync_group.hub_system_id else None,
             "systems": systems_info,
             "datasets": datasets_analysis,
             "total_datasets": len(datasets_analysis),

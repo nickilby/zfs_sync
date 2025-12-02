@@ -26,6 +26,14 @@ async def create_sync_group(group: SyncGroupCreate, db: Session = Depends(get_db
             detail=f"Sync group with name {group.name} already exists",
         )
 
+    # Validate hub_system_id if directional
+    if group.directional and group.hub_system_id:
+        if group.hub_system_id not in group.system_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="hub_system_id must be one of the systems in the sync group",
+            )
+
     # Create the sync group
     db_group = repo.create(**group.model_dump(exclude={"system_ids"}, by_alias=True))
 
@@ -91,6 +99,18 @@ async def update_sync_group(
         if not group:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Sync group not found"
+            )
+
+    # Validate hub_system_id if directional update
+    if group_update.system_ids is not None:
+        # Check if the group is or will be directional
+        is_directional = group_update.directional if group_update.directional is not None else group.directional
+        hub_system_id = group_update.hub_system_id if group_update.hub_system_id is not None else group.hub_system_id
+        
+        if is_directional and hub_system_id and hub_system_id not in group_update.system_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="hub_system_id must be one of the systems in the sync group",
             )
 
     # Update system associations if provided
