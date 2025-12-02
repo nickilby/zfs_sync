@@ -56,16 +56,16 @@ suppress_orphan_dataset_logs: true  # Suppress repeated orphan dataset warnings 
 #
 # Hub-and-spoke directional sync group:
 # {
-#   "name": "backup-aggregation",
-#   "description": "Hub-and-spoke replication to central backup system",
+#   "name": "source-of-truth-distribution",
+#   "description": "Hub-and-spoke distribution from master to replicas",
 #   "enabled": true,
 #   "directional": true,
-#   "hub_system_id": "backup-server-uuid",
-#   "system_ids": ["source1-uuid", "source2-uuid", "backup-server-uuid"]
+#   "hub_system_id": "master-server-uuid",
+#   "system_ids": ["master-server-uuid", "replica1-uuid", "replica2-uuid"]
 # }
 #
 # Note: In directional mode:
-# - Only the hub system receives snapshots from source systems
-# - Source systems do not sync between each other
-# - Reverse sync (hub → sources) is prevented
-# - Use for backup aggregation, data collection scenarios
+# - The hub system pushes snapshots TO all other systems
+# - Other systems only receive from the hub (no cross-sync)
+# - Hub acts as source of truth for data distribution
+# - Use for master-replica scenarios, content distribution

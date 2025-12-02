@@ -129,19 +129,19 @@ class TestSyncCoordinationService:
         service = SyncCoordinationService(test_db)
         mismatches = service.detect_sync_mismatches(sync_group_id=sync_group.id)
 
-        # In directional mode, only hub should be target of sync actions
+        # In directional mode, only source systems should be targets of sync actions
         hub_targets = [m for m in mismatches if m.get("target_system_id") == str(hub_system.id)]
         source_targets = [m for m in mismatches if m.get("target_system_id") != str(hub_system.id)]
 
-        # Should have mismatches for hub (missing snapshots from sources)
-        # but no mismatches targeting source systems
-        assert len(source_targets) == 0, "Directional sync should not target source systems"
-        assert len(hub_targets) >= 0, "Hub system should be target for missing snapshots"
+        # Should have mismatches for source systems (missing snapshots from hub)
+        # but no mismatches targeting hub system
+        assert len(hub_targets) == 0, "Directional sync should not target hub system"
+        assert len(source_targets) >= 0, "Source systems should be targets for missing snapshots"
 
         # Verify directional flag is set on mismatches
-        for mismatch in hub_targets:
+        for mismatch in source_targets:
             assert mismatch.get("directional") is True
-            assert mismatch.get("reason") == "hub_missing_from_source"
+            assert mismatch.get("reason") == "source_missing_from_hub"
 
     def test_bidirectional_sync_still_works(
         self, test_db, sample_system_data, sample_snapshot_data
