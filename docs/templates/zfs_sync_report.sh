@@ -427,8 +427,8 @@ build_ssh_sync_command() {
         # -I flag requires: first snapshot (common/base/older), second snapshot (ending/newer)
         # The starting snapshot should be the common snapshot (older) and the ending snapshot should be the latest (newer)
         # ZFS requires: zfs send -I <base_snapshot> <ending_snapshot>
-        # Swap the order to ensure correct sequence: base (older) first, then ending (newer)
-        zfs_send_cmd="zfs send -c -I ${full_ending_snapshot_escaped} ${full_starting_snapshot}"
+        # Order: base (older/starting) first, then ending (newer) second
+        zfs_send_cmd="zfs send -c -I ${full_starting_snapshot} ${full_ending_snapshot_escaped}"
     else
         # Full send with compression
         full_ending_snapshot_escaped=$(printf '%q' "$full_ending_snapshot")

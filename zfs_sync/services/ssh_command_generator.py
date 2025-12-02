@@ -96,12 +96,13 @@ class SSHCommandGenerator:
             full_snapshot = f"{pool}/{dataset}@{snapshot_name}"
 
         if incremental_base:
-            # Incremental send: zfs send -i base_snapshot latest_snapshot
+            # Incremental send: zfs send -I base_snapshot ending_snapshot
+            # Order: base_snapshot (earlier/common) first, full_snapshot (later/ending) second
             if "/" in dataset:
                 base_snapshot = f"{dataset}@{incremental_base}"
             else:
                 base_snapshot = f"{pool}/{dataset}@{incremental_base}"
-            zfs_command = f"zfs send -i {SSHCommandGenerator.escape_shell_string(base_snapshot)} {SSHCommandGenerator.escape_shell_string(full_snapshot)}"
+            zfs_command = f"zfs send -I {SSHCommandGenerator.escape_shell_string(base_snapshot)} {SSHCommandGenerator.escape_shell_string(full_snapshot)}"
         else:
             # Full send: zfs send snapshot
             zfs_command = f"zfs send {SSHCommandGenerator.escape_shell_string(full_snapshot)}"
@@ -208,7 +209,9 @@ class SSHCommandGenerator:
         """
         Generate complete incremental sync command that runs on source system.
 
-        Command format: zfs send -c -I base@snapshot latest@snapshot | ssh target "zfs receive -s target_pool/dataset"
+        Command format: zfs send -c -I base@snapshot ending@snapshot | ssh target "zfs receive -s target_pool/dataset"
+
+        Note: The -I flag requires base snapshot (earlier/common) first, then ending snapshot (later) second.
 
         Args:
             pool: Source ZFS pool name
@@ -241,8 +244,9 @@ class SSHCommandGenerator:
             target_dataset_path = f"{tgt_pool}/{tgt_dataset}"
 
         # Generate zfs send command (runs locally on source)
-        # -c flag for compressed send; use -i for incremental base
-        send_cmd = f"zfs send -c -i {SSHCommandGenerator.escape_shell_string(base_snapshot)} {SSHCommandGenerator.escape_shell_string(full_snapshot)}"
+        # -c flag for compressed send; -I flag for incremental send (base snapshot first, ending snapshot second)
+        # Order: base_snapshot (earlier/common) first, full_snapshot (later/ending) second
+        send_cmd = f"zfs send -c -I {SSHCommandGenerator.escape_shell_string(base_snapshot)} {SSHCommandGenerator.escape_shell_string(full_snapshot)}"
 
         # Generate SSH receive command (runs on target)
         # -s flag for sparse receive
