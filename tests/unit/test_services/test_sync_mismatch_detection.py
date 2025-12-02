@@ -220,7 +220,9 @@ class TestSyncMismatchDetection:
         latest_snapshot_command_found = any(
             "2025-11-30-000000" in cmd for cmd in l1s4dat1_instruction["commands"]
         )
-        assert latest_snapshot_command_found, "A command to sync the latest snapshot should be present"
+        assert (
+            latest_snapshot_command_found
+        ), "A command to sync the latest snapshot should be present"
 
         # Check for an incremental command from the common snapshot
         incremental_command_found = any(
@@ -230,4 +232,3 @@ class TestSyncMismatchDetection:
         assert (
             incremental_command_found
         ), "An incremental sync command from the common base should be present"
-    

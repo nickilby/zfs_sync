@@ -155,37 +155,14 @@ class SyncCoordinationService:
             )
             is_incremental = incremental_base is not None
 
-            # Generate sync command if target SSH details are available
+            # Determine target system and pool
             sync_command = None
             target_system = self.system_repo.get(target_system_id)
-            if target_system and target_system.ssh_hostname:
-                try:
-                    # Get target pool
-                    _, target_pool = self._find_snapshot_id_and_pool(
-                        dataset=dataset,
-                        snapshot_name=mismatch["missing_snapshot"],
-                        system_id=target_system_id,
-                    )
-                    if not target_pool:
-                        # If the snapshot doesn't exist on the target, we can't know the pool.
-                        # We'll assume it's the same as the source for command generation.
-                        # This might need a better strategy, like a configured default pool per system.
-                        target_pool = self._get_target_pool(dataset, target_system_id)
-                        if not target_pool:
-                            self.diagnostics.append(
-                                {
-                                    "dataset": dataset,
-                                    "reason": f"Could not determine target pool for dataset on system {target_system_id}. No snapshots exist for this dataset.",
-                                    "skipped_action": "generate_sync_command",
-                                }
-                            )
-                            logger.warning(
-                                "Could not determine target pool for dataset %s on system %s",
-                                dataset,
-                                target_system_id,
-                            )
-                            continue
+            target_pool = self._get_target_pool(dataset, target_system_id) if target_system else None
 
+            # Generate sync command if target SSH details and pool are available
+            if target_system and target_system.ssh_hostname and target_pool:
+                try:
                     if is_incremental and incremental_base:
                         sync_command = SSHCommandGenerator.generate_incremental_sync_command(
                             pool=pool,
@@ -214,11 +191,26 @@ class SyncCoordinationService:
                             "skipped_action": "generate_sync_command",
                         }
                     )
+            elif target_system and not target_pool:
+                # Record diagnostic if we could not determine target pool
+                self.diagnostics.append(
+                    {
+                        "dataset": dataset,
+                        "reason": f"Could not determine target pool for dataset on system {target_system_id}. No snapshots exist for this dataset.",
+                        "skipped_action": "generate_sync_command",
+                    }
+                )
+                logger.warning(
+                    "Could not determine target pool for dataset %s on system %s",
+                    dataset,
+                    target_system_id,
+                )
 
             action = {
                 "action_type": "sync_snapshot",
                 "sync_group_id": mismatch["sync_group_id"],
                 "pool": pool,
+                "target_pool": target_pool,
                 "dataset": dataset,
                 "target_system_id": mismatch["target_system_id"],
                 "source_system_id": mismatch["source_system_ids"][0],  # Use first available
