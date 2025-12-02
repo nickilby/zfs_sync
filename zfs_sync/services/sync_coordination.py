@@ -186,6 +186,16 @@ class SyncCoordinationService:
                             )
 
                 # In distribution mode, hub is source of truth - no need to sync TO hub
+                # However, check if hub is missing snapshots for diagnostic purposes
+                hub_missing = comparison["missing_snapshots"].get(str(hub_system_id), [])
+                if hub_missing:
+                    logger.debug(
+                        "Hub system %s is missing %d snapshots for dataset %s, "
+                        "but will not receive sync instructions in distribution mode (hub is source of truth)",
+                        hub_system_id,
+                        len(hub_missing),
+                        dataset,
+                    )
             else:
                 # Bidirectional sync: existing logic
                 comparison = self.comparison_service.compare_snapshots_by_dataset(
@@ -257,19 +267,61 @@ class SyncCoordinationService:
         if system_id:
             # Filter to actions for specific system
             mismatches_before_filter = len(mismatches)
-            mismatches = [m for m in mismatches if UUID(m["target_system_id"]) == system_id]
-            logger.debug(
-                "Filtered mismatches for system %s: %d -> %d",
-                system_id,
-                mismatches_before_filter,
-                len(mismatches),
+
+            # Check if this is a hub system in directional sync
+            sync_group = self.sync_group_repo.get(sync_group_id)
+            is_hub_in_directional = (
+                sync_group and sync_group.directional and sync_group.hub_system_id == system_id
             )
-            if mismatches_before_filter > 0 and len(mismatches) == 0:
-                logger.warning(
-                    "No mismatches target system %s. Mismatches target: %s",
+
+            if is_hub_in_directional:
+                # For hub in directional sync, filter mismatches where hub is the SOURCE
+                # Hub needs instructions on what to SEND TO sources
+                mismatches = [
+                    m for m in mismatches if str(system_id) in m.get("source_system_ids", [])
+                ]
+                logger.debug(
+                    "Filtered mismatches for hub system %s (as source): %d -> %d",
                     system_id,
-                    {m["target_system_id"] for m in self.detect_sync_mismatches(sync_group_id)},
+                    mismatches_before_filter,
+                    len(mismatches),
                 )
+            else:
+                # For normal systems, filter mismatches where system is the TARGET
+                # System needs instructions on what to RECEIVE
+                mismatches = [m for m in mismatches if UUID(m["target_system_id"]) == system_id]
+                logger.debug(
+                    "Filtered mismatches for system %s (as target): %d -> %d",
+                    system_id,
+                    mismatches_before_filter,
+                    len(mismatches),
+                )
+
+            if mismatches_before_filter > 0 and len(mismatches) == 0:
+                all_mismatches = self.detect_sync_mismatches(sync_group_id)
+                target_systems = {m["target_system_id"] for m in all_mismatches}
+                source_systems = set()
+                for m in all_mismatches:
+                    source_systems.update(m.get("source_system_ids", []))
+                logger.warning(
+                    "No mismatches found for system %s. Mismatches target: %s, sources: %s",
+                    system_id,
+                    target_systems,
+                    source_systems,
+                )
+                if is_hub_in_directional:
+                    logger.info(
+                        "Hub system %s should receive instructions on what to send to sources. "
+                        "Found %d mismatches where hub is source.",
+                        system_id,
+                        len(
+                            [
+                                m
+                                for m in all_mismatches
+                                if str(system_id) in m.get("source_system_ids", [])
+                            ]
+                        ),
+                    )
 
         actions = []
         for mismatch in mismatches:
@@ -480,14 +532,33 @@ class SyncCoordinationService:
                 "No sync actions found for system %s. This may indicate a bug in mismatch detection.",
                 system_id,
             )
-            self.diagnostics.append(
-                {
-                    "level": "warning",
-                    "message": f"No sync actions found for system {system_id}",
-                    "sync_groups_checked": len(sync_groups),
-                    "suggestion": "Check if system is hub in directional sync (hub systems may not receive instructions)",
-                }
-            )
+            # Check if this is a hub system in directional sync
+            is_hub = False
+            for group in sync_groups:
+                if group and group.directional and group.hub_system_id == system_id:
+                    is_hub = True
+                    break
+
+            if is_hub:
+                self.diagnostics.append(
+                    {
+                        "level": "info",
+                        "message": (
+                            f"No sync actions found for hub system {system_id}. "
+                            "Hub should receive instructions on what snapshots to send to sources. "
+                            "This may indicate no source systems are missing snapshots from the hub."
+                        ),
+                        "sync_groups_checked": len(sync_groups),
+                    }
+                )
+            else:
+                self.diagnostics.append(
+                    {
+                        "level": "warning",
+                        "message": f"No sync actions found for system {system_id}",
+                        "sync_groups_checked": len(sync_groups),
+                    }
+                )
 
         # Consolidate to one instruction per dataset using earliest incremental_base and latest snapshot
         consolidated: Dict[str, Dict[str, Any]] = {}
@@ -500,13 +571,16 @@ class SyncCoordinationService:
             incremental_base = (
                 action.get("incremental_base") if action.get("is_incremental") else None
             )
-            target_pool = action.get("target_pool") or action.get("pool")
+            # Source pool is where the snapshot comes from (hub's pool when hub is source)
+            source_pool = action.get("pool")
+            # Target pool is where the snapshot goes to (receiving system's pool)
+            target_pool = action.get("target_pool") or source_pool
 
             if entry is None:
                 consolidated[dataset] = {
-                    "pool": target_pool,  # Use target_pool for the main instruction pool
+                    "pool": source_pool,  # Source pool (hub's pool when hub is sending)
                     "dataset": dataset,
-                    "target_pool": target_pool,
+                    "target_pool": target_pool,  # Target pool (receiving system's pool)
                     "target_dataset": dataset,
                     "starting_snapshot": incremental_base,
                     "ending_snapshot": snapshot_name,
