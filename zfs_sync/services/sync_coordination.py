@@ -144,7 +144,16 @@ class SyncCoordinationService:
                     list(comparison.get("missing_snapshots", {}).keys()),
                 )
 
-                # 1. Create mismatches for source systems missing snapshots from hub
+                # 1. Create mismatches for source systems missing snapshots from hub ONLY
+                # In directional mode, sources should ONLY receive from hub, never from other sources
+                hub_snapshots = self.snapshot_repo.get_by_dataset(
+                    dataset=dataset, system_id=hub_system_id
+                )
+                hub_snapshot_names = {
+                    self.comparison_service.extract_snapshot_name(s.name)
+                    for s in hub_snapshots
+                }
+                
                 for source_system_id in source_system_ids:
                     source_missing = comparison["missing_snapshots"].get(str(source_system_id), [])
                     logger.debug(
@@ -155,34 +164,13 @@ class SyncCoordinationService:
                     )
 
                     for missing_snapshot in source_missing:
-                        # Check if hub or other sources have this snapshot
-                        all_snapshots_except_source = set()
-                        for sys_id in all_system_ids:
-                            if sys_id != source_system_id:
-                                sys_snapshots = self.snapshot_repo.get_by_dataset(
-                                    dataset=dataset, system_id=sys_id
-                                )
-                                sys_snapshot_names = {
-                                    self.comparison_service.extract_snapshot_name(s.name)
-                                    for s in sys_snapshots
-                                }
-                                all_snapshots_except_source.update(sys_snapshot_names)
-
-                        # Prefer hub as source, but allow other sources if hub doesn't have it
-                        if missing_snapshot in all_snapshots_except_source:
-                            # Check if hub has this snapshot
-                            hub_snapshots = self.snapshot_repo.get_by_dataset(
-                                dataset=dataset, system_id=hub_system_id
-                            )
-                            hub_snapshot_names = {
-                                self.comparison_service.extract_snapshot_name(s.name)
-                                for s in hub_snapshots
-                            }
-                            if missing_snapshot in hub_snapshot_names:
-                                # Hub has it, create mismatch with hub as source
-                                mismatch = {
-                                    "sync_group_id": str(sync_group_id),
-                                    "dataset": dataset,
+                        # Only create mismatch if hub has this snapshot
+                        # Sources should never sync between each other in directional mode
+                        if missing_snapshot in hub_snapshot_names:
+                            # Hub has it, create mismatch with hub as source
+                            mismatch = {
+                                "sync_group_id": str(sync_group_id),
+                                "dataset": dataset,
                                     "target_system_id": str(source_system_id),
                                     "missing_snapshot": missing_snapshot,
                                     "source_system_ids": [str(hub_system_id)],
@@ -192,73 +180,15 @@ class SyncCoordinationService:
                                     "directional": True,
                                     "reason": "source_missing_from_hub",
                                 }
-                                mismatches.append(mismatch)
-                                logger.debug(
-                                    "Created mismatch: target=%s (source), snapshot=%s, source=%s (hub)",
-                                    source_system_id,
-                                    missing_snapshot,
-                                    hub_system_id,
-                                )
-                            else:
-                                # Hub doesn't have it, but another source does - create mismatch with that source
-                                source_systems_with_snapshot = self._find_systems_with_snapshot(
-                                    dataset, missing_snapshot, source_system_ids
-                                )
-                                if source_systems_with_snapshot:
-                                    mismatch = {
-                                        "sync_group_id": str(sync_group_id),
-                                        "dataset": dataset,
-                                        "target_system_id": str(source_system_id),
-                                        "missing_snapshot": missing_snapshot,
-                                        "source_system_ids": [
-                                            str(sid) for sid in source_systems_with_snapshot
-                                        ],
-                                        "priority": self._calculate_priority(
-                                            missing_snapshot, comparison
-                                        ),
-                                        "directional": True,
-                                        "reason": "source_missing_from_other_source",
-                                    }
-                                    mismatches.append(mismatch)
-                                    logger.debug(
-                                        "Created mismatch: target=%s (source), snapshot=%s, source=%s (other source)",
-                                        source_system_id,
-                                        missing_snapshot,
-                                        source_systems_with_snapshot[0],
-                                    )
+                            mismatches.append(mismatch)
+                            logger.debug(
+                                "Created mismatch: target=%s (source), snapshot=%s, source=%s (hub)",
+                                source_system_id,
+                                missing_snapshot,
+                                hub_system_id,
+                            )
 
-                # 2. Create mismatches for hub system missing snapshots from sources
-                hub_missing = comparison["missing_snapshots"].get(str(hub_system_id), [])
-                logger.debug(
-                    "Hub system %s missing %d snapshots for dataset %s",
-                    hub_system_id,
-                    len(hub_missing),
-                    dataset,
-                )
-
-                for missing_snapshot in hub_missing:
-                    # Find which source systems have this snapshot
-                    source_systems_with_snapshot = self._find_systems_with_snapshot(
-                        dataset, missing_snapshot, source_system_ids
-                    )
-                    if source_systems_with_snapshot:
-                        mismatch = {
-                            "sync_group_id": str(sync_group_id),
-                            "dataset": dataset,
-                            "target_system_id": str(hub_system_id),
-                            "missing_snapshot": missing_snapshot,
-                            "source_system_ids": [str(sid) for sid in source_systems_with_snapshot],
-                            "priority": self._calculate_priority(missing_snapshot, comparison),
-                            "directional": True,
-                            "reason": "hub_missing_from_source",
-                        }
-                        mismatches.append(mismatch)
-                        logger.debug(
-                            "Created mismatch: target=%s (hub), snapshot=%s, source=%s",
-                            hub_system_id,
-                            missing_snapshot,
-                            source_systems_with_snapshot[0],
-                        )
+                # In distribution mode, hub is source of truth - no need to sync TO hub
             else:
                 # Bidirectional sync: existing logic
                 comparison = self.comparison_service.compare_snapshots_by_dataset(

@@ -129,28 +129,27 @@ class TestSyncCoordinationService:
         service = SyncCoordinationService(test_db)
         mismatches = service.detect_sync_mismatches(sync_group_id=sync_group.id)
 
-        # In directional mode, both hub and source systems can be targets:
-        # - Hub can receive snapshots from sources (sources -> hub)
-        # - Sources can receive snapshots from hub (hub -> sources)
+        # In directional mode with distribution pattern (hub -> sources):
+        # - Hub is source of truth and pushes TO sources
+        # - Sources should never sync between each other
+        # - If hub has no snapshots, there should be no sync actions
         hub_targets = [m for m in mismatches if m.get("target_system_id") == str(hub_system.id)]
         source_targets = [m for m in mismatches if m.get("target_system_id") != str(hub_system.id)]
 
-        # Hub should be targeted because it's missing snapshots from sources
-        assert len(hub_targets) > 0, (
-            "Hub system should be targeted when it's missing snapshots from sources. "
-            f"Found {len(hub_targets)} hub targets, {len(source_targets)} source targets"
+        # In this test, hub has no snapshots, so no sync actions should occur
+        assert len(hub_targets) == 0, (
+            "Hub should not be targeted in distribution mode (hub is source of truth). "
+            f"Found {len(hub_targets)} hub targets"
         )
-        # Sources should NOT be targeted because hub has no snapshots to send
         assert len(source_targets) == 0, (
-            "Source systems should not be targeted when hub has no snapshots. "
+            "Sources should not be targeted when hub has no snapshots to distribute. "
             f"Found {len(source_targets)} source targets"
         )
 
-        # Verify directional flag and reason are set correctly on hub mismatches
-        for mismatch in hub_targets:
-            assert mismatch.get("directional") is True
-            assert mismatch.get("reason") == "hub_missing_from_source"
-            assert mismatch.get("target_system_id") == str(hub_system.id)
+        # No mismatches should be created when hub has no snapshots
+        assert len(mismatches) == 0, (
+            f"No sync actions should occur when hub has no snapshots. Found {len(mismatches)} mismatches"
+        )
 
     def test_bidirectional_sync_still_works(
         self, test_db, sample_system_data, sample_snapshot_data
