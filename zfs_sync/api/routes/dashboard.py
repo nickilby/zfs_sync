@@ -20,7 +20,9 @@ class SSEConnection:
     async def send(self, event: str, data: dict):
         """Send an event to this connection."""
         if not self.closed:
-            message = json.dumps({"event": event, "data": data, "timestamp": datetime.utcnow().isoformat()})
+            message = json.dumps(
+                {"event": event, "data": data, "timestamp": datetime.utcnow().isoformat()}
+            )
             await self.queue.put(f"event: {event}\ndata: {message}\n\n")
 
     async def close(self):
