@@ -41,16 +41,18 @@ Before you begin, you need:
 #### Option 1: Local Installation (Recommended)
 
 1. **Clone or download the repository:**
+
    ```bash
    git clone <repository-url>
    cd zfs_sync
    ```
 
 2. **Set up virtual environment and install dependencies:**
+
    ```bash
    # Run the setup script (creates venv and installs dependencies)
    ./setup.sh
-   
+
    # Or manually:
    python3 -m venv venv
    source venv/bin/activate
@@ -197,6 +199,7 @@ Now your systems need to tell ZFS Sync what snapshots they have.
 To enable systems to execute snapshot synchronization themselves using SSH, configure SSH connection details when registering or updating systems.
 
 **Prerequisites:**
+
 - SSH key-based authentication must already be configured between systems
 - SSH keys should have proper permissions (600 for private keys)
 - Systems must have network connectivity for SSH
@@ -311,6 +314,7 @@ curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_
 ```
 
 This tells you which snapshots to copy from other systems. If SSH details are configured, the response includes:
+
 - `source_ssh_hostname`, `source_ssh_user`, `source_ssh_port`: SSH connection details
 - `sync_command`: Ready-to-execute command string (if `include_commands=true`)
 - `incremental_base`: Base snapshot for incremental sends (if available)
@@ -421,10 +425,10 @@ while IFS=$'\t' read -r name creation used referenced; do
     pool=$(echo $name | cut -d'/' -f1)
     dataset=$(echo $name | cut -d'@' -f1)
     snap_name=$(echo $name | cut -d'@' -f2)
-    
+
     # Convert creation time to ISO format
     timestamp=$(date -d "$creation" -Iseconds)
-    
+
     # Report snapshot
     curl -X POST "$API_URL/snapshots" \
       -H "X-API-Key: $API_KEY" \
@@ -467,13 +471,14 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 ### Problem: "API key required" error
 
 **Solution:** Make sure you're including the API key in the request header:
+
 ```bash
 -H "X-API-Key: your-api-key-here"
 ```
 
 ### Problem: System shows as "offline"
 
-**Solution:** 
+**Solution:**
 
 1. Check if the system is sending heartbeats regularly
 2. Verify the heartbeat timeout setting (default: 300 seconds)
@@ -551,4 +556,3 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 ---
 
 **Remember:** The API key is like a password - keep it secure and don't share it!
-

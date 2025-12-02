@@ -77,5 +77,3 @@ networks:
     # Optional: Use external network for production
     # external: true
     # name: production-network
-
-

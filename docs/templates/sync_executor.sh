@@ -59,18 +59,18 @@ FAILED=0
 while IFS= read -r action; do
     # Extract sync command from action
     SYNC_COMMAND=$(echo "$action" | jq -r '.sync_command // empty')
-    
+
     if [ -z "$SYNC_COMMAND" ]; then
         log "WARNING: No sync_command in action, skipping"
         continue
     fi
-    
+
     ACTION_TYPE=$(echo "$action" | jq -r '.action_type')
     DATASET=$(echo "$action" | jq -r '.dataset')
     SNAPSHOT=$(echo "$action" | jq -r '.snapshot_name')
-    
+
     log "Executing sync: $ACTION_TYPE for $DATASET@$SNAPSHOT"
-    
+
     if [ "$DRY_RUN" = "true" ]; then
         log "DRY RUN: Would execute: $SYNC_COMMAND"
         EXECUTED=$((EXECUTED + 1))
@@ -79,7 +79,7 @@ while IFS= read -r action; do
         if eval "$SYNC_COMMAND"; then
             log "SUCCESS: Sync completed for $DATASET@$SNAPSHOT"
             EXECUTED=$((EXECUTED + 1))
-            
+
             # Optionally report success back to witness service
             # curl -X POST "$WITNESS_API_URL/api/v1/sync/states" \
             #     -H "X-API-Key: $API_KEY" \
@@ -88,7 +88,7 @@ while IFS= read -r action; do
         else
             log "FAILED: Sync failed for $DATASET@$SNAPSHOT"
             FAILED=$((FAILED + 1))
-            
+
             # Optionally report failure back to witness service
             # ERROR_MSG="Sync command execution failed"
             # curl -X POST "$WITNESS_API_URL/api/v1/sync/states" \
@@ -106,4 +106,3 @@ if [ $FAILED -gt 0 ]; then
 fi
 
 exit 0
-

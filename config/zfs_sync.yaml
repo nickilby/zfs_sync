@@ -25,4 +25,3 @@ api_key_length: 32
 # Sync settings
 default_sync_interval_seconds: 3600  # 1 hour
 heartbeat_timeout_seconds: 300  # 5 minutes
-

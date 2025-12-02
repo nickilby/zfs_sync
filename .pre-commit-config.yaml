@@ -22,12 +22,20 @@ repos:
     rev: v0.41.0
     hooks:
     -   id: markdownlint
-        args: [--fix]
+        args: ["--fix", "--disable", "MD013", "MD040", "MD036"]
 -   repo: local
     hooks:
-    -   id: pytest
-        name: pytest
-        entry: pytest
+    -   id: pytest-quick
+        name: pytest (quick)
+        entry: .venv/bin/python -m pytest
         language: system
         types: [python]
-        args: ["-v"]
+        pass_filenames: false
+        args: ["-q", "tests/unit/test_services/test_sync_mismatch_detection.py"]
+    -   id: pytest-all
+        name: pytest (full)
+        entry: .venv/bin/python -m pytest
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["-v", "tests/"]

@@ -74,4 +74,3 @@ markers = [
     "benchmark: Performance benchmark tests",
     "database: Tests that require database access",
 ]
-

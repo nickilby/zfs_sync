@@ -39,4 +39,3 @@ heartbeat_timeout_seconds: 300  # 5 minutes
 sync_check_interval_seconds: 300  # Check every 5 minutes
 auto_sync_enabled: true
 incremental_sync_only: true  # Only auto-sync incremental snapshots
-

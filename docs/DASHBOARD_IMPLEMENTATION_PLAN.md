@@ -7,6 +7,7 @@ This document outlines the complete plan for building a modern, real-time web da
 ## Technology Stack
 
 ### Frontend
+
 - **HTML5/CSS3**: Semantic HTML with modern CSS
 - **JavaScript (ES6+)**: Vanilla JavaScript (no framework dependencies)
 - **Chart.js** (v4.x): Lightweight charting library for visualizations
@@ -14,11 +15,13 @@ This document outlines the complete plan for building a modern, real-time web da
 - **Real-time Updates**: Server-Sent Events (SSE) for push updates from server
 
 ### Backend Integration
+
 - **FastAPI Static Files**: Serve dashboard HTML/CSS/JS as static files
 - **FastAPI SSE Endpoint**: New endpoint for real-time data streaming
 - **Existing REST APIs**: Leverage all existing `/api/v1/*` endpoints
 
 ### Why This Stack?
+
 - **No build step**: Direct HTML/CSS/JS files, easy to maintain
 - **Lightweight**: Minimal dependencies, fast loading
 - **Real-time**: SSE is simpler than WebSockets for one-way updates
@@ -69,6 +72,7 @@ This document outlines the complete plan for building a modern, real-time web da
 **Layout**: Grid of cards and charts
 
 **Components**:
+
 - **Header**: Application name, version, last update time
 - **Summary Cards** (4 cards in a row):
   - Total Systems (with online/offline breakdown)
@@ -80,6 +84,7 @@ This document outlines the complete plan for building a modern, real-time web da
 - **Recent Activity Feed**: Scrollable list of recent events (system heartbeats, sync operations, conflicts)
 
 **API Endpoints Used**:
+
 - `GET /api/v1/systems/health/all` - System health data
 - `GET /api/v1/sync-groups` - Sync groups list
 - `GET /api/v1/sync/groups/{id}/status` - Sync status for each group
@@ -91,6 +96,7 @@ This document outlines the complete plan for building a modern, real-time web da
 **Layout**: Table with filters and detail panels
 
 **Components**:
+
 - **Systems Table**:
   - Columns: Hostname, Platform, Status (online/offline), Last Seen, Snapshot Count, Actions
   - Sortable columns
@@ -103,6 +109,7 @@ This document outlines the complete plan for building a modern, real-time web da
   - Recent snapshots list
 
 **API Endpoints Used**:
+
 - `GET /api/v1/systems` - List all systems
 - `GET /api/v1/systems/{id}/health` - System health details
 - `GET /api/v1/snapshots/statistics/{id}` - Snapshot statistics
@@ -113,6 +120,7 @@ This document outlines the complete plan for building a modern, real-time web da
 **Layout**: Cards for each sync group with status indicators
 
 **Components**:
+
 - **Sync Group Cards**:
   - Group name and description
   - Enabled/disabled status badge
@@ -128,6 +136,7 @@ This document outlines the complete plan for building a modern, real-time web da
   - Conflict list
 
 **API Endpoints Used**:
+
 - `GET /api/v1/sync-groups` - List all sync groups
 - `GET /api/v1/sync/groups/{id}/status` - Sync status summary
 - `GET /api/v1/sync/groups/{id}/states` - Detailed sync states
@@ -139,6 +148,7 @@ This document outlines the complete plan for building a modern, real-time web da
 **Layout**: List of conflicts with resolution options
 
 **Components**:
+
 - **Conflicts Table**:
   - Columns: Sync Group, Pool/Dataset, Snapshot Name, Type, Severity, Affected Systems, Actions
   - Filter by type (diverged, orphaned, missing)
@@ -150,6 +160,7 @@ This document outlines the complete plan for building a modern, real-time web da
   - Resolution action buttons (if applicable)
 
 **API Endpoints Used**:
+
 - `GET /api/v1/conflicts/sync-group/{id}` - Conflicts for sync group
 - `GET /api/v1/conflicts/summary/{id}` - Conflict summary
 - `POST /api/v1/conflicts/resolve` - Resolve conflict (if implemented)
@@ -159,6 +170,7 @@ This document outlines the complete plan for building a modern, real-time web da
 **Layout**: Charts and metrics
 
 **Components**:
+
 - **Snapshot Growth Chart**: Line chart showing snapshot count over time (last 30 days)
 - **Sync Success Rate Chart**: Line chart showing sync success/failure rates
 - **System Uptime Chart**: Bar chart showing uptime percentage per system
@@ -166,6 +178,7 @@ This document outlines the complete plan for building a modern, real-time web da
 - **Data Volume Chart**: Stacked area chart showing snapshot sizes over time
 
 **API Endpoints Used**:
+
 - `GET /api/v1/snapshots/statistics/{id}` - Per-system statistics
 - `GET /api/v1/snapshots/history/{id}` - Snapshot history
 - `GET /api/v1/systems/health/all` - System health data
@@ -177,6 +190,7 @@ This document outlines the complete plan for building a modern, real-time web da
 **New Endpoint**: `GET /api/v1/dashboard/events`
 
 **Event Types**:
+
 1. **system_heartbeat**: System sent heartbeat (updates last_seen)
 2. **system_offline**: System went offline (heartbeat timeout)
 3. **snapshot_reported**: New snapshot reported
@@ -185,6 +199,7 @@ This document outlines the complete plan for building a modern, real-time web da
 6. **conflict_resolved**: Conflict resolved
 
 **Event Format**:
+
 ```json
 {
   "event": "system_heartbeat",
@@ -198,12 +213,14 @@ This document outlines the complete plan for building a modern, real-time web da
 ```
 
 **Client Implementation**:
+
 - Connect to SSE endpoint on page load
 - Parse incoming events
 - Update relevant UI components based on event type
 - Debounce rapid updates to prevent UI flicker
 
 **Update Frequency**:
+
 - Initial data load: All endpoints called on page load
 - Real-time updates: Via SSE (push-based)
 - Fallback polling: If SSE connection lost, fall back to polling every 30 seconds
@@ -234,18 +251,21 @@ zfs_sync/
 ## Implementation Steps
 
 ### Phase 1: Basic Dashboard Structure
+
 1. Create `zfs_sync/api/routes/dashboard.py` with route to serve HTML
 2. Create `zfs_sync/static/dashboard/index.html` with basic layout
 3. Add static file mounting in `zfs_sync/api/app.py`
 4. Test dashboard is accessible at `/dashboard`
 
 ### Phase 2: API Integration
+
 1. Create `static/dashboard/js/api-client.js` with functions to call all needed endpoints
 2. Create `static/dashboard/js/utils.js` for formatting, date handling, etc.
 3. Implement Overview Dashboard view with summary cards
 4. Fetch and display real data from APIs
 
 ### Phase 3: Charts and Visualizations
+
 1. Add Chart.js library (via CDN)
 2. Create `static/dashboard/js/charts.js` for chart initialization
 3. Implement System Status pie chart
@@ -253,12 +273,14 @@ zfs_sync/
 5. Add other charts as needed
 
 ### Phase 4: Additional Views
+
 1. Implement Systems View with table
 2. Implement Sync Groups View with cards
 3. Implement Conflicts View with table
 4. Implement Statistics View with charts
 
 ### Phase 5: Real-Time Updates
+
 1. Create SSE endpoint in `dashboard.py`
 2. Create `static/dashboard/js/sse-client.js` for SSE connection
 3. Integrate SSE client into main dashboard
@@ -267,6 +289,7 @@ zfs_sync/
 6. Implement fallback polling
 
 ### Phase 6: Polish and UX
+
 1. Add loading states and spinners
 2. Add error handling and user-friendly error messages
 3. Add responsive design for mobile/tablet
@@ -277,6 +300,7 @@ zfs_sync/
 ## UI/UX Design Guidelines
 
 ### Color Scheme
+
 - **Primary**: Blue (#3B82F6) for primary actions and headers
 - **Success**: Green (#10B981) for online status, in_sync
 - **Warning**: Yellow (#F59E0B) for out_of_sync, medium severity
@@ -286,16 +310,19 @@ zfs_sync/
 - **Cards**: White (#FFFFFF) with subtle shadow
 
 ### Typography
+
 - **Headings**: System font stack (sans-serif)
 - **Body**: System font stack
 - **Monospace**: For system hostnames, IDs, timestamps
 
 ### Spacing
+
 - Use consistent spacing scale (4px, 8px, 16px, 24px, 32px)
 - Card padding: 24px
 - Section margins: 32px
 
 ### Components
+
 - **Cards**: White background, rounded corners (8px), subtle shadow
 - **Badges**: Small rounded pills for status indicators
 - **Tables**: Clean borders, alternating row colors
@@ -303,6 +330,7 @@ zfs_sync/
 - **Charts**: Clean, minimal styling, readable labels
 
 ### Responsive Design
+
 - **Desktop**: Multi-column layout, side-by-side charts
 - **Tablet**: 2-column layout, stacked on smaller screens
 - **Mobile**: Single column, stacked cards
@@ -310,6 +338,7 @@ zfs_sync/
 ## API Endpoints Summary
 
 ### Existing Endpoints to Use
+
 - `GET /api/v1/systems` - List systems
 - `GET /api/v1/systems/{id}` - System details
 - `GET /api/v1/systems/health/all` - All system health
@@ -324,6 +353,7 @@ zfs_sync/
 - `GET /api/v1/snapshots/history/{id}` - Snapshot history
 
 ### New Endpoints to Create
+
 - `GET /dashboard` - Serve dashboard HTML
 - `GET /api/v1/dashboard/events` - SSE stream for real-time updates
 
@@ -360,6 +390,7 @@ zfs_sync/
 ## Example Code Structure
 
 ### dashboard.py (Backend Route)
+
 ```python
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -380,7 +411,7 @@ async def dashboard_events():
         # Implementation for SSE streaming
         # Monitor database changes, emit events
         pass
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream"
@@ -388,6 +419,7 @@ async def dashboard_events():
 ```
 
 ### index.html (Main Dashboard)
+
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -421,4 +453,3 @@ async def dashboard_events():
 - Historical data views (beyond 30 days)
 - Alert configuration UI
 - System management actions from dashboard
-

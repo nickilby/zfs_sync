@@ -20,4 +20,3 @@ output_format = json
 
 # Aggressive mode (more thorough scanning)
 aggressive = false
-

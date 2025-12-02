@@ -305,6 +305,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 - JSON responses
 - Pydantic models ensure consistent structure
 - Error responses follow standard format:
+
   ```json
   {
     "detail": "Error message",

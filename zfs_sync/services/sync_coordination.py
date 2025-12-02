@@ -158,7 +158,9 @@ class SyncCoordinationService:
             # Determine target system and pool
             sync_command = None
             target_system = self.system_repo.get(target_system_id)
-            target_pool = self._get_target_pool(dataset, target_system_id) if target_system else None
+            target_pool = (
+                self._get_target_pool(dataset, target_system_id) if target_system else None
+            )
 
             # Generate sync command if target SSH details and pool are available
             if target_system and target_system.ssh_hostname and target_pool:

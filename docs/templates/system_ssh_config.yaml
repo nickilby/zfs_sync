@@ -54,4 +54,3 @@ system_complete_json: |
 # - ssh_port: SSH port number (optional, default: 22)
 # - connectivity_status: System connectivity status (optional, default: "unknown")
 # - metadata: Additional system metadata (optional, JSON object)
-
