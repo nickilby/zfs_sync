@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from zfs_sync.database.models import SyncStateModel
+from zfs_sync.config import get_settings
 from zfs_sync.database.repositories import (
     SnapshotRepository,
     SyncGroupRepository,
@@ -33,6 +34,8 @@ class SyncCoordinationService:
         self.system_repo = SystemRepository(db)
         self.comparison_service = SnapshotComparisonService(db)
         self.diagnostics: List[Dict[str, Any]] = []
+        self.settings = get_settings()
+        self._orphan_datasets_logged: Set[Tuple[str, UUID]] = set()
 
     def detect_sync_mismatches(self, sync_group_id: UUID) -> List[Dict[str, Any]]:
         """
@@ -194,19 +197,26 @@ class SyncCoordinationService:
                         }
                     )
             elif target_system and not target_pool:
-                # Record diagnostic if we could not determine target pool
-                self.diagnostics.append(
-                    {
-                        "dataset": dataset,
-                        "reason": f"Could not determine target pool for dataset on system {target_system_id}. No snapshots exist for this dataset.",
-                        "skipped_action": "generate_sync_command",
-                    }
-                )
-                logger.warning(
-                    "Could not determine target pool for dataset %s on system %s",
-                    dataset,
-                    target_system_id,
-                )
+                # Orphan dataset scenario: target has no snapshots yet
+                orphan_key = (dataset, target_system_id)
+                if self.settings.suppress_orphan_dataset_logs and orphan_key in self._orphan_datasets_logged:
+                    # Skip repeated logging/diagnostics
+                    pass
+                else:
+                    self.diagnostics.append(
+                        {
+                            "dataset": dataset,
+                            "reason": f"Target system {target_system_id} has no snapshots for dataset {dataset} yet (orphan).",
+                            "skipped_action": "generate_sync_command",
+                        }
+                    )
+                    logger.warning(
+                        "Orphan dataset: no target pool for %s on system %s (suppressed=%s)",
+                        dataset,
+                        target_system_id,
+                        self.settings.suppress_orphan_dataset_logs,
+                    )
+                    self._orphan_datasets_logged.add(orphan_key)
 
             action = {
                 "action_type": "sync_snapshot",

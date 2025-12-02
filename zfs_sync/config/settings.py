@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     incremental_sync_only: bool = Field(
         default=True, description="Only process incremental syncs (default True)"
     )
+    suppress_orphan_dataset_logs: bool = Field(
+        default=False,
+        description="Suppress repeated warnings for datasets that exist on some systems but have no snapshots yet on the target (orphan datasets).",
+    )
 
     # File paths
     config_file: Optional[Path] = Field(
