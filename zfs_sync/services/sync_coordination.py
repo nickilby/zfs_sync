@@ -170,12 +170,8 @@ class SyncCoordinationService:
                         # If the snapshot doesn't exist on the target, we can't know the pool.
                         # We'll assume it's the same as the source for command generation.
                         # This might need a better strategy, like a configured default pool per system.
-                        target_snapshots = self.snapshot_repo.get_by_dataset(
-                            dataset=dataset, system_id=target_system_id
-                        )
-                        if target_snapshots:
-                            target_pool = target_snapshots[0].pool
-                        else:
+                        target_pool = self._get_target_pool(dataset, target_system_id)
+                        if not target_pool:
                             self.diagnostics.append(
                                 {
                                     "dataset": dataset,
@@ -286,7 +282,7 @@ class SyncCoordinationService:
             if dataset_name not in datasets_instructions:
                 datasets_instructions[dataset_name] = {
                     "dataset": dataset_name,
-                    "pool": action["pool"],
+                    "pool": action.get("target_pool"),
                     "commands": [],
                     "total_size_bytes": 0,
                 }
@@ -452,6 +448,15 @@ class SyncCoordinationService:
         for snapshot in snapshots:
             if self.comparison_service.extract_snapshot_name(snapshot.name) == snapshot_name:
                 return snapshot.size
+        return None
+
+    def _get_target_pool(self, dataset: str, target_system_id: UUID) -> Optional[str]:
+        """Get the pool for a dataset on a target system."""
+        target_snapshots = self.snapshot_repo.get_by_dataset(
+            dataset=dataset, system_id=target_system_id
+        )
+        if target_snapshots:
+            return target_snapshots[0].pool
         return None
 
     def _find_incremental_base(

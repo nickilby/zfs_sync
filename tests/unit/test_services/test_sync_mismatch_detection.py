@@ -158,14 +158,14 @@ class TestSyncMismatchDetection:
 
         # Extract midnight snapshot names
         hqs10_midnight_names = {
-            comparison_service._extract_snapshot_name(s.name)
+            comparison_service.extract_snapshot_name(s.name)
             for s in hqs10_snapshot_models
-            if comparison_service._extract_snapshot_name(s.name).endswith("-000000")
+            if comparison_service.extract_snapshot_name(s.name).endswith("-000000")
         }
         hqs7_midnight_names = {
-            comparison_service._extract_snapshot_name(s.name)
+            comparison_service.extract_snapshot_name(s.name)
             for s in hqs7_snapshot_models
-            if comparison_service._extract_snapshot_name(s.name).endswith("-000000")
+            if comparison_service.extract_snapshot_name(s.name).endswith("-000000")
         }
 
         # Test the validator function
@@ -189,10 +189,9 @@ class TestSyncMismatchDetection:
 
         # Test the full sync instruction generation
         service = SyncCoordinationService(test_db)
-        instructions = service.generate_dataset_sync_instructions(
+        instructions = service.get_sync_instructions(
+            system_id=hqs7.id,  # HQS7 is the target
             sync_group_id=sync_group.id,
-            system_id=hqs10.id,  # HQS10 is the source
-            incremental_only=True,
         )
 
         # Should detect that HQS7 needs to sync from HQS10
@@ -214,16 +213,21 @@ class TestSyncMismatchDetection:
         )
 
         # Verify the instruction details
-        assert l1s4dat1_instruction["pool"] == "hqs10p1", "Source pool should be hqs10p1"
-        assert l1s4dat1_instruction["target_pool"] == "hqs7p1", "Target pool should be hqs7p1"
-        assert (
-            l1s4dat1_instruction["ending_snapshot"] == "2025-11-30-000000"
-        ), f"Ending snapshot should be 2025-11-30-000000, got {l1s4dat1_instruction['ending_snapshot']}"
-        # Starting snapshot should be the most recent common midnight snapshot
-        # HQS10 has weekly snapshots (2025-10-30, 2025-11-06, etc.)
-        # HQS7 has daily snapshots (2025-10-08 through 2025-11-04)
-        # The most recent common midnight snapshot is 2025-10-30-000000
-        assert l1s4dat1_instruction["starting_snapshot"] == "2025-10-30-000000", (
-            f"Starting snapshot should be 2025-10-30-000000 (most recent common midnight snapshot), "
-            f"got {l1s4dat1_instruction['starting_snapshot']}"
+        assert l1s4dat1_instruction["pool"] == "hqs7p1", "Target pool should be hqs7p1"
+        assert len(l1s4dat1_instruction["commands"]) > 0, "Should have at least one sync command"
+
+        # Check for a command that sends the latest snapshot
+        latest_snapshot_command_found = any(
+            "2025-11-30-000000" in cmd for cmd in l1s4dat1_instruction["commands"]
         )
+        assert latest_snapshot_command_found, "A command to sync the latest snapshot should be present"
+
+        # Check for an incremental command from the common snapshot
+        incremental_command_found = any(
+            "-i hqs10p1/L1S4DAT1@2025-10-30-000000" in cmd
+            for cmd in l1s4dat1_instruction["commands"]
+        )
+        assert (
+            incremental_command_found
+        ), "An incremental sync command from the common base should be present"
+    
