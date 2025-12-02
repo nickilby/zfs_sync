@@ -19,7 +19,8 @@ class SyncGroupBase(BaseModel):
         default=False, description="Whether this is a directional (hub-and-spoke) sync group"
     )
     hub_system_id: Optional[UUID] = Field(
-        default=None, description="Hub system ID for directional sync (required when directional=True)"
+        default=None,
+        description="Hub system ID for directional sync (required when directional=True)",
     )
     metadata: Optional[dict] = Field(
         default_factory=dict, alias="extra_metadata", description="Additional metadata"

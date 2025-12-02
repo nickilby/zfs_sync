@@ -64,7 +64,7 @@ class SyncGroupModel(BaseModel):
     system_associations = relationship(
         "SyncGroupSystemModel", back_populates="sync_group", cascade="all, delete-orphan"
     )
-    
+
     # Relationship to hub system
     hub_system = relationship("SystemModel", foreign_keys=[hub_system_id])
 

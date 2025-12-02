@@ -90,28 +90,28 @@ class SyncCoordinationService:
 
         # Get all systems for snapshot source checking (even in directional mode)
         all_system_ids = [assoc.system_id for assoc in sync_group.system_associations]
-        
+
         mismatches = []
         for dataset in datasets:
             if sync_group.directional and sync_group.hub_system_id:
                 # For directional sync, only consider mismatches where hub is the target
                 hub_system_id = sync_group.hub_system_id
                 source_system_ids = [sid for sid in all_system_ids if sid != hub_system_id]
-                
+
                 # Get comparison for all systems to find what the hub is missing
                 comparison = self.comparison_service.compare_snapshots_by_dataset(
                     dataset=dataset, system_ids=all_system_ids
                 )
-                
+
                 # Only create mismatches for snapshots missing on the hub
                 hub_missing = comparison["missing_snapshots"].get(str(hub_system_id), [])
-                
+
                 for missing_snapshot in hub_missing:
                     # Find which source systems have this snapshot
                     source_systems = self._find_systems_with_snapshot(
                         dataset, missing_snapshot, source_system_ids
                     )
-                    
+
                     if source_systems:
                         mismatches.append(
                             {
@@ -120,9 +120,7 @@ class SyncCoordinationService:
                                 "target_system_id": str(hub_system_id),
                                 "missing_snapshot": missing_snapshot,
                                 "source_system_ids": [str(sid) for sid in source_systems],
-                                "priority": self._calculate_priority(
-                                    missing_snapshot, comparison
-                                ),
+                                "priority": self._calculate_priority(missing_snapshot, comparison),
                                 "directional": True,
                                 "reason": "hub_missing_from_source",
                             }
@@ -389,7 +387,7 @@ class SyncCoordinationService:
             ending_snapshot = instruction.get("ending_snapshot")
             source_ssh_hostname = instruction.get("source_ssh_hostname")
             target_ssh_hostname = instruction.get("target_ssh_hostname")
-            
+
             if ending_snapshot and source_ssh_hostname and target_ssh_hostname:
                 # Find source pool by looking up actions for this dataset
                 source_pool = None
@@ -397,9 +395,9 @@ class SyncCoordinationService:
                     if action.get("dataset") == dataset:
                         source_pool = action.get("pool")  # This is the source pool from the action
                         break
-                
+
                 target_pool = instruction.get("target_pool")
-                
+
                 if source_pool and target_pool:
                     try:
                         if starting_snapshot:
@@ -427,7 +425,7 @@ class SyncCoordinationService:
                             commands.append(command)
                     except (ValueError, TypeError, AttributeError) as e:
                         logger.warning("Failed to generate sync command for %s: %s", dataset, e)
-            
+
             instruction["commands"] = commands
 
         dataset_instructions = list(consolidated.values())

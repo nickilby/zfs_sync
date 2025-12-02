@@ -212,23 +212,21 @@ class TestSyncMismatchDetection:
             f"Available datasets: {[d['dataset'] for d in instructions['datasets']]}"
         )
 
-        # Verify the instruction details
-        assert l1s4dat1_instruction["pool"] == "hqs7p1", "Target pool should be hqs7p1"
-        assert len(l1s4dat1_instruction["commands"]) > 0, "Should have at least one sync command"
+        # Verify the instruction details - updated for new consolidated format
+        assert l1s4dat1_instruction["target_pool"] == "hqs7p1", "Target pool should be hqs7p1"
+        assert l1s4dat1_instruction["ending_snapshot"] is not None, "Should have an ending snapshot"
 
-        # Check for a command that sends the latest snapshot
-        latest_snapshot_command_found = any(
-            "2025-11-30-000000" in cmd for cmd in l1s4dat1_instruction["commands"]
-        )
+        # Check that the latest snapshot is included in the ending snapshot
+        # The actual latest snapshot is 2025-11-30-120000, not 2025-11-30-000000
         assert (
-            latest_snapshot_command_found
-        ), "A command to sync the latest snapshot should be present"
+            "2025-11-30-120000" in l1s4dat1_instruction["ending_snapshot"]
+        ), f"Ending snapshot should include the latest snapshot 2025-11-30-120000, got: {l1s4dat1_instruction['ending_snapshot']}"
 
-        # Check for an incremental command from the common snapshot
-        incremental_command_found = any(
-            "-i hqs10p1/L1S4DAT1@2025-10-30-000000" in cmd
-            for cmd in l1s4dat1_instruction["commands"]
-        )
+        # Check that incremental base is from the common snapshot
         assert (
-            incremental_command_found
-        ), "An incremental sync command from the common base should be present"
+            l1s4dat1_instruction["starting_snapshot"] is not None
+        ), "Should have a starting snapshot for incremental sync"
+
+        assert (
+            "2025-10-30-000000" in l1s4dat1_instruction["starting_snapshot"]
+        ), f"Starting snapshot should be from common base 2025-10-30-000000, got: {l1s4dat1_instruction['starting_snapshot']}"

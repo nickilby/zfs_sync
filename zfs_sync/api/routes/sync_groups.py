@@ -104,9 +104,15 @@ async def update_sync_group(
     # Validate hub_system_id if directional update
     if group_update.system_ids is not None:
         # Check if the group is or will be directional
-        is_directional = group_update.directional if group_update.directional is not None else group.directional
-        hub_system_id = group_update.hub_system_id if group_update.hub_system_id is not None else group.hub_system_id
-        
+        is_directional = (
+            group_update.directional if group_update.directional is not None else group.directional
+        )
+        hub_system_id = (
+            group_update.hub_system_id
+            if group_update.hub_system_id is not None
+            else group.hub_system_id
+        )
+
         if is_directional and hub_system_id and hub_system_id not in group_update.system_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
