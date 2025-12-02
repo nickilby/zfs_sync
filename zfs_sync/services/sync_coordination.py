@@ -199,7 +199,10 @@ class SyncCoordinationService:
             elif target_system and not target_pool:
                 # Orphan dataset scenario: target has no snapshots yet
                 orphan_key = (dataset, target_system_id)
-                if self.settings.suppress_orphan_dataset_logs and orphan_key in self._orphan_datasets_logged:
+                if (
+                    self.settings.suppress_orphan_dataset_logs
+                    and orphan_key in self._orphan_datasets_logged
+                ):
                     # Skip repeated logging/diagnostics
                     pass
                 else:
@@ -289,12 +292,14 @@ class SyncCoordinationService:
                 continue
             entry = consolidated.get(dataset)
             snapshot_name = action.get("snapshot_name")
-            incremental_base = action.get("incremental_base") if action.get("is_incremental") else None
+            incremental_base = (
+                action.get("incremental_base") if action.get("is_incremental") else None
+            )
             target_pool = action.get("target_pool") or action.get("pool")
 
             if entry is None:
                 consolidated[dataset] = {
-                    "pool": action.get("pool"),
+                    "pool": target_pool,  # Use target_pool for the main instruction pool
                     "dataset": dataset,
                     "target_pool": target_pool,
                     "target_dataset": dataset,
@@ -355,12 +360,14 @@ class SyncCoordinationService:
             if not dataset:
                 continue
             snapshot_name = action.get("snapshot_name")
-            incremental_base = action.get("incremental_base") if action.get("is_incremental") else None
+            incremental_base = (
+                action.get("incremental_base") if action.get("is_incremental") else None
+            )
             target_pool = action.get("target_pool") or action.get("pool")
             entry = consolidated.get(dataset)
             if entry is None:
                 consolidated[dataset] = {
-                    "pool": action.get("pool"),
+                    "pool": target_pool,  # Use target_pool for the main instruction pool
                     "dataset": dataset,
                     "target_pool": target_pool,
                     "target_dataset": dataset,
