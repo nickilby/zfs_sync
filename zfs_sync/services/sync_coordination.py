@@ -18,6 +18,11 @@ from zfs_sync.logging_config import get_logger
 from zfs_sync.models import SyncStatus
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 from zfs_sync.services.ssh_command_generator import SSHCommandGenerator
+from zfs_sync.services.sync_validators import (
+    is_midnight_snapshot,
+    is_snapshot_out_of_sync_by_72h,
+    validate_snapshot_gap,
+)
 
 logger = get_logger(__name__)
 
@@ -329,6 +334,40 @@ class SyncCoordinationService:
             target_system_id = UUID(mismatch["target_system_id"])
             dataset = mismatch["dataset"]
 
+            # Check 72-hour time gate: only create actions if systems are sufficiently out of sync
+            source_snapshots = self.snapshot_repo.get_by_dataset(
+                dataset=dataset, system_id=source_system_id
+            )
+            target_snapshots = self.snapshot_repo.get_by_dataset(
+                dataset=dataset, system_id=target_system_id
+            )
+
+            # Filter to midnight snapshots for the time gate check
+            source_midnight_names = {
+                self.comparison_service.extract_snapshot_name(s.name)
+                for s in source_snapshots
+                if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
+            }
+            target_midnight_names = {
+                self.comparison_service.extract_snapshot_name(s.name)
+                for s in target_snapshots
+                if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
+            }
+
+            # Check if systems are more than 72 hours out of sync
+            if not is_snapshot_out_of_sync_by_72h(
+                source_snapshots,
+                target_snapshots,
+                source_midnight_names,
+                target_midnight_names,
+                self.comparison_service,
+            ):
+                logger.debug(
+                    "Skipping dataset %s: within 72-hour sync window (source->target)",
+                    dataset,
+                )
+                continue
+
             # Get source system for SSH details
             source_system = self.system_repo.get(source_system_id)
             if not source_system:
@@ -598,6 +637,69 @@ class SyncCoordinationService:
                 # If target_pool becomes known later, set it
                 if not entry["target_pool"] and target_pool:
                     entry["target_pool"] = target_pool
+
+        # Validate and filter invalid instructions (same starting/ending snapshot, insufficient gap)
+        valid_datasets = []
+        for dataset, instruction in consolidated.items():
+            starting = instruction.get("starting_snapshot")
+            ending = instruction.get("ending_snapshot")
+
+            # Skip if starting == ending (would fail zfs send -I)
+            if starting and ending and starting == ending:
+                logger.warning(
+                    "Skipping invalid instruction: starting_snapshot == ending_snapshot (%s) "
+                    "for dataset %s",
+                    starting,
+                    dataset,
+                )
+                self.diagnostics.append(
+                    {
+                        "level": "warning",
+                        "message": f"Skipped instruction with same starting/ending snapshot: {starting}",
+                        "dataset": dataset,
+                    }
+                )
+                continue
+
+            # Validate snapshot gap (72-hour minimum) for incremental syncs
+            if starting and ending:
+                # Build timestamp mapping from source snapshots
+                source_timestamps: Dict[str, datetime] = {}
+                for action in all_actions:
+                    if action.get("dataset") == dataset:
+                        source_id = UUID(action.get("source_system_id"))
+                        snaps = self.snapshot_repo.get_by_dataset(
+                            dataset=dataset, system_id=source_id
+                        )
+                        for s in snaps:
+                            name = self.comparison_service.extract_snapshot_name(s.name)
+                            source_timestamps[name] = s.timestamp
+                        break
+
+                if not validate_snapshot_gap(starting, ending, source_timestamps):
+                    logger.debug(
+                        "Skipping instruction for %s: insufficient time gap between "
+                        "snapshots %s and %s",
+                        dataset,
+                        starting,
+                        ending,
+                    )
+                    self.diagnostics.append(
+                        {
+                            "level": "info",
+                            "message": (
+                                f"Skipped instruction for {dataset}: insufficient time gap "
+                                f"between {starting} and {ending}"
+                            ),
+                            "dataset": dataset,
+                        }
+                    )
+                    continue
+
+            valid_datasets.append(dataset)
+
+        # Filter consolidated to only valid datasets
+        consolidated = {k: v for k, v in consolidated.items() if k in valid_datasets}
 
         # Generate commands for each dataset instruction
         for instruction in consolidated.values():
