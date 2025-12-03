@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZFS Sync Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/dashboard/css/dashboard.css">
+</head>
+<body class="h-full">
+    <div id="app" class="min-h-full">
+        <!-- Navigation -->
+        <nav class="bg-gray-800">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div class="flex h-16 items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <svg class="h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
+                            </svg>
+                        </div>
+                        <div class="hidden md:block">
+                            <div class="ml-10 flex items-baseline space-x-4">
+                                <a href="#overview" class="nav-link bg-gray-900 text-white rounded-md px-3 py-2 text-sm font-medium" aria-current="page">Overview</a>
+                                <a href="#systems" class="nav-link text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Systems</a>
+                                <a href="#sync-groups" class="nav-link text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Sync Groups</a>
+                                <a href="#conflicts" class="nav-link text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Conflicts</a>
+                                <a href="#statistics" class="nav-link text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Statistics</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hidden md:block">
+                        <div class="ml-4 flex items-center md:ml-6">
+                            <div id="sse-status" class="w-4 h-4 rounded-full bg-gray-500" title="Connecting..."></div>
+                            <span id="last-updated" class="ml-3 text-sm text-gray-400"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <header class="bg-white shadow">
+            <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+                <h1 id="view-title" class="text-3xl font-bold tracking-tight text-gray-900">Overview</h1>
+            </div>
+        </header>
+
+        <main>
+            <div class="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
+                <!-- Main content views will be injected here -->
+                <div id="views">
+                    <div id="overview" class="view"></div>
+                    <div id="systems" class="view hidden"></div>
+                    <div id="sync-groups" class="view hidden"></div>
+                    <div id="conflicts" class="view hidden"></div>
+                    <div id="statistics" class="view hidden"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/dashboard/js/utils.js"></script>
+    <script src="/static/dashboard/js/api-client.js"></script>
+    <script src="/static/dashboard/js/sse-client.js"></script>
+    <script src="/static/dashboard/js/charts.js"></script>
+    <script src="/static/dashboard/js/dashboard.js"></script>
+</body>
+</html>

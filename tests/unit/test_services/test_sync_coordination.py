@@ -77,3 +77,141 @@ class TestSyncCoordinationService:
         # Verify state was updated (would need to query sync_state_repo to verify)
         # For now, just verify no exception was raised
         assert True
+
+    def test_directional_sync_hub_and_spoke(
+        self, test_db, sample_system_data, sample_snapshot_data
+    ):
+        """Test directional sync in hub-and-spoke mode."""
+        # Create three systems: hqs7 (hub), hqs8 (source), hqs10 (source)
+        system_repo = SystemRepository(test_db)
+        hub_data = sample_system_data.copy()
+        hub_data["hostname"] = "hqs7"
+        hub_system = system_repo.create(**hub_data)
+
+        source1_data = sample_system_data.copy()
+        source1_data["hostname"] = "hqs8"
+        source1_system = system_repo.create(**source1_data)
+
+        source2_data = sample_system_data.copy()
+        source2_data["hostname"] = "hqs10"
+        source2_system = system_repo.create(**source2_data)
+
+        # Create directional sync group with hub
+        sync_group_repo = SyncGroupRepository(test_db)
+        sync_group = sync_group_repo.create(
+            name="hub-and-spoke-group",
+            description="Hub and spoke sync group",
+            directional=True,
+            hub_system_id=hub_system.id,
+        )
+        sync_group_repo.add_system(sync_group.id, hub_system.id)
+        sync_group_repo.add_system(sync_group.id, source1_system.id)
+        sync_group_repo.add_system(sync_group.id, source2_system.id)
+
+        # Create snapshots only on source systems (hub has no snapshots)
+        snapshot_repo = SnapshotRepository(test_db)
+
+        # Snapshot on source1 (hqs8)
+        snapshot1_data = sample_snapshot_data.copy()
+        snapshot1_data["system_id"] = source1_system.id
+        snapshot1_data["name"] = "dataset1@snap1"
+        snapshot1_data["dataset"] = "dataset1"
+        snapshot_repo.create(**snapshot1_data)
+
+        # Snapshot on source2 (hqs10)
+        snapshot2_data = sample_snapshot_data.copy()
+        snapshot2_data["system_id"] = source2_system.id
+        snapshot2_data["name"] = "dataset2@snap1"
+        snapshot2_data["dataset"] = "dataset2"
+        snapshot_repo.create(**snapshot2_data)
+
+        # Get sync actions
+        service = SyncCoordinationService(test_db)
+        mismatches = service.detect_sync_mismatches(sync_group_id=sync_group.id)
+
+        # In directional mode with distribution pattern (hub -> sources):
+        # - Hub is source of truth and pushes TO sources
+        # - Sources should never sync between each other
+        # - If hub has no snapshots, there should be no sync actions
+        hub_targets = [m for m in mismatches if m.get("target_system_id") == str(hub_system.id)]
+        source_targets = [m for m in mismatches if m.get("target_system_id") != str(hub_system.id)]
+
+        # In this test, hub has no snapshots, so no sync actions should occur
+        assert len(hub_targets) == 0, (
+            "Hub should not be targeted in distribution mode (hub is source of truth). "
+            f"Found {len(hub_targets)} hub targets"
+        )
+        assert len(source_targets) == 0, (
+            "Sources should not be targeted when hub has no snapshots to distribute. "
+            f"Found {len(source_targets)} source targets"
+        )
+
+        # No mismatches should be created when hub has no snapshots
+        assert (
+            len(mismatches) == 0
+        ), f"No sync actions should occur when hub has no snapshots. Found {len(mismatches)} mismatches"
+
+    def test_bidirectional_sync_still_works(
+        self, test_db, sample_system_data, sample_snapshot_data
+    ):
+        """Test that bidirectional sync still works when directional=False."""
+        # Create two systems
+        system_repo = SystemRepository(test_db)
+        system1 = system_repo.create(**sample_system_data)
+        system2_data = sample_system_data.copy()
+        system2_data["hostname"] = "test-system-2"
+        system2 = system_repo.create(**system2_data)
+
+        # Create bidirectional sync group (default behavior)
+        sync_group_repo = SyncGroupRepository(test_db)
+        sync_group = sync_group_repo.create(
+            name="bidirectional-group",
+            description="Bidirectional sync group",
+            directional=False,  # Explicitly set to False
+        )
+        sync_group_repo.add_system(sync_group.id, system1.id)
+        sync_group_repo.add_system(sync_group.id, system2.id)
+
+        # Create snapshot only on system1
+        snapshot_repo = SnapshotRepository(test_db)
+        snapshot1_data = sample_snapshot_data.copy()
+        snapshot1_data["system_id"] = system1.id
+        snapshot_repo.create(**snapshot1_data)
+
+        # Get sync actions
+        service = SyncCoordinationService(test_db)
+        mismatches = service.detect_sync_mismatches(sync_group_id=sync_group.id)
+
+        # In bidirectional mode, both systems can be targets
+        # Verify bidirectional flag is set on mismatches
+        for mismatch in mismatches:
+            assert mismatch.get("directional") is False
+            assert mismatch.get("reason") == "bidirectional_mismatch"
+
+    def test_analyze_sync_group_includes_directional_info(self, test_db, sample_system_data):
+        """Test that analyze_sync_group includes directional information."""
+        # Create hub system
+        system_repo = SystemRepository(test_db)
+        hub_data = sample_system_data.copy()
+        hub_data["hostname"] = "hub-system"
+        hub_system = system_repo.create(**hub_data)
+
+        # Create directional sync group
+        sync_group_repo = SyncGroupRepository(test_db)
+        sync_group = sync_group_repo.create(
+            name="directional-analysis-group",
+            description="Test directional analysis",
+            directional=True,
+            hub_system_id=hub_system.id,
+        )
+        sync_group_repo.add_system(sync_group.id, hub_system.id)
+
+        # Analyze sync group
+        service = SyncCoordinationService(test_db)
+        analysis = service.analyze_sync_group(sync_group_id=sync_group.id)
+
+        # Verify directional information is included
+        assert "directional" in analysis
+        assert analysis["directional"] is True
+        assert "hub_system_id" in analysis
+        assert analysis["hub_system_id"] == str(hub_system.id)

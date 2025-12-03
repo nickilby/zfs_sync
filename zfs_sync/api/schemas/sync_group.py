@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SyncGroupBase(BaseModel):
@@ -14,6 +14,13 @@ class SyncGroupBase(BaseModel):
     enabled: bool = Field(default=True, description="Whether synchronization is enabled")
     sync_interval_seconds: int = Field(
         default=3600, description="Interval between sync checks in seconds"
+    )
+    directional: bool = Field(
+        default=False, description="Whether this is a directional (hub-and-spoke) sync group"
+    )
+    hub_system_id: Optional[UUID] = Field(
+        default=None,
+        description="Hub system ID for directional sync (required when directional=True)",
     )
     metadata: Optional[dict] = Field(
         default_factory=dict, alias="extra_metadata", description="Additional metadata"
@@ -26,6 +33,13 @@ class SyncGroupBase(BaseModel):
         if v is None:
             return {}
         return v if isinstance(v, dict) else {}
+
+    @model_validator(mode="after")
+    def validate_directional_sync(self):
+        """Validate that hub_system_id is provided when directional=True."""
+        if self.directional and self.hub_system_id is None:
+            raise ValueError("hub_system_id is required when directional=True")
+        return self
 
 
 class SyncGroupCreate(SyncGroupBase):
@@ -40,6 +54,8 @@ class SyncGroupUpdate(BaseModel):
     name: Optional[str] = None
     enabled: Optional[bool] = None
     sync_interval_seconds: Optional[int] = None
+    directional: Optional[bool] = None
+    hub_system_id: Optional[UUID] = None
     system_ids: Optional[List[UUID]] = None
     metadata: Optional[dict] = None
 

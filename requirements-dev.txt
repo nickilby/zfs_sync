@@ -14,4 +14,3 @@ types-PyYAML>=6.0.0
 # Security and dependency checking
 bandit>=1.7.5  # Security scanning
 pip-audit>=2.6.0  # Dependency vulnerability checking
-

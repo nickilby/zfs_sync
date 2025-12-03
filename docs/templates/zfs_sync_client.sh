@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # ZFS Sync Client Script
-# 
+#
 # This script runs on target ZFS systems to:
 # 1. Report current snapshot state to the witness service
 # 2. Fetch sync instructions from the witness service
@@ -91,7 +91,7 @@ log() {
     shift
     local message="$*"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     # Check log level
     case "$LOG_LEVEL" in
         DEBUG)
@@ -140,23 +140,23 @@ error_exit() {
 # Check if required commands are available
 check_dependencies() {
     local missing=()
-    
+
     if ! command -v "$ZFS_CMD" &> /dev/null; then
         missing+=("zfs")
     fi
-    
+
     if ! command -v "$SSH_CMD" &> /dev/null; then
         missing+=("ssh")
     fi
-    
+
     if ! command -v curl &> /dev/null; then
         missing+=("curl")
     fi
-    
+
     if ! command -v jq &> /dev/null; then
         missing+=("jq")
     fi
-    
+
     if [ ${#missing[@]} -gt 0 ]; then
         error_exit "Missing required commands: ${missing[*]}"
     fi
@@ -167,11 +167,11 @@ check_config() {
     if [ -z "$SYSTEM_ID" ]; then
         error_exit "SYSTEM_ID environment variable is required"
     fi
-    
+
     if [ -z "$API_KEY" ]; then
         error_exit "API_KEY environment variable is required"
     fi
-    
+
     if [ -z "$WITNESS_API_URL" ]; then
         error_exit "WITNESS_API_URL environment variable is required"
     fi
@@ -183,7 +183,7 @@ api_request() {
     local endpoint="$2"
     local data="${3:-}"
     local response
-    
+
     local url="${WITNESS_API_URL}${endpoint}"
     local curl_opts=(
         -s
@@ -192,7 +192,7 @@ api_request() {
         -H "X-API-Key: $API_KEY"
         -H "Content-Type: application/json"
     )
-    
+
     if [ "$method" = "GET" ]; then
         response=$(curl "${curl_opts[@]}" "$url" 2>&1) || {
             local exit_code=$?
@@ -216,11 +216,11 @@ api_request() {
     else
         error_exit "Unsupported HTTP method: $method"
     fi
-    
+
     # Extract HTTP status code (last line)
     local http_code=$(echo "$response" | tail -n1)
     local body=$(echo "$response" | sed '$d')
-    
+
     if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
         echo "$body"
         return 0
@@ -234,7 +234,7 @@ api_request() {
 # Update heartbeat
 update_heartbeat() {
     log_debug "Updating heartbeat for system $SYSTEM_ID"
-    
+
     if api_request "POST" "/api/v1/systems/$SYSTEM_ID/heartbeat" > /dev/null; then
         log_debug "Heartbeat updated successfully"
         return 0
@@ -247,11 +247,11 @@ update_heartbeat() {
 # Get all ZFS snapshots on this system
 get_local_snapshots() {
     log_debug "Collecting local ZFS snapshots"
-    
+
     # Get all snapshots with raw numeric values (-p flag)
     # Format: pool/dataset@snapshot_name
     local snapshots_json="[]"
-    
+
     # Use zfs list to get all snapshots with raw numeric values
     # -p: print raw numeric values (creation time as Unix timestamp, sizes in bytes)
     # -H: scripted mode (no headers)
@@ -261,7 +261,7 @@ get_local_snapshots() {
         if [[ "$name" =~ ^([^@]+)@(.+)$ ]]; then
             local full_path="${BASH_REMATCH[1]}"
             local snapshot_name="${BASH_REMATCH[2]}"
-            
+
             # Split pool/dataset
             if [[ "$full_path" =~ ^([^/]+)/(.+)$ ]]; then
                 local pool="${BASH_REMATCH[1]}"
@@ -271,7 +271,7 @@ get_local_snapshots() {
                 local pool="$full_path"
                 local dataset=""
             fi
-            
+
             # Convert creation time (Unix timestamp) to ISO format
             local timestamp
             if command -v date &> /dev/null; then
@@ -284,11 +284,11 @@ get_local_snapshots() {
             else
                 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             fi
-            
+
             # Sizes are already in bytes from -p flag
             local used_bytes="${used:-0}"
             local referenced_bytes="${referenced:-0}"
-            
+
             # Build JSON object (must include system_id for batch endpoint)
             local snapshot_json=$(jq -n \
                 --arg name "$snapshot_name" \
@@ -307,28 +307,28 @@ get_local_snapshots() {
                     referenced: $referenced,
                     system_id: $system_id
                 }')
-            
+
             snapshots_json=$(echo "$snapshots_json" | jq ". += [$snapshot_json]")
         fi
     done < <($ZFS_CMD list -t snapshot -H -p -o name,creation,used,referenced 2>/dev/null || true)
-    
+
     echo "$snapshots_json"
 }
 
 # Report snapshots to witness service
 report_snapshots() {
     log_info "Reporting snapshot state to witness service"
-    
+
     local snapshots_json=$(get_local_snapshots)
     local snapshot_count=$(echo "$snapshots_json" | jq 'length')
-    
+
     log_info "Found $snapshot_count snapshots to report"
-    
+
     if [ "$snapshot_count" -eq 0 ]; then
         log_warning "No snapshots found on this system"
         return 0
     fi
-    
+
     # Prepare batch request (API expects array directly, not wrapped in object)
     if api_request "POST" "/api/v1/snapshots/batch" "$snapshots_json" > /dev/null; then
         log_info "Successfully reported $snapshot_count snapshots"
@@ -342,14 +342,14 @@ report_snapshots() {
 # Get sync instructions from witness service
 get_sync_instructions() {
     log_info "Fetching sync instructions from witness service"
-    
+
     local endpoint="/api/v1/sync/instructions/$SYSTEM_ID?include_commands=true"
     if [ -n "$SYNC_GROUP_ID" ]; then
         endpoint="${endpoint}&sync_group_id=$SYNC_GROUP_ID"
     fi
-    
+
     local response=$(api_request "GET" "$endpoint")
-    
+
     if [ $? -eq 0 ] && [ -n "$response" ]; then
         echo "$response"
         return 0
@@ -368,36 +368,36 @@ execute_sync_command() {
     local snapshot_name=$(echo "$action" | jq -r '.snapshot_name')
     local sync_command=$(echo "$action" | jq -r '.sync_command // empty')
     local snapshot_id=$(echo "$action" | jq -r '.snapshot_id // empty')
-    
+
     log_info "Executing sync: $action_type for $pool/$dataset@$snapshot_name"
-    
+
     if [ -z "$sync_command" ]; then
         log_warning "No sync_command provided for action, skipping"
         return 1
     fi
-    
+
     if [ "$DRY_RUN" = "true" ]; then
         log_info "DRY RUN: Would execute: $sync_command"
         return 0
     fi
-    
+
     # Execute the sync command with timeout
     log_debug "Executing command: $sync_command"
-    
+
     local start_time=$(date +%s)
     local exit_code=0
     local output=""
-    
+
     # Use timeout if available
     if command -v timeout &> /dev/null; then
         output=$(timeout "$TIMEOUT_SECONDS" bash -c "$sync_command" 2>&1) || exit_code=$?
     else
         output=$(bash -c "$sync_command" 2>&1) || exit_code=$?
     fi
-    
+
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
-    
+
     if [ $exit_code -eq 0 ]; then
         log_info "SUCCESS: Sync completed for $pool/$dataset@$snapshot_name (duration: ${duration}s)"
         log_debug "Command output: $output"
@@ -413,37 +413,37 @@ execute_sync_command() {
 process_sync_instructions() {
     local instructions_json="$1"
     local action_count=$(echo "$instructions_json" | jq -r '.action_count // 0')
-    
+
     if [ "$action_count" -eq 0 ]; then
         log_info "No sync actions required"
         return 0
     fi
-    
+
     log_info "Processing $action_count sync actions"
-    
+
     local executed=0
     local failed=0
     local actions=$(echo "$instructions_json" | jq -c '.actions[]? // empty')
-    
+
     # Process actions sequentially (can be modified for parallel execution)
     while IFS= read -r action; do
         if [ -z "$action" ]; then
             continue
         fi
-        
+
         if execute_sync_command "$action"; then
             executed=$((executed + 1))
         else
             failed=$((failed + 1))
         fi
     done <<< "$actions"
-    
+
     log_info "Sync execution complete: $executed succeeded, $failed failed"
-    
+
     if [ $failed -gt 0 ]; then
         return 1
     fi
-    
+
     return 0
 }
 
@@ -455,32 +455,32 @@ main() {
     log_info "Witness API: $WITNESS_API_URL"
     log_info "Dry Run: $DRY_RUN"
     log_info "=========================================="
-    
+
     # Pre-flight checks
     check_dependencies
     check_config
-    
+
     # Update heartbeat
     update_heartbeat
-    
+
     # Report current snapshot state
     if ! report_snapshots; then
         log_warning "Failed to report snapshots, continuing anyway"
     fi
-    
+
     # Get sync instructions
     local instructions=$(get_sync_instructions)
     if [ $? -ne 0 ] || [ -z "$instructions" ]; then
         log_error "Failed to get sync instructions"
         exit 1
     fi
-    
+
     # Process sync instructions
     if ! process_sync_instructions "$instructions"; then
         log_warning "Some sync operations failed"
         exit 1
     fi
-    
+
     log_info "ZFS Sync Client Script Completed Successfully"
     return 0
 }
@@ -494,4 +494,3 @@ trap 'log_error "Script failed at line $LINENO"' ERR
 
 # Run main function
 main "$@"
-

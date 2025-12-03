@@ -9,8 +9,8 @@ from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 
 logger = get_logger(__name__)
 
-# Minimum time gap between starting and ending snapshots (24 hours)
-MIN_SNAPSHOT_GAP_HOURS = 24
+# Minimum time gap between starting and ending snapshots (72 hours)
+MIN_SNAPSHOT_GAP_HOURS = 72
 
 
 def normalize_to_utc(dt: datetime) -> datetime:
@@ -71,7 +71,7 @@ def is_snapshot_out_of_sync_by_hours(
     source_midnight_snapshots = []
     for s in source_snapshots:
         # pylint: disable=protected-access
-        snapshot_name = comparison_service._extract_snapshot_name(s.name)  # type: ignore[attr-defined]
+        snapshot_name = comparison_service.extract_snapshot_name(s.name)  # type: ignore[attr-defined]
         # source_snapshot_names is already filtered to midnight snapshots, so if it's in the set, it's a midnight snapshot
         if snapshot_name in source_snapshot_names:
             source_midnight_snapshots.append(s)
@@ -80,7 +80,7 @@ def is_snapshot_out_of_sync_by_hours(
         return False
 
     latest_source = max(source_midnight_snapshots, key=lambda s: s.timestamp)
-    latest_source_name = comparison_service._extract_snapshot_name(latest_source.name)
+    latest_source_name = comparison_service.extract_snapshot_name(latest_source.name)
 
     # Check if target has this snapshot
     if latest_source_name in target_snapshot_names:
@@ -93,7 +93,7 @@ def is_snapshot_out_of_sync_by_hours(
     target_midnight_snapshots = []
     for s in target_snapshots:
         # pylint: disable=protected-access
-        snapshot_name = comparison_service._extract_snapshot_name(s.name)  # type: ignore[attr-defined]
+        snapshot_name = comparison_service.extract_snapshot_name(s.name)  # type: ignore[attr-defined]
         # target_snapshot_names is already filtered to midnight snapshots, so if it's in the set, it's a midnight snapshot
         if snapshot_name in target_snapshot_names:
             target_midnight_snapshots.append(s)
@@ -119,7 +119,7 @@ def is_snapshot_out_of_sync_by_hours(
         "Sync check: source latest=%s (%s), target latest=%s (%s), diff=%.2f hours",
         latest_source_name,
         latest_source_timestamp_utc.isoformat(),
-        comparison_service._extract_snapshot_name(latest_target.name),
+        comparison_service.extract_snapshot_name(latest_target.name),
         latest_target_timestamp_utc.isoformat(),
         hours_diff,
     )
@@ -225,7 +225,7 @@ def validate_snapshot_exists(
     snapshots = snapshot_repo.get_by_pool_dataset(pool=pool, dataset=dataset, system_id=system_id)
 
     for snapshot in snapshots:
-        normalized_name = comparison_service._extract_snapshot_name(snapshot.name)
+        normalized_name = comparison_service.extract_snapshot_name(snapshot.name)
         if normalized_name == snapshot_name:
             return True
 
@@ -245,7 +245,7 @@ def validate_snapshot_gap(
         starting_snapshot: Starting snapshot name (None for full sync)
         ending_snapshot: Ending snapshot name
         source_snapshot_names: Dictionary mapping snapshot names to timestamps
-        min_gap_hours: Minimum gap in hours (default: 24)
+        min_gap_hours: Minimum gap in hours (default: 72)
 
     Returns:
         True if gap is sufficient or no starting snapshot, False otherwise

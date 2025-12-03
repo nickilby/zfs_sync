@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zfs-sync"
-version = "0.1.50"
+version = "0.1.57"
 description = "A witness service to keep ZFS snapshots in sync across different platforms"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -74,4 +74,3 @@ markers = [
     "benchmark: Performance benchmark tests",
     "database: Tests that require database access",
 ]
-

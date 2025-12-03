@@ -9,7 +9,7 @@ from zfs_sync.database.repositories import (
     SystemRepository,
 )
 from zfs_sync.services.sync_coordination import SyncCoordinationService
-from zfs_sync.services.sync_validators import is_snapshot_out_of_sync_by_24h
+from zfs_sync.services.sync_validators import is_snapshot_out_of_sync_by_72h
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 
 
@@ -148,7 +148,7 @@ class TestSyncMismatchDetection:
                 size=50 * 1024 * 1024 * 1024,  # 50GB
             )
 
-        # Test the is_snapshot_out_of_sync_by_24h function directly
+        # Test the is_snapshot_out_of_sync_by_72h function directly
         hqs10_snapshot_models = snapshot_repo.get_by_pool_dataset(
             pool="hqs10p1", dataset="L1S4DAT1", system_id=hqs10.id
         )
@@ -158,18 +158,18 @@ class TestSyncMismatchDetection:
 
         # Extract midnight snapshot names
         hqs10_midnight_names = {
-            comparison_service._extract_snapshot_name(s.name)
+            comparison_service.extract_snapshot_name(s.name)
             for s in hqs10_snapshot_models
-            if comparison_service._extract_snapshot_name(s.name).endswith("-000000")
+            if comparison_service.extract_snapshot_name(s.name).endswith("-000000")
         }
         hqs7_midnight_names = {
-            comparison_service._extract_snapshot_name(s.name)
+            comparison_service.extract_snapshot_name(s.name)
             for s in hqs7_snapshot_models
-            if comparison_service._extract_snapshot_name(s.name).endswith("-000000")
+            if comparison_service.extract_snapshot_name(s.name).endswith("-000000")
         }
 
         # Test the validator function
-        is_out_of_sync = is_snapshot_out_of_sync_by_24h(
+        is_out_of_sync = is_snapshot_out_of_sync_by_72h(
             source_snapshots=hqs10_snapshot_models,
             target_snapshots=hqs7_snapshot_models,
             source_snapshot_names=hqs10_midnight_names,
@@ -180,7 +180,7 @@ class TestSyncMismatchDetection:
         # HQS7 is missing snapshots from 2025-11-05 onwards, so it should be out of sync
         # Latest HQS10: 2025-11-30-000000
         # Latest HQS7: 2025-11-04-000000
-        # Time difference: 26 days = 624 hours > 24 hours
+        # Time difference: 26 days = 624 hours > 72 hours
         assert is_out_of_sync, (
             "HQS7 should be detected as out of sync (missing snapshots from 2025-11-05 onwards, "
             "latest HQS10 snapshot is 2025-11-30, latest HQS7 is 2025-11-04, "
@@ -189,10 +189,9 @@ class TestSyncMismatchDetection:
 
         # Test the full sync instruction generation
         service = SyncCoordinationService(test_db)
-        instructions = service.generate_dataset_sync_instructions(
+        instructions = service.get_sync_instructions(
+            system_id=hqs7.id,  # HQS7 is the target
             sync_group_id=sync_group.id,
-            system_id=hqs10.id,  # HQS10 is the source
-            incremental_only=True,
         )
 
         # Should detect that HQS7 needs to sync from HQS10
@@ -213,17 +212,227 @@ class TestSyncMismatchDetection:
             f"Available datasets: {[d['dataset'] for d in instructions['datasets']]}"
         )
 
-        # Verify the instruction details
-        assert l1s4dat1_instruction["pool"] == "hqs10p1", "Source pool should be hqs10p1"
+        # Verify the instruction details - updated for new consolidated format
         assert l1s4dat1_instruction["target_pool"] == "hqs7p1", "Target pool should be hqs7p1"
+        assert l1s4dat1_instruction["ending_snapshot"] is not None, "Should have an ending snapshot"
+
+        # Check that the latest snapshot is included in the ending snapshot
+        # The actual latest snapshot is 2025-11-30-120000, not 2025-11-30-000000
         assert (
-            l1s4dat1_instruction["ending_snapshot"] == "2025-11-30-000000"
-        ), f"Ending snapshot should be 2025-11-30-000000, got {l1s4dat1_instruction['ending_snapshot']}"
-        # Starting snapshot should be the most recent common midnight snapshot
-        # HQS10 has weekly snapshots (2025-10-30, 2025-11-06, etc.)
-        # HQS7 has daily snapshots (2025-10-08 through 2025-11-04)
-        # The most recent common midnight snapshot is 2025-10-30-000000
-        assert l1s4dat1_instruction["starting_snapshot"] == "2025-10-30-000000", (
-            f"Starting snapshot should be 2025-10-30-000000 (most recent common midnight snapshot), "
-            f"got {l1s4dat1_instruction['starting_snapshot']}"
+            "2025-11-30-120000" in l1s4dat1_instruction["ending_snapshot"]
+        ), f"Ending snapshot should include the latest snapshot 2025-11-30-120000, got: {l1s4dat1_instruction['ending_snapshot']}"
+
+        # Check that incremental base is from the common snapshot
+        assert (
+            l1s4dat1_instruction["starting_snapshot"] is not None
+        ), "Should have a starting snapshot for incremental sync"
+
+        assert (
+            "2025-10-30-000000" in l1s4dat1_instruction["starting_snapshot"]
+        ), f"Starting snapshot should be from common base 2025-10-30-000000, got: {l1s4dat1_instruction['starting_snapshot']}"
+
+    def test_directional_sync_hub_system_instructions(self, test_db):
+        """
+        Test directional sync behavior when requesting instructions for the hub system.
+
+        This reproduces the bug where hub system receives empty instructions even though
+        snapshot comparison shows mismatches exist.
+
+        Scenario (matches production):
+        - System A (hub): has snapshots from 2025-09-04 to 2025-12-01
+        - System B (source): has snapshots from 2025-10-08 to 2025-11-04
+        - Both systems are missing snapshots from each other
+        - Directional sync: hub should replicate TO sources, but what about hub receiving from sources?
+
+        Expected behavior needs to be determined:
+        - Option A: Hub should receive instructions to sync missing snapshots from sources
+        - Option B: Hub should NOT receive instructions (hub only sends, never receives)
+        """
+        # Create systems matching production UUIDs
+        system_repo = SystemRepository(test_db)
+        hub_system = system_repo.create(
+            hostname="hub-system",
+            platform="linux",
+            connectivity_status="online",
+            ssh_hostname="hub.example.com",
+            ssh_user="root",
+            ssh_port=22,
         )
+        source_system = system_repo.create(
+            hostname="source-system",
+            platform="linux",
+            connectivity_status="online",
+            ssh_hostname="source.example.com",
+            ssh_user="root",
+            ssh_port=22,
+        )
+
+        # Create directional sync group with hub
+        sync_group_repo = SyncGroupRepository(test_db)
+        sync_group = sync_group_repo.create(
+            name="directional-sync-group",
+            description="Directional sync test",
+            enabled=True,
+            directional=True,
+            hub_system_id=hub_system.id,
+        )
+        sync_group_repo.add_system(sync_group.id, hub_system.id)
+        sync_group_repo.add_system(sync_group.id, source_system.id)
+
+        # Create snapshot repository
+        snapshot_repo = SnapshotRepository(test_db)
+        comparison_service = SnapshotComparisonService(test_db)
+
+        # Hub system snapshots (matches production: 72c0c3d5-ca09-4174-a2b2-46cf3842d99a)
+        # Has weekly snapshots + some daily ones
+        hub_snapshots = [
+            ("2025-09-04-000000", datetime(2025, 9, 4, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-09-11-000000", datetime(2025, 9, 11, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-09-18-000000", datetime(2025, 9, 18, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-09-25-000000", datetime(2025, 9, 25, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-02-000000", datetime(2025, 10, 2, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-09-000000", datetime(2025, 10, 9, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-16-000000", datetime(2025, 10, 16, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-23-000000", datetime(2025, 10, 23, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-30-000000", datetime(2025, 10, 30, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-06-000000", datetime(2025, 11, 6, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-13-000000", datetime(2025, 11, 13, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-18-000000", datetime(2025, 11, 18, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-19-000000", datetime(2025, 11, 19, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-20-000000", datetime(2025, 11, 20, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-21-000000", datetime(2025, 11, 21, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-22-000000", datetime(2025, 11, 22, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-23-000000", datetime(2025, 11, 23, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-24-000000", datetime(2025, 11, 24, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-25-000000", datetime(2025, 11, 25, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-26-000000", datetime(2025, 11, 26, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-27-000000", datetime(2025, 11, 27, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-28-000000", datetime(2025, 11, 28, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-29-000000", datetime(2025, 11, 29, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-30-000000", datetime(2025, 11, 30, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-01-000000", datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-01-120000", datetime(2025, 12, 1, 12, 0, 0, tzinfo=timezone.utc)),
+        ]
+
+        # Source system snapshots (matches production: 58125bc5-76cd-4bb9-bb88-3d2d56f322df)
+        # Has daily snapshots from 2025-10-08 to 2025-11-04
+        source_snapshots = [
+            ("2025-10-08-000000", datetime(2025, 10, 8, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-09-000000", datetime(2025, 10, 9, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-10-000000", datetime(2025, 10, 10, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-11-000000", datetime(2025, 10, 11, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-12-000000", datetime(2025, 10, 12, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-13-000000", datetime(2025, 10, 13, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-14-000000", datetime(2025, 10, 14, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-15-000000", datetime(2025, 10, 15, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-16-000000", datetime(2025, 10, 16, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-17-000000", datetime(2025, 10, 17, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-18-000000", datetime(2025, 10, 18, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-19-000000", datetime(2025, 10, 19, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-20-000000", datetime(2025, 10, 20, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-21-000000", datetime(2025, 10, 21, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-22-000000", datetime(2025, 10, 22, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-23-000000", datetime(2025, 10, 23, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-24-000000", datetime(2025, 10, 24, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-25-000000", datetime(2025, 10, 25, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-26-000000", datetime(2025, 10, 26, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-27-000000", datetime(2025, 10, 27, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-28-000000", datetime(2025, 10, 28, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-29-000000", datetime(2025, 10, 29, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-31-000000", datetime(2025, 10, 31, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-01-000000", datetime(2025, 11, 1, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-02-000000", datetime(2025, 11, 2, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-03-000000", datetime(2025, 11, 3, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-03-120000", datetime(2025, 11, 3, 12, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-04-000000", datetime(2025, 11, 4, 0, 0, 0, tzinfo=timezone.utc)),
+        ]
+
+        # Create snapshots for hub system
+        for snapshot_name, timestamp in hub_snapshots:
+            snapshot_repo.create(
+                name=f"hubp1/L1S4DAT1@{snapshot_name}",
+                pool="hubp1",
+                dataset="L1S4DAT1",
+                system_id=hub_system.id,
+                timestamp=timestamp,
+                size=100 * 1024 * 1024 * 1024,  # 100GB
+            )
+
+        # Create snapshots for source system
+        for snapshot_name, timestamp in source_snapshots:
+            snapshot_repo.create(
+                name=f"sourcep1/L1S4DAT1@{snapshot_name}",
+                pool="sourcep1",
+                dataset="L1S4DAT1",
+                system_id=source_system.id,
+                timestamp=timestamp,
+                size=50 * 1024 * 1024 * 1024,  # 50GB
+            )
+
+        # Verify snapshot comparison shows mismatches
+        comparison = comparison_service.compare_snapshots_by_dataset(
+            dataset="L1S4DAT1", system_ids=[hub_system.id, source_system.id]
+        )
+        assert (
+            len(comparison["missing_snapshots"].get(str(hub_system.id), [])) > 0
+        ), "Hub system should be missing snapshots from source system"
+        assert (
+            len(comparison["missing_snapshots"].get(str(source_system.id), [])) > 0
+        ), "Source system should be missing snapshots from hub system"
+
+        # Test requesting instructions for hub system (this is the bug scenario)
+        service = SyncCoordinationService(test_db)
+        hub_instructions = service.get_sync_instructions(
+            system_id=hub_system.id,  # Requesting instructions for hub
+            sync_group_id=sync_group.id,
+            include_diagnostics=True,
+        )
+
+        # Test requesting instructions for source system (this should work)
+        source_instructions = service.get_sync_instructions(
+            system_id=source_system.id,  # Requesting instructions for source
+            sync_group_id=sync_group.id,
+            include_diagnostics=True,
+        )
+
+        # Log results for analysis
+        print(f"\nHub system instructions: {hub_instructions['dataset_count']} datasets")
+        print(f"Source system instructions: {source_instructions['dataset_count']} datasets")
+        if hub_instructions.get("diagnostics"):
+            print(f"Hub diagnostics: {hub_instructions['diagnostics']}")
+        if source_instructions.get("diagnostics"):
+            print(f"Source diagnostics: {source_instructions['diagnostics']}")
+
+        # Source system should receive instructions (hub -> source)
+        assert source_instructions["dataset_count"] > 0, (
+            f"Source system should receive instructions to sync from hub. "
+            f"Got {source_instructions['dataset_count']} datasets. "
+            f"Diagnostics: {source_instructions.get('diagnostics', [])}"
+        )
+
+        # Hub should receive instructions on what snapshots to send to sources
+        # Hub is source of truth and needs to know what to send to spoke systems
+        assert hub_instructions["dataset_count"] > 0, (
+            f"Hub system should receive instructions on what snapshots to send to sources. "
+            f"Got {hub_instructions['dataset_count']} datasets. "
+            f"Diagnostics: {hub_instructions.get('diagnostics', [])}"
+        )
+
+        # Verify hub instructions contain L1S4DAT1 dataset
+        hub_datasets = [d["dataset"] for d in hub_instructions["datasets"]]
+        assert "L1S4DAT1" in hub_datasets, (
+            f"Hub instructions should include L1S4DAT1 dataset. " f"Found datasets: {hub_datasets}"
+        )
+
+        # Find the instruction for L1S4DAT1
+        hub_l1s4dat1_instruction = None
+        for dataset in hub_instructions["datasets"]:
+            if dataset["dataset"] == "L1S4DAT1":
+                hub_l1s4dat1_instruction = dataset
+                break
+
+        assert hub_l1s4dat1_instruction is not None, "Hub should have instruction for L1S4DAT1"
+        assert hub_l1s4dat1_instruction["pool"] == "hubp1", "Pool should be hubp1 (hub's pool)"
+        assert (
+            hub_l1s4dat1_instruction["ending_snapshot"] is not None
+        ), "Should have an ending snapshot"

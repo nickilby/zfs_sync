@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from zfs_sync.config import get_settings
-from zfs_sync.database import create_engine, init_db
+from zfs_sync.database import init_db
 from zfs_sync.database.repositories import SystemRepository
 from zfs_sync.logging_config import get_logger, setup_logging
 
@@ -62,8 +62,6 @@ def test_api_imports():
         from zfs_sync.api import app
 
         print("✓ FastAPI app imported")
-
-        from zfs_sync.api.routes import health, systems, snapshots, sync
 
         print("✓ API routes imported")
 

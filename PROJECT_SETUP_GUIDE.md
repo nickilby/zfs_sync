@@ -196,7 +196,7 @@ test:
     matrix:
       python-version: ["3.9", "3.10", "3.11", "3.12"]
     fail-fast: false
-  
+
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -230,7 +230,7 @@ test:
 lint:
   name: Lint and Format Check
   runs-on: ubuntu-latest
-  
+
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -260,7 +260,7 @@ docker-build:
   name: Docker Build Test
   runs-on: ubuntu-latest
   needs: [test]
-  
+
   steps:
     - uses: actions/checkout@v4
     - uses: docker/setup-buildx-action@v3
@@ -295,7 +295,7 @@ docker-build:
 security-scan:
   name: Security Scanning
   runs-on: ubuntu-latest
-  
+
   steps:
     - uses: actions/checkout@v4
       with:
@@ -331,7 +331,7 @@ security-scan:
 dependency-check:
   name: Dependency Vulnerability Check
   runs-on: ubuntu-latest
-  
+
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -362,7 +362,7 @@ benchmark:
   runs-on: ubuntu-latest
   needs: [test]
   if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-  
+
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -384,7 +384,7 @@ benchmark:
 
 - **Trigger**: Only on pushes to main branch (`if: github.event_name == 'push' && github.ref == 'refs/heads/main'`)
 - **Dependencies**: Requires all other jobs to pass (`needs: [test, lint, docker-build, security-scan, dependency-check]`)
-- **Version Extraction**: Read version from source files (pyproject.toml or __init__.py)
+- **Version Extraction**: Read version from source files (pyproject.toml or **init**.py)
 - **Release Creation**: Automatically create draft GitHub releases
 - **Changelog**: Generate release notes from commit messages since last release
 - **Permissions**: Requires `contents: write` permission
@@ -480,13 +480,13 @@ def test_db():
 def test_client(test_db):
     """Create a test client with database override."""
     from project_name.api.app import app
-    
+
     def override_get_db():
         try:
             yield test_db
         finally:
             pass
-    
+
     app.dependency_overrides[get_db] = override_get_db
     from fastapi.testclient import TestClient
     return TestClient(app)
@@ -526,10 +526,10 @@ def test_system_repository_create(test_db, sample_system_data):
     """Test that system repository can create a new system."""
     # Arrange
     repo = SystemRepository(test_db)
-    
+
     # Act
     system = repo.create(**sample_system_data)
-    
+
     # Assert
     assert system.id is not None
     assert system.hostname == sample_system_data["hostname"]
@@ -579,7 +579,7 @@ chmod +x .git/hooks/pre-commit
 
 **Hook Structure:**
 
-1. Extract current version from pyproject.toml or __init__.py
+1. Extract current version from pyproject.toml or **init**.py
 1. Increment patch version
 1. Update version in all files
 1. Stage updated version files
@@ -707,62 +707,62 @@ Standard commands to include in Makefile:
 .PHONY: help install install-dev test lint format clean docker-build docker-up docker-down docker-logs docker-shell docker-clean docker-rebuild docker-deploy
 
 help:
-	@echo "Available commands:"
-	@echo "  make install       - Install production dependencies"
-	@echo "  make install-dev   - Install development dependencies"
-	@echo "  make test          - Run tests"
-	@echo "  make lint          - Run linters"
-	@echo "  make format        - Format code"
-	@echo "  make clean         - Clean build artifacts"
-	@echo "  make docker-build  - Build Docker image"
-	@echo "  make docker-up     - Start container"
-	@echo "  make docker-down   - Stop container"
-	@echo "  make docker-logs   - View container logs"
-	@echo "  make docker-deploy - Full deployment: clean, rebuild, and start"
+ @echo "Available commands:"
+ @echo "  make install       - Install production dependencies"
+ @echo "  make install-dev   - Install development dependencies"
+ @echo "  make test          - Run tests"
+ @echo "  make lint          - Run linters"
+ @echo "  make format        - Format code"
+ @echo "  make clean         - Clean build artifacts"
+ @echo "  make docker-build  - Build Docker image"
+ @echo "  make docker-up     - Start container"
+ @echo "  make docker-down   - Stop container"
+ @echo "  make docker-logs   - View container logs"
+ @echo "  make docker-deploy - Full deployment: clean, rebuild, and start"
 
 install:
-	pip install -r requirements.txt
+ pip install -r requirements.txt
 
 install-dev:
-	pip install -r requirements-dev.txt
+ pip install -r requirements-dev.txt
 
 test:
-	pytest
+ pytest
 
 lint:
-	ruff check project_name/
-	mypy project_name/
+ ruff check project_name/
+ mypy project_name/
 
 format:
-	black project_name/
-	ruff check --fix project_name/
+ black project_name/
+ ruff check --fix project_name/
 
 clean:
-	find . -type d -name __pycache__ -exec rm -r {} +
-	find . -type f -name "*.pyc" -delete
-	rm -rf build/ dist/ *.egg-info .pytest_cache .coverage htmlcov
+ find . -type d -name __pycache__ -exec rm -r {} +
+ find . -type f -name "*.pyc" -delete
+ rm -rf build/ dist/ *.egg-info .pytest_cache .coverage htmlcov
 
 # Docker commands
 docker-build:
-	docker-compose build
+ docker-compose build
 
 docker-up:
-	docker-compose up -d
+ docker-compose up -d
 
 docker-down:
-	docker-compose down
+ docker-compose down
 
 docker-logs:
-	docker-compose logs -f
+ docker-compose logs -f
 
 docker-deploy: docker-clean docker-rebuild docker-up
 
 docker-clean:
-	docker-compose down
-	docker rmi project_name-project-name 2>/dev/null || true
+ docker-compose down
+ docker rmi project_name-project-name 2>/dev/null || true
 
 docker-rebuild:
-	docker-compose build --no-cache
+ docker-compose build --no-cache
 ```
 
 ## 7. Project Configuration

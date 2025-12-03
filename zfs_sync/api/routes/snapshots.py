@@ -129,16 +129,15 @@ async def create_snapshots_batch(snapshots: List[SnapshotCreate], db: Session = 
     return created
 
 
-@router.get("/snapshots/compare")
-async def compare_snapshots(
-    pool: str = Query(..., description="ZFS pool name"),
+@router.get("/snapshots/compare-dataset")
+async def compare_snapshots_by_dataset(
     dataset: str = Query(..., description="ZFS dataset name"),
     system_ids: List[UUID] = Query(..., description="System IDs to compare"),
     db: Session = Depends(get_db),
 ):
     """Compare snapshots across multiple systems for a dataset."""
     service = SnapshotComparisonService(db)
-    result = service.compare_snapshots_by_dataset(pool=pool, dataset=dataset, system_ids=system_ids)
+    result = service.compare_snapshots_by_dataset(dataset=dataset, system_ids=system_ids)
     return result
 
 
@@ -169,7 +168,6 @@ async def compare_snapshots_by_dataset_name(
 async def get_snapshot_differences(
     system_id_1: UUID = Query(..., description="First system ID"),
     system_id_2: UUID = Query(..., description="Second system ID"),
-    pool: str = Query(..., description="ZFS pool name"),
     dataset: str = Query(..., description="ZFS dataset name"),
     db: Session = Depends(get_db),
 ):
@@ -178,7 +176,6 @@ async def get_snapshot_differences(
     result = service.find_snapshot_differences(
         system_id_1=system_id_1,
         system_id_2=system_id_2,
-        pool=pool,
         dataset=dataset,
     )
     return result
@@ -186,14 +183,13 @@ async def get_snapshot_differences(
 
 @router.get("/snapshots/gaps")
 async def get_snapshot_gaps(
-    pool: str = Query(..., description="ZFS pool name"),
     dataset: str = Query(..., description="ZFS dataset name"),
     system_ids: List[UUID] = Query(..., description="System IDs to check"),
     db: Session = Depends(get_db),
 ):
     """Identify gaps in snapshot sequences across systems."""
     service = SnapshotComparisonService(db)
-    gaps = service.get_snapshot_gaps(system_ids=system_ids, pool=pool, dataset=dataset)
+    gaps = service.get_snapshot_gaps(system_ids=system_ids, dataset=dataset)
     return {"gaps": gaps, "count": len(gaps)}
 
 

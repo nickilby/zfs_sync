@@ -657,7 +657,7 @@ If you see errors like `unable to open database file` or `attempt to write a rea
    ```bash
    # Check directory ownership
    ls -lah /var/lib/zfs-sync
-   
+
    # Fix ownership if needed (UID 1001 matches container user)
    sudo chown -R 1001:1001 /var/lib/zfs-sync
    sudo chmod 755 /var/lib/zfs-sync
@@ -695,7 +695,7 @@ docker inspect zfs-sync | grep -A 20 Mounts
   ```bash
   # Check if directory exists
   ls -la /var/lib/zfs-sync
-  
+
   # Fix permissions if needed
   sudo mkdir -p /var/lib/zfs-sync
   sudo chown -R 1001:1001 /var/lib/zfs-sync

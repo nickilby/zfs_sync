@@ -89,7 +89,7 @@ class ConflictResolutionService:
         for system_id, snapshots in all_snapshots.items():
             names_dict = {}
             for snapshot in snapshots:
-                name = self.comparison_service._extract_snapshot_name(snapshot.name)
+                name = self.comparison_service.extract_snapshot_name(snapshot.name)
                 names_dict[name] = snapshot
             snapshot_names_by_system[system_id] = names_dict
 
@@ -192,7 +192,7 @@ class ConflictResolutionService:
         # Check for missing base snapshots (orphaned snapshots)
         for system_id, snapshots in all_snapshots.items():
             for snapshot in snapshots:
-                snapshot_name = self.comparison_service._extract_snapshot_name(snapshot.name)
+                snapshot_name = self.comparison_service.extract_snapshot_name(snapshot.name)
                 # Check if this snapshot exists on other systems
                 other_systems_have = any(
                     snapshot_name in snapshot_names_by_system.get(other_id, {})
@@ -354,7 +354,7 @@ class ConflictResolutionService:
         """Check if a snapshot has a common ancestor on other systems."""
         # Simplified: check if there's an older snapshot with same name pattern
         # In a real implementation, this would check ZFS snapshot relationships
-        snapshot_name = self.comparison_service._extract_snapshot_name(snapshot.name)
+        snapshot_name = self.comparison_service.extract_snapshot_name(snapshot.name)
 
         for other_system_id in system_ids:
             if other_system_id == current_system_id:
@@ -362,7 +362,7 @@ class ConflictResolutionService:
 
             other_snapshots = all_snapshots.get(other_system_id, [])
             for other_snap in other_snapshots:
-                other_name = self.comparison_service._extract_snapshot_name(other_snap.name)
+                other_name = self.comparison_service.extract_snapshot_name(other_snap.name)
                 # Check if there's a snapshot with similar name pattern (simplified check)
                 if other_name.startswith(
                     snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name

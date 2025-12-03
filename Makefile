@@ -110,4 +110,3 @@ docker-deploy: docker-rebuild docker-up
 	@echo "Deployment complete! Checking version..."
 	@sleep 3
 	@$(DOCKER_COMPOSE) logs zfs-sync | grep -i "Starting zfs-sync" | head -1 || echo "Container starting..."
-

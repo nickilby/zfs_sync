@@ -3,7 +3,7 @@
 
 # Application settings
 app_name: "zfs-sync"
-app_version: "0.1.50"
+app_version: "0.1.57"
 debug: false
 log_level: "INFO"
 
@@ -40,3 +40,32 @@ sync_check_interval_seconds: 300  # Check every 5 minutes
 auto_sync_enabled: true
 incremental_sync_only: true  # Only auto-sync incremental snapshots
 
+# Logging settings
+suppress_orphan_dataset_logs: true  # Suppress repeated orphan dataset warnings (useful for hub systems)
+
+# Example sync group configurations:
+#
+# Bidirectional sync group (default behavior):
+# {
+#   "name": "production-cluster",
+#   "description": "Production ZFS cluster with bidirectional sync",
+#   "enabled": true,
+#   "directional": false,
+#   "system_ids": ["system1-uuid", "system2-uuid", "system3-uuid"]
+# }
+#
+# Hub-and-spoke directional sync group:
+# {
+#   "name": "source-of-truth-distribution",
+#   "description": "Hub-and-spoke distribution from master to replicas",
+#   "enabled": true,
+#   "directional": true,
+#   "hub_system_id": "master-server-uuid",
+#   "system_ids": ["master-server-uuid", "replica1-uuid", "replica2-uuid"]
+# }
+#
+# Note: In directional mode:
+# - The hub system pushes snapshots TO all other systems
+# - Other systems only receive from the hub (no cross-sync)
+# - Hub acts as source of truth for data distribution
+# - Use for master-replica scenarios, content distribution

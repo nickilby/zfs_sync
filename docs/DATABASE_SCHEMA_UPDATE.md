@@ -62,6 +62,7 @@ You should see `dataset VARCHAR(255)` instead of `snapshot_id`.
 - **No data loss for important tables**: Systems, snapshots, and sync_groups are all preserved
 - **Sync states will be regenerated**: The sync scheduler will automatically recreate sync_states as needed
 - **Backup recommended**: Always backup your database before schema changes:
+
   ```bash
   cp /data/zfs_sync.db /data/zfs_sync.db.backup
   ```

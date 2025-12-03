@@ -38,7 +38,6 @@ class TestSnapshotComparisonService:
         # Compare
         service = SnapshotComparisonService(test_db)
         comparison = service.compare_snapshots_by_dataset(
-            pool=sample_snapshot_data["pool"],
             dataset=sample_snapshot_data["dataset"],
             system_ids=[system1.id, system2.id],
         )
@@ -74,7 +73,6 @@ class TestSnapshotComparisonService:
         differences = service.find_snapshot_differences(
             system_id_1=system1.id,
             system_id_2=system2.id,
-            pool=sample_snapshot_data["pool"],
             dataset=sample_snapshot_data["dataset"],
         )
 
@@ -114,7 +112,6 @@ class TestSnapshotComparisonService:
         service = SnapshotComparisonService(test_db)
         gaps = service.get_snapshot_gaps(
             system_ids=[system1.id, system2.id],
-            pool=sample_snapshot_data["pool"],
             dataset=sample_snapshot_data["dataset"],
         )
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # ZFS Sync Report Script
-# 
+#
 # This script reports ZFS snapshots to the witness service and retrieves sync instructions.
 # Fixed version with proper dataset parsing, timestamp conversion, batch endpoint, and error handling.
 #
@@ -83,16 +83,16 @@ fi
 # Test API connectivity
 test_api_connectivity() {
     log_info "Testing API connectivity to ${API_URL}"
-    
+
     # Try a simple GET request to health endpoint (no auth required)
     local health_url="${API_URL}/health"
     local curl_opts=(-s -w "\n%{http_code}" --max-time 5)
-    
+
     if [ "${VERBOSE:-0}" = "1" ]; then
         curl_opts+=(-v)
         log_info "Testing connection to: $health_url"
     fi
-    
+
     local response=$(curl "${curl_opts[@]}" "$health_url" 2>&1) || {
         local exit_code=$?
         log_error "Cannot connect to API server at ${API_URL}"
@@ -111,7 +111,7 @@ test_api_connectivity() {
         log_error "  4. Check server logs: docker logs zfs-sync (if using Docker)"
         return $exit_code
     }
-    
+
     local http_code=$(echo "$response" | tail -n1)
     if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
         log_info "API connectivity test passed"
@@ -128,7 +128,7 @@ api_request() {
     local endpoint="$2"
     local data="${3:-}"
     local url="${API_URL}${endpoint}"
-    
+
     local curl_opts=(
         -s
         -w "\n%{http_code}"
@@ -136,13 +136,13 @@ api_request() {
         -H "X-API-Key: $API_KEY"
         -H "Content-Type: application/json"
     )
-    
+
     # Add verbose mode if enabled
     if [ "${VERBOSE:-0}" = "1" ]; then
         curl_opts+=(-v)
         log_info "API Request: $method $url"
     fi
-    
+
     local response
     if [ "$method" = "POST" ] && [ -n "$data" ]; then
         # Use stdin for data to avoid command-line argument length limits
@@ -152,7 +152,7 @@ api_request() {
             log_error "API request failed: $method $endpoint"
             log_error "URL: $url"
             log_error "Curl exit code: $exit_code"
-            
+
             # Provide helpful error messages based on exit code
             case $exit_code in
                 6)  log_error "Error: Could not resolve host. Check DNS or API_URL setting." ;;
@@ -161,11 +161,11 @@ api_request() {
                 28) log_error "Error: Connection timeout. Server may be overloaded or network slow." ;;
                 *)  log_error "Error: Connection failed (exit code: $exit_code)" ;;
             esac
-            
+
             if [ "${VERBOSE:-0}" = "1" ]; then
                 log_error "Full curl output: $response"
             fi
-            
+
             return $exit_code
         }
     else
@@ -174,7 +174,7 @@ api_request() {
             log_error "API request failed: $method $endpoint"
             log_error "URL: $url"
             log_error "Curl exit code: $exit_code"
-            
+
             # Provide helpful error messages based on exit code
             case $exit_code in
                 6)  log_error "Error: Could not resolve host. Check DNS or API_URL setting." ;;
@@ -183,19 +183,19 @@ api_request() {
                 28) log_error "Error: Connection timeout. Server may be overloaded or network slow." ;;
                 *)  log_error "Error: Connection failed (exit code: $exit_code)" ;;
             esac
-            
+
             if [ "${VERBOSE:-0}" = "1" ]; then
                 log_error "Full curl output: $response"
             fi
-            
+
             return $exit_code
         }
     fi
-    
+
     # Extract HTTP status code (last line)
     local http_code=$(echo "$response" | tail -n1)
     local body=$(echo "$response" | sed '$d')
-    
+
     if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
         echo "$body"
         return 0
@@ -210,9 +210,9 @@ api_request() {
 # Get all ZFS snapshots on this system
 get_local_snapshots() {
     log_info "Collecting local ZFS snapshots"
-    
+
     local snapshots_json="[]"
-    
+
     # Use zfs list with -p flag to get raw numeric values
     # -p: print raw numeric values (creation time as Unix timestamp, sizes in bytes)
     # -H: scripted mode (no headers)
@@ -222,7 +222,7 @@ get_local_snapshots() {
         if [[ "$name" =~ ^([^@]+)@(.+)$ ]]; then
             local full_path="${BASH_REMATCH[1]}"
             local snapshot_name="${BASH_REMATCH[2]}"
-            
+
             # Split pool/dataset correctly
             # Handle nested datasets like pool/dataset/subdataset
             if [[ "$full_path" =~ ^([^/]+)/(.+)$ ]]; then
@@ -233,7 +233,7 @@ get_local_snapshots() {
                 local pool="$full_path"
                 local dataset=""
             fi
-            
+
             # Convert creation time (Unix timestamp) to ISO format
             local timestamp
             if command -v date &> /dev/null; then
@@ -246,11 +246,11 @@ get_local_snapshots() {
             else
                 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             fi
-            
+
             # Sizes are already in bytes from -p flag
             local used_bytes="${used:-0}"
             local referenced_bytes="${referenced:-0}"
-            
+
             # Build JSON object (must include system_id for batch endpoint)
             local snapshot_json=$(jq -n \
                 --arg name "$snapshot_name" \
@@ -269,18 +269,18 @@ get_local_snapshots() {
                     referenced: $referenced,
                     system_id: $system_id
                 }')
-            
+
             snapshots_json=$(echo "$snapshots_json" | jq ". += [$snapshot_json]")
         fi
     done < <(zfs list -t snapshot -H -p -o name,creation,used,referenced 2>/dev/null || true)
-    
+
     echo "$snapshots_json"
 }
 
 # Report snapshots to witness service using batch endpoint
 report_snapshots() {
     log_info "Reporting snapshot state to witness service"
-    
+
     # Test API connectivity before attempting large batch operations
     if ! test_api_connectivity; then
         log_error "Cannot connect to API server. Aborting snapshot report."
@@ -291,41 +291,41 @@ report_snapshots() {
         log_error "  - Container logs: docker logs zfs-sync --tail 100 -f"
         return 1
     fi
-    
+
     local snapshots_json=$(get_local_snapshots)
     local snapshot_count=$(echo "$snapshots_json" | jq 'length')
-    
+
     log_info "Found $snapshot_count snapshots to report"
-    
+
     if [ "$snapshot_count" -eq 0 ]; then
         log_warning "No snapshots found on this system"
         return 0
     fi
-    
+
     # Determine if chunking is needed
     local chunk_size=${SNAPSHOT_BATCH_CHUNK_SIZE:-1000}
     local total_created=0
     local total_failed=0
-    
+
     if [ "$chunk_size" -gt 0 ] && [ "$snapshot_count" -gt "$chunk_size" ]; then
         # Split into chunks and process sequentially
         log_info "Splitting $snapshot_count snapshots into chunks of $chunk_size"
-        
+
         local chunk_num=0
         local offset=0
-        
+
         while [ $offset -lt $snapshot_count ]; do
             chunk_num=$((chunk_num + 1))
             local chunk=$(echo "$snapshots_json" | jq ".[$offset:$((offset + chunk_size))]")
             local chunk_length=$(echo "$chunk" | jq 'length')
-            
+
             log_info "Processing chunk $chunk_num: $chunk_length snapshots (offset $offset)"
-            
+
             local response
             local api_exit_code
             response=$(api_request "POST" "/snapshots/batch" "$chunk")
             api_exit_code=$?
-            
+
             if [ $api_exit_code -eq 0 ]; then
                 local created_count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
                 total_created=$((total_created + created_count))
@@ -338,10 +338,10 @@ report_snapshots() {
                 fi
                 # Continue with next chunk even if this one failed
             fi
-            
+
             offset=$((offset + chunk_size))
         done
-        
+
         # Summary
         if [ $total_failed -eq 0 ]; then
             log_info "Successfully reported all $total_created snapshots in $chunk_num chunks"
@@ -356,7 +356,7 @@ report_snapshots() {
         local api_exit_code
         response=$(api_request "POST" "/snapshots/batch" "$snapshots_json")
         api_exit_code=$?
-        
+
         if [ $api_exit_code -eq 0 ]; then
             # Check if response contains actual data (successful creation)
             local created_count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
@@ -380,7 +380,7 @@ report_snapshots() {
 # Send heartbeat
 send_heartbeat() {
     log_info "Sending heartbeat"
-    
+
     if api_request "POST" "/systems/$SYSTEM_ID/heartbeat" > /dev/null; then
         log_info "Heartbeat sent successfully"
         return 0
@@ -400,7 +400,7 @@ build_ssh_sync_command() {
     local target_ssh_hostname="$5"  # Target system SSH hostname/alias
     local target_pool="${6:-$pool}"
     local target_dataset="${7:-$dataset}"
-    
+
     # Build full snapshot paths for source (local)
     local full_ending_snapshot
     if [[ "$dataset" == *"/"* ]]; then
@@ -410,7 +410,7 @@ build_ssh_sync_command() {
         # Dataset is just name, prepend pool
         full_ending_snapshot="${pool}/${dataset}@${ending_snapshot}"
     fi
-    
+
     # Build ZFS send command (runs locally on source)
     local zfs_send_cmd
     if [ -n "$starting_snapshot" ] && [ "$starting_snapshot" != "null" ]; then
@@ -427,14 +427,14 @@ build_ssh_sync_command() {
         # -I flag requires: first snapshot (common/base/older), second snapshot (ending/newer)
         # The starting snapshot should be the common snapshot (older) and the ending snapshot should be the latest (newer)
         # ZFS requires: zfs send -I <base_snapshot> <ending_snapshot>
-        # Swap the order to ensure correct sequence: base (older) first, then ending (newer)
-        zfs_send_cmd="zfs send -c -I ${full_ending_snapshot_escaped} ${full_starting_snapshot}"
+        # Order: base (older/starting) first, then ending (newer) second
+        zfs_send_cmd="zfs send -c -I ${full_starting_snapshot} ${full_ending_snapshot_escaped}"
     else
         # Full send with compression
         full_ending_snapshot_escaped=$(printf '%q' "$full_ending_snapshot")
         zfs_send_cmd="zfs send -c ${full_ending_snapshot_escaped}"
     fi
-    
+
     # Build target dataset path
     local target_dataset_path
     if [[ "$target_dataset" == *"/"* ]]; then
@@ -443,12 +443,12 @@ build_ssh_sync_command() {
         target_dataset_path="${target_pool}/${target_dataset}"
     fi
     target_dataset_path=$(printf '%q' "$target_dataset_path")
-    
+
     # Build SSH receive command (runs on target via SSH)
     # -s flag for sparse receive
     local zfs_receive_cmd="zfs receive -s ${target_dataset_path}"
     local ssh_receive_cmd=$(printf 'ssh %q %q' "$target_ssh_hostname" "$zfs_receive_cmd")
-    
+
     # Combine: zfs send ... | ssh target "zfs receive ..."
     echo "${zfs_send_cmd} | ${ssh_receive_cmd}"
 }
@@ -456,33 +456,33 @@ build_ssh_sync_command() {
 # Get sync instructions and process them
 get_sync_instructions() {
     log_info "Fetching sync instructions from witness service"
-    
+
     local response=$(api_request "GET" "/sync/instructions/$SYSTEM_ID")
-    
+
     if [ $? -ne 0 ] || [ -z "$response" ]; then
         log_error "Failed to get sync instructions"
         return 1
     fi
-    
+
     log_info "Received sync instructions"
-    
+
     # Ensure sync log directory exists
     if ! ensure_sync_log_dir; then
         log_error "Cannot proceed without sync log directory"
         return 1
     fi
-    
+
     # Check if we have datasets to sync
     local dataset_count=$(echo "$response" | jq -r '.dataset_count // 0')
-    
+
     if [ "$dataset_count" -eq 0 ]; then
         log_info "No datasets require syncing"
         return 0
     fi
-    
+
     log_info "Found $dataset_count dataset(s) requiring sync"
     log_info "Maximum parallel syncs: $MAX_PARALLEL_SYNCS"
-    
+
     # Process each dataset instruction with parallel execution
     # Use -c (compact) instead of -r (raw) to output JSON objects that can be parsed
     echo "$response" | jq -c '.datasets[]?' | while IFS= read -r dataset_instruction; do
@@ -495,13 +495,13 @@ get_sync_instructions() {
         local ending_snapshot=$(echo "$dataset_instruction" | jq -r '.ending_snapshot // ""')
         local target_ssh_hostname=$(echo "$dataset_instruction" | jq -r '.target_ssh_hostname // ""')
         local sync_group_id=$(echo "$dataset_instruction" | jq -r '.sync_group_id // ""')
-        
+
         # Skip if required fields are missing
         if [ -z "$pool" ] || [ -z "$dataset" ] || [ -z "$ending_snapshot" ] || [ -z "$target_ssh_hostname" ]; then
             log_warning "Skipping incomplete dataset instruction: missing required fields"
             continue
         fi
-        
+
         # Build the SSH sync command
         # Command runs locally on this system (source) and pipes to target via SSH
         local sync_command=$(build_ssh_sync_command \
@@ -513,19 +513,19 @@ get_sync_instructions() {
             "$target_pool" \
             "$target_dataset" \
         )
-        
+
         # Wait for available slot in job pool
         while [ $(jobs -r | wc -l) -ge "$MAX_PARALLEL_SYNCS" ]; do
             sleep 0.1
         done
-        
+
         # Create log file name with timestamp
         local timestamp=$(date +%Y%m%d_%H%M%S)
         local safe_pool=$(echo "$pool" | tr '/' '_')
         local safe_dataset=$(echo "$dataset" | tr '/' '_')
         local safe_snapshot=$(echo "$ending_snapshot" | tr '/' '_')
         local log_file="${SYNC_LOG_DIR}/sync-${safe_pool}-${safe_dataset}-${safe_snapshot}-${timestamp}.log"
-        
+
         # Launch sync command in background (fire-and-forget)
         log_info "Launching sync for ${pool}/${dataset}@${ending_snapshot} (PID will be logged)"
         (
@@ -540,7 +540,7 @@ get_sync_instructions() {
             echo "Command: $sync_command"
             echo "=================================="
             echo ""
-            
+
             # Execute the sync command
             if eval "$sync_command"; then
                 echo ""
@@ -555,46 +555,45 @@ get_sync_instructions() {
                 exit $exit_code
             fi
         ) > "$log_file" 2>&1 &
-        
+
         local sync_pid=$!
-        
+
         # Disown the process so it's fully detached from parent
         disown $sync_pid
-        
+
         # Log the launch information
         log_info "Sync launched for ${pool}/${dataset}@${ending_snapshot} (PID: $sync_pid, Log: $log_file)"
     done
-    
+
     # Wait a moment for all jobs to start
     sleep 0.5
-    
+
     # Log summary
     local running_jobs=$(jobs -r | wc -l)
     log_info "Sync operations launched. $running_jobs currently running in background (max: $MAX_PARALLEL_SYNCS)."
     log_info "Sync operations are running independently. Check logs in $SYNC_LOG_DIR for progress."
-    
+
     return 0
 }
 
 # Main execution
 main() {
     log_info "Starting ZFS sync report"
-    
+
     # Report snapshots
     if ! report_snapshots; then
         log_error "Failed to report snapshots"
         exit 1
     fi
-    
+
     # Send heartbeat
     send_heartbeat
-    
+
     # Get sync instructions
     get_sync_instructions
-    
+
     log_info "ZFS sync report completed"
 }
 
 # Run main function
 main
-

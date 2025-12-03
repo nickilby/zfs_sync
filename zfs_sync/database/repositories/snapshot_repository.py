@@ -100,3 +100,10 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
         )
         self.db.commit()
         return count
+
+    def get_by_dataset(self, dataset: str, system_id: Optional[UUID] = None) -> List[SnapshotModel]:
+        """Get snapshots by dataset, across all pools."""
+        query = self.db.query(SnapshotModel).filter(SnapshotModel.dataset == dataset)
+        if system_id:
+            query = query.filter(SnapshotModel.system_id == system_id)
+        return query.all()

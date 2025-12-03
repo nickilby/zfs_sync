@@ -17,31 +17,37 @@ tests/
 ## Running Tests
 
 ### Run all tests
+
 ```bash
 pytest
 ```
 
 ### Run with coverage
+
 ```bash
 pytest --cov=zfs_sync --cov-report=html
 ```
 
 ### Run only unit tests
+
 ```bash
 pytest tests/unit/
 ```
 
 ### Run only integration tests
+
 ```bash
 pytest tests/integration/
 ```
 
 ### Run specific test file
+
 ```bash
 pytest tests/unit/test_services/test_conflict_resolution.py
 ```
 
 ### Run with verbose output
+
 ```bash
 pytest -v
 ```
@@ -83,10 +89,10 @@ def test_my_service_method(test_db, sample_system_data):
     # Arrange
     repo = SystemRepository(test_db)
     system = repo.create(**sample_system_data)
-    
+
     # Act
     result = my_service.do_something(system.id)
-    
+
     # Assert
     assert result is not None
 ```
@@ -116,6 +122,7 @@ The test suite uses pytest markers to categorize tests:
 - `@pytest.mark.database`: Tests that require database access
 
 Example:
+
 ```python
 @pytest.mark.integration
 @pytest.mark.database
@@ -132,4 +139,3 @@ def test_create_system(test_client):
 - Database tables are verified to exist before each test runs
 - If database initialization fails, you'll get clear error messages indicating which tables are missing
 - The app startup event is automatically disabled during tests to prevent database conflicts
-

@@ -51,6 +51,7 @@ python -m zfs_sync
 ```
 
 The server will start on `http://0.0.0.0:8000` and will be accessible via:
+
 - Local: `http://localhost:8000`
 - Network: `http://your-server-ip:8000`
 - DNS: `http://your-dns-name:8000`
@@ -58,6 +59,7 @@ The server will start on `http://0.0.0.0:8000` and will be accessible via:
 ### Step 5: Access the API
 
 Open your browser and go to:
+
 - API Documentation: `http://your-dns-name:8000/docs`
 - Health Check: `http://your-dns-name:8000/api/v1/health`
 
@@ -95,6 +97,7 @@ WantedBy=multi-user.target
 ```
 
 Then:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable zfs-sync
@@ -111,12 +114,8 @@ sudo systemctl status zfs-sync
 **Solution:** Change the port in `config/zfs_sync.yaml` or set `ZFS_SYNC_PORT=8080`
 
 **Problem:** Can't access from other machines
-**Solution:** 
+**Solution:**
+
 - Verify firewall allows port 8000: `sudo ufw allow 8000`
 - Check server is bound to 0.0.0.0 (default, should work)
 - Verify DNS/network connectivity
-
-
-
-
-
