@@ -13,6 +13,23 @@ logger = get_logger(__name__)
 MIN_SNAPSHOT_GAP_HOURS = 24
 
 
+def normalize_to_utc(dt: datetime) -> datetime:
+    """
+    Normalize a datetime to UTC, converting naive datetimes to UTC.
+
+    Args:
+        dt: Datetime object (may be naive or timezone-aware)
+
+    Returns:
+        Timezone-aware datetime in UTC
+    """
+    if dt.tzinfo is None:
+        # Naive datetime - assume UTC
+        return dt.replace(tzinfo=timezone.utc)
+    # Already timezone-aware - convert to UTC
+    return dt.astimezone(timezone.utc)
+
+
 def is_midnight_snapshot(snapshot_name: str) -> bool:
     """
     Check if a snapshot name represents a midnight snapshot (ends with -000000).
@@ -27,15 +44,16 @@ def is_midnight_snapshot(snapshot_name: str) -> bool:
     return snapshot_name.endswith("-000000")
 
 
-def is_snapshot_out_of_sync_by_24h(
+def is_snapshot_out_of_sync_by_hours(
     source_snapshots: List[SnapshotModel],
     target_snapshots: List[SnapshotModel],
     source_snapshot_names: Set[str],
     target_snapshot_names: Set[str],
     comparison_service: SnapshotComparisonService,
+    threshold_hours: float,
 ) -> bool:
     """
-    Check if datasets are more than 24 hours out of sync.
+    Check if datasets are more than the specified threshold hours out of sync.
 
     Args:
         source_snapshots: List of snapshots from source system
@@ -43,9 +61,10 @@ def is_snapshot_out_of_sync_by_24h(
         source_snapshot_names: Set of normalized snapshot names from source (already filtered to midnight snapshots)
         target_snapshot_names: Set of normalized snapshot names from target (already filtered to midnight snapshots)
         comparison_service: SnapshotComparisonService instance for extracting snapshot names
+        threshold_hours: Number of hours threshold for considering systems out of sync
 
     Returns:
-        True if datasets are more than 24 hours out of sync, False otherwise
+        True if datasets are more than threshold_hours out of sync, False otherwise
     """
     # Find the latest midnight snapshot on source
     # Note: source_snapshot_names is already filtered to midnight snapshots, so we just need to check is_midnight_snapshot
@@ -66,7 +85,7 @@ def is_snapshot_out_of_sync_by_24h(
     # Check if target has this snapshot
     if latest_source_name in target_snapshot_names:
         # Target has the latest source snapshot, but we should still check if there are missing intermediate snapshots
-        # However, for the 24-hour guardrail, if target has the latest, they're considered in sync
+        # However, for the threshold guardrail, if target has the latest, they're considered in sync
         return False  # Target has the latest, so not out of sync
 
     # Find the latest midnight snapshot on target
@@ -82,35 +101,103 @@ def is_snapshot_out_of_sync_by_24h(
     if not target_midnight_snapshots:
         # Target has no midnight snapshots, check age of source's latest
         now = datetime.now(timezone.utc)
-        age_hours: float = (now - latest_source.timestamp).total_seconds() / 3600  # type: ignore[operator]
-        result: bool = age_hours > 24
+        latest_source_timestamp_utc = normalize_to_utc(latest_source.timestamp)
+        age_hours: float = (now - latest_source_timestamp_utc).total_seconds() / 3600
+        result: bool = age_hours > threshold_hours
         return result
 
     latest_target = max(target_midnight_snapshots, key=lambda s: s.timestamp)  # type: ignore[arg-type,return-value]
 
     # Calculate the time difference between latest source and latest target
-    time_diff = latest_source.timestamp - latest_target.timestamp  # type: ignore[operator]
+    latest_source_timestamp_utc = normalize_to_utc(latest_source.timestamp)
+    latest_target_timestamp_utc = normalize_to_utc(latest_target.timestamp)
+    time_diff = latest_source_timestamp_utc - latest_target_timestamp_utc
     hours_diff: float = time_diff.total_seconds() / 3600
 
     # Log the comparison for debugging
     logger.debug(
         "Sync check: source latest=%s (%s), target latest=%s (%s), diff=%.2f hours",
         latest_source_name,
-        latest_source.timestamp.isoformat(),
+        latest_source_timestamp_utc.isoformat(),
         comparison_service._extract_snapshot_name(latest_target.name),
-        latest_target.timestamp.isoformat(),
+        latest_target_timestamp_utc.isoformat(),
         hours_diff,
     )
 
-    # If source is ahead by more than 24 hours, systems are out of sync
-    result = hours_diff > 24
+    # If source is ahead by more than threshold hours, systems are out of sync
+    result = hours_diff > threshold_hours
     logger.debug(
-        "Sync check result: %s (hours_diff=%.2f > 24=%s)",
+        "Sync check result: %s (hours_diff=%.2f > %.2f=%s)",
         result,
         hours_diff,
-        hours_diff > 24,
+        threshold_hours,
+        hours_diff > threshold_hours,
     )
     return result
+
+
+def is_snapshot_out_of_sync_by_24h(
+    source_snapshots: List[SnapshotModel],
+    target_snapshots: List[SnapshotModel],
+    source_snapshot_names: Set[str],
+    target_snapshot_names: Set[str],
+    comparison_service: SnapshotComparisonService,
+) -> bool:
+    """
+    Check if datasets are more than 24 hours out of sync.
+
+    Convenience wrapper for is_snapshot_out_of_sync_by_hours with threshold_hours=24.0.
+
+    Args:
+        source_snapshots: List of snapshots from source system
+        target_snapshots: List of snapshots from target system
+        source_snapshot_names: Set of normalized snapshot names from source (already filtered to midnight snapshots)
+        target_snapshot_names: Set of normalized snapshot names from target (already filtered to midnight snapshots)
+        comparison_service: SnapshotComparisonService instance for extracting snapshot names
+
+    Returns:
+        True if datasets are more than 24 hours out of sync, False otherwise
+    """
+    return is_snapshot_out_of_sync_by_hours(
+        source_snapshots=source_snapshots,
+        target_snapshots=target_snapshots,
+        source_snapshot_names=source_snapshot_names,
+        target_snapshot_names=target_snapshot_names,
+        comparison_service=comparison_service,
+        threshold_hours=24.0,
+    )
+
+
+def is_snapshot_out_of_sync_by_72h(
+    source_snapshots: List[SnapshotModel],
+    target_snapshots: List[SnapshotModel],
+    source_snapshot_names: Set[str],
+    target_snapshot_names: Set[str],
+    comparison_service: SnapshotComparisonService,
+) -> bool:
+    """
+    Check if datasets are more than 72 hours out of sync.
+
+    Convenience wrapper for is_snapshot_out_of_sync_by_hours with threshold_hours=72.0.
+
+    Args:
+        source_snapshots: List of snapshots from source system
+        target_snapshots: List of snapshots from target system
+        source_snapshot_names: Set of normalized snapshot names from source (already filtered to midnight snapshots)
+        target_snapshot_names: Set of normalized snapshot names from target (already filtered to midnight snapshots)
+        comparison_service: SnapshotComparisonService instance for extracting snapshot names
+
+    Returns:
+        True if datasets are more than 72 hours out of sync, False otherwise
+    """
+    return is_snapshot_out_of_sync_by_hours(
+        source_snapshots=source_snapshots,
+        target_snapshots=target_snapshots,
+        source_snapshot_names=source_snapshot_names,
+        target_snapshot_names=target_snapshot_names,
+        comparison_service=comparison_service,
+        threshold_hours=72.0,
+    )
 
 
 def validate_snapshot_exists(
@@ -178,8 +265,10 @@ def validate_snapshot_gap(
         )
         return False
 
-    # Calculate time difference
-    time_diff = ending_timestamp - starting_timestamp
+    # Calculate time difference (normalize both timestamps to UTC)
+    starting_timestamp_utc = normalize_to_utc(starting_timestamp)
+    ending_timestamp_utc = normalize_to_utc(ending_timestamp)
+    time_diff = ending_timestamp_utc - starting_timestamp_utc
     hours_diff = time_diff.total_seconds() / 3600
 
     if hours_diff < min_gap_hours:

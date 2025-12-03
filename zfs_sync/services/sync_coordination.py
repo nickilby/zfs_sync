@@ -27,7 +27,7 @@ from zfs_sync.services.sync_queries import (
 from zfs_sync.services.sync_validators import (
     MIN_SNAPSHOT_GAP_HOURS,
     is_midnight_snapshot,
-    is_snapshot_out_of_sync_by_24h,
+    is_snapshot_out_of_sync_by_72h,
     validate_snapshot_exists,
     validate_snapshot_gap,
 )
@@ -776,18 +776,18 @@ class SyncCoordinationService:
 
                         target_pool = pool_by_system[target_system_id]
 
-                        # GUARDRAIL 1: Check if datasets are more than 24 hours out of sync
+                        # GUARDRAIL 1: Check if datasets are more than 72 hours out of sync
                         source_snapshots = all_snapshots_by_system[source_system_id]
                         target_snapshots = all_snapshots_by_system[target_system_id]
 
-                        if not is_snapshot_out_of_sync_by_24h(
+                        if not is_snapshot_out_of_sync_by_72h(
                             source_snapshots=source_snapshots,
                             target_snapshots=target_snapshots,
                             source_snapshot_names=source_names,
                             target_snapshot_names=target_names,
                             comparison_service=self.comparison_service,
                         ):
-                            reason = "not more than 24 hours out of sync"
+                            reason = "not more than 72 hours out of sync"
                             logger.info(
                                 "GUARDRAIL 1: Skipping %s from source %s to target %s (%s)",
                                 dataset_name,
