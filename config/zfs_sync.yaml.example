@@ -3,7 +3,7 @@
 
 # Application settings
 app_name: "zfs-sync"
-app_version: "0.1.61"
+app_version: "0.1.63"
 debug: false
 log_level: "INFO"
 
@@ -42,6 +42,11 @@ incremental_sync_only: true  # Only auto-sync incremental snapshots
 
 # Logging settings
 suppress_orphan_dataset_logs: true  # Suppress repeated orphan dataset warnings (useful for hub systems)
+
+# Log file rotation settings
+# log_file: "/logs/zfs_sync.log"  # Path to log file (defaults to /logs/zfs_sync.log in Docker)
+# log_max_bytes: 10485760  # Maximum log file size before rotation (10MB in bytes)
+# log_backup_count: 5  # Number of rotated log files to keep
 
 # Example sync group configurations:
 #

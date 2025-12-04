@@ -169,6 +169,10 @@ class SyncCoordinationService:
                     )
 
                     for missing_snapshot in source_missing:
+                        # Only process midnight snapshots to reduce noise
+                        if not is_midnight_snapshot(missing_snapshot):
+                            continue
+
                         # Only create mismatch if hub has this snapshot
                         # Sources should never sync between each other in directional mode
                         if missing_snapshot in hub_snapshot_names:
@@ -219,6 +223,10 @@ class SyncCoordinationService:
                             dataset,
                         )
                         for missing_snapshot in missing_snapshots:
+                            # Only process midnight snapshots to reduce noise
+                            if not is_midnight_snapshot(missing_snapshot):
+                                continue
+
                             # Find which systems have this snapshot
                             source_systems = self._find_systems_with_snapshot(
                                 dataset, missing_snapshot, system_ids
@@ -377,8 +385,23 @@ class SyncCoordinationService:
                 self.comparison_service,
             )
 
+            logger.debug(
+                "[72h_check] Dataset=%s, source=%s, target=%s: is_out_of_sync_72h=%s",
+                dataset,
+                src_id,
+                tgt_id,
+                is_out_of_sync_72h,
+            )
+
             if not is_out_of_sync_72h:
                 allowed_latest_by_pair[key] = None
+                logger.debug(
+                    "[72h_check] Pair (%s -> %s, dataset=%s) appears in sync or not out of sync by 72h. "
+                    "Setting allowed_latest=None",
+                    src_id,
+                    tgt_id,
+                    dataset,
+                )
                 continue
 
             source_name_ts_pairs = [
@@ -389,6 +412,14 @@ class SyncCoordinationService:
                 for s in source_snapshots
             ]
             allowed_latest = get_latest_allowed_snapshot_before_now(source_name_ts_pairs)
+            logger.debug(
+                "[72h_check] Pair (%s -> %s, dataset=%s): allowed_latest=%s (from %d source snapshots)",
+                src_id,
+                tgt_id,
+                dataset,
+                allowed_latest,
+                len(source_name_ts_pairs),
+            )
             allowed_latest_by_pair[key] = allowed_latest
 
         for mismatch in mismatches:

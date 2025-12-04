@@ -40,8 +40,8 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
     if log_file:
         file_handler = RotatingFileHandler(
             log_file,
-            maxBytes=10 * 1024 * 1024,  # 10MB
-            backupCount=5,
+            maxBytes=settings.log_max_bytes,
+            backupCount=settings.log_backup_count,
         )
         file_handler.setLevel(getattr(logging, settings.log_level))
         file_handler.setFormatter(formatter)

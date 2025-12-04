@@ -9,7 +9,8 @@ services:
     volumes:
       # Mount config directory (read-only)
       - ./config:/config:ro
-      # Mount logs directory
+      # Mount logs directory (application logs with rotation)
+      # Logs are rotated automatically by the application (10MB, 5 backups)
       - ./logs:/logs
       # Mount persistent data directory for SQLite database (outside app directory)
       # This ensures database persists across app updates
@@ -35,6 +36,8 @@ services:
           cpus: '0.25'
           memory: 128M
     logging:
+      # Docker-level log rotation for container stdout/stderr
+      # Application logs are also rotated by Python RotatingFileHandler
       driver: "json-file"
       options:
         max-size: "10m"

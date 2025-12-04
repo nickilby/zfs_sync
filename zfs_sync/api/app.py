@@ -10,12 +10,14 @@ from fastapi.staticfiles import StaticFiles
 from zfs_sync.config import get_settings
 from zfs_sync.logging_config import get_logger, setup_logging
 
-# Setup logging
-setup_logging()
+# Get settings first to access log_file
+settings = get_settings()
+
+# Setup logging with log file if configured
+setup_logging(log_file=settings.log_file)
 logger = get_logger(__name__)
 
-# Get settings
-settings = get_settings()
+# Settings already loaded above for logging setup
 
 # Create FastAPI app
 app = FastAPI(

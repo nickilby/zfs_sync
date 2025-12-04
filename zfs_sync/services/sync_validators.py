@@ -86,10 +86,10 @@ def is_snapshot_out_of_sync_by_hours(
     if latest_source_name in target_snapshot_names:
         # Target has the latest source snapshot, but we should still check if there are missing intermediate snapshots
         # However, for the threshold guardrail, if target has the latest, they're considered in sync
-        logger.debug(
-            "Target has the latest source midnight snapshot %s (%s). "
+        logger.warning(
+            "[72h_check] Target has the latest source midnight snapshot %s (%s). "
             "Systems appear in sync based on latest midnight snapshots, "
-            "but intermediate snapshots may still be missing.",
+            "but intermediate snapshots may still be missing. Returning False (not out of sync).",
             latest_source_name,
             normalize_to_utc(latest_source.timestamp).isoformat(),
         )
@@ -152,12 +152,17 @@ def is_snapshot_out_of_sync_by_hours(
 
     # If source is ahead by more than threshold hours, systems are out of sync
     result = hours_diff > threshold_hours
-    logger.debug(
-        "Sync check result: %s (hours_diff=%.2f > %.2f=%s)",
+    logger.warning(
+        "[72h_check] Sync check result: %s (hours_diff=%.2f > %.2f=%s). "
+        "Source latest: %s (%s), Target latest: %s (%s)",
         result,
         hours_diff,
         threshold_hours,
         hours_diff > threshold_hours,
+        latest_source_name,
+        latest_source_timestamp_utc.isoformat(),
+        latest_target_name,
+        latest_target_timestamp_utc.isoformat(),
     )
     return result
 
@@ -255,17 +260,35 @@ def get_latest_allowed_snapshot_before_now(
     cutoff = now - timedelta(hours=min_age_hours)
 
     eligible: List[Tuple[str, datetime]] = []
-    for name, ts in snapshots:
+    snapshot_list = list(snapshots)
+    for name, ts in snapshot_list:
         ts_utc = normalize_to_utc(ts)
         if ts_utc <= cutoff:
             eligible.append((name, ts_utc))
 
     if not eligible:
+        logger.warning(
+            "[72h_check] get_latest_allowed_snapshot_before_now: No eligible snapshots found. "
+            "Total snapshots: %d, cutoff: %s (now=%s - %f hours), "
+            "latest snapshot timestamp: %s",
+            len(snapshot_list),
+            cutoff.isoformat(),
+            now.isoformat(),
+            min_age_hours,
+            max((normalize_to_utc(ts) for _, ts in snapshot_list), default=None),
+        )
         return None
 
     # Return the latest-by-timestamp eligible snapshot
     eligible.sort(key=lambda item: item[1])
-    return eligible[-1][0]
+    result = eligible[-1][0]
+    logger.debug(
+        "[72h_check] get_latest_allowed_snapshot_before_now: Returning %s (from %d eligible out of %d total)",
+        result,
+        len(eligible),
+        len(snapshot_list),
+    )
+    return result
 
 
 def validate_snapshot_exists(

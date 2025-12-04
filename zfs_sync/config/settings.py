@@ -48,6 +48,18 @@ class Settings(BaseSettings):
     app_version: str = Field(default=__version__, description="Application version")
     debug: bool = Field(default=False, description="Enable debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
+    log_file: Optional[Path] = Field(
+        default=None,
+        description="Path to log file (if None, logs only to stdout). In Docker, defaults to /logs/zfs_sync.log",
+    )
+    log_max_bytes: int = Field(
+        default=10 * 1024 * 1024,  # 10MB
+        description="Maximum size of log file before rotation (in bytes)",
+    )
+    log_backup_count: int = Field(
+        default=5,
+        description="Number of backup log files to keep",
+    )
 
     # Server
     host: str = Field(default="0.0.0.0", description="Server host")
@@ -201,6 +213,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_cross_fields(self) -> "Settings":
         """Validate cross-field dependencies."""
+        # Set default log file path in Docker environment
+        if self.log_file is None and os.path.exists("/logs"):
+            # Docker environment detected - use /logs directory
+            self.log_file = Path("/logs/zfs_sync.log")
+        elif self.log_file is None and platform.system().lower() == "linux":
+            # Linux non-Docker: use /var/log
+            self.log_file = Path("/var/log/zfs-sync/zfs_sync.log")
+
         # Ensure heartbeat timeout is less than sync interval (if both are set)
         if (
             self.heartbeat_timeout_seconds >= self.default_sync_interval_seconds
