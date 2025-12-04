@@ -329,10 +329,22 @@ class SyncCoordinationService:
                     )
 
         actions = []
+        # Diagnostic counters
+        filter_stats = {
+            "72h_check": 0,
+            "missing_source_system": 0,
+            "missing_pool": 0,
+            "missing_target_system": 0,
+            "orphan_dataset": 0,
+            "command_generation_failed": 0,
+            "passed": 0,
+        }
+
         for mismatch in mismatches:
             source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
             target_system_id = UUID(mismatch["target_system_id"])
             dataset = mismatch["dataset"]
+            missing_snapshot = mismatch["missing_snapshot"]
 
             # Check 72-hour time gate: only create actions if systems are sufficiently out of sync
             source_snapshots = self.snapshot_repo.get_by_dataset(
@@ -354,24 +366,85 @@ class SyncCoordinationService:
                 if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
             }
 
+            # Find latest midnight snapshots for diagnostic logging
+            source_latest_midnight = None
+            target_latest_midnight = None
+            if source_snapshots:
+                source_midnight_snaps = [
+                    s
+                    for s in source_snapshots
+                    if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
+                ]
+                if source_midnight_snaps:
+                    source_latest_midnight = max(source_midnight_snaps, key=lambda s: s.timestamp)
+            if target_snapshots:
+                target_midnight_snaps = [
+                    s
+                    for s in target_snapshots
+                    if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
+                ]
+                if target_midnight_snaps:
+                    target_latest_midnight = max(target_midnight_snaps, key=lambda s: s.timestamp)
+
             # Check if systems are more than 72 hours out of sync
-            if not is_snapshot_out_of_sync_by_72h(
+            is_out_of_sync_72h = is_snapshot_out_of_sync_by_72h(
                 source_snapshots,
                 target_snapshots,
                 source_midnight_names,
                 target_midnight_names,
                 self.comparison_service,
-            ):
-                logger.debug(
-                    "Skipping dataset %s: within 72-hour sync window (source->target)",
+            )
+
+            if not is_out_of_sync_72h:
+                filter_stats["72h_check"] += 1
+                source_latest_name = (
+                    self.comparison_service.extract_snapshot_name(source_latest_midnight.name)
+                    if source_latest_midnight
+                    else "none"
+                )
+                target_latest_name = (
+                    self.comparison_service.extract_snapshot_name(target_latest_midnight.name)
+                    if target_latest_midnight
+                    else "none"
+                )
+                source_timestamp = (
+                    source_latest_midnight.timestamp.isoformat()
+                    if source_latest_midnight
+                    else "none"
+                )
+                target_timestamp = (
+                    target_latest_midnight.timestamp.isoformat()
+                    if target_latest_midnight
+                    else "none"
+                )
+                logger.warning(
+                    "[FILTER] 72h_check: Skipping mismatch for dataset=%s snapshot=%s "
+                    "source_system=%s target_system=%s. "
+                    "Source latest midnight: %s (%s), Target latest midnight: %s (%s). "
+                    "Systems appear within 72-hour sync window.",
                     dataset,
+                    missing_snapshot,
+                    source_system_id,
+                    target_system_id,
+                    source_latest_name,
+                    source_timestamp,
+                    target_latest_name,
+                    target_timestamp,
                 )
                 continue
 
             # Get source system for SSH details
             source_system = self.system_repo.get(source_system_id)
             if not source_system:
-                logger.warning("Source system %s not found, skipping action", source_system_id)
+                filter_stats["missing_source_system"] += 1
+                logger.warning(
+                    "[FILTER] missing_source_system: Skipping mismatch for dataset=%s snapshot=%s "
+                    "source_system=%s target_system=%s. Source system not found.",
+                    dataset,
+                    missing_snapshot,
+                    source_system_id,
+                    target_system_id,
+                )
                 continue
 
             # Find snapshot_id and pool from source system
@@ -382,6 +455,7 @@ class SyncCoordinationService:
             )
 
             if not pool:
+                filter_stats["missing_pool"] += 1
                 self.diagnostics.append(
                     {
                         "dataset": dataset,
@@ -390,9 +464,12 @@ class SyncCoordinationService:
                     }
                 )
                 logger.warning(
-                    "Could not determine pool for snapshot %s on system %s, skipping action",
-                    mismatch["missing_snapshot"],
+                    "[FILTER] missing_pool: Skipping mismatch for dataset=%s snapshot=%s "
+                    "source_system=%s target_system=%s. Could not determine pool for snapshot.",
+                    dataset,
+                    missing_snapshot,
                     source_system_id,
+                    target_system_id,
                 )
                 continue
 
@@ -407,9 +484,18 @@ class SyncCoordinationService:
             # Determine target system and pool
             sync_command = None
             target_system = self.system_repo.get(target_system_id)
-            target_pool = (
-                self._get_target_pool(dataset, target_system_id) if target_system else None
-            )
+            if not target_system:
+                filter_stats["missing_target_system"] += 1
+                logger.warning(
+                    "[FILTER] missing_target_system: Skipping mismatch for dataset=%s snapshot=%s "
+                    "source_system=%s target_system=%s. Target system not found.",
+                    dataset,
+                    missing_snapshot,
+                    source_system_id,
+                    target_system_id,
+                )
+                continue
+            target_pool = self._get_target_pool(dataset, target_system_id)
 
             # Generate sync command if target SSH details and pool are available
             if target_system and target_system.ssh_hostname and target_pool:
@@ -434,7 +520,16 @@ class SyncCoordinationService:
                             target_dataset=dataset,
                         )
                 except (ValueError, TypeError, AttributeError) as e:
-                    logger.warning("Failed to generate sync command: %s", e)
+                    filter_stats["command_generation_failed"] += 1
+                    logger.warning(
+                        "[FILTER] command_generation_failed: Failed to generate sync command for "
+                        "dataset=%s snapshot=%s source_system=%s target_system=%s: %s",
+                        dataset,
+                        missing_snapshot,
+                        source_system_id,
+                        target_system_id,
+                        e,
+                    )
                     self.diagnostics.append(
                         {
                             "dataset": dataset,
@@ -449,9 +544,10 @@ class SyncCoordinationService:
                     self.settings.suppress_orphan_dataset_logs
                     and orphan_key in self._orphan_datasets_logged
                 ):
-                    # Skip repeated logging/diagnostics
-                    pass
+                    # Skip repeated logging/diagnostics but still count it
+                    filter_stats["orphan_dataset"] += 1
                 else:
+                    filter_stats["orphan_dataset"] += 1
                     self.diagnostics.append(
                         {
                             "dataset": dataset,
@@ -460,8 +556,12 @@ class SyncCoordinationService:
                         }
                     )
                     logger.warning(
-                        "Orphan dataset: no target pool for %s on system %s (suppressed=%s)",
+                        "[FILTER] orphan_dataset: Skipping mismatch for dataset=%s snapshot=%s "
+                        "source_system=%s target_system=%s. Target has no snapshots yet (orphan). "
+                        "Suppressed=%s",
                         dataset,
+                        missing_snapshot,
+                        source_system_id,
                         target_system_id,
                         self.settings.suppress_orphan_dataset_logs,
                     )
@@ -492,6 +592,38 @@ class SyncCoordinationService:
                 "is_incremental": is_incremental,
             }
             actions.append(action)
+            filter_stats["passed"] += 1
+
+        # Log filter statistics
+        total_processed = sum(filter_stats.values())
+        logger.info(
+            "Sync action filter statistics for sync group %s: "
+            "Total mismatches processed: %d, "
+            "Filtered by 72h_check: %d, "
+            "Filtered by missing_source_system: %d, "
+            "Filtered by missing_pool: %d, "
+            "Filtered by missing_target_system: %d, "
+            "Filtered by orphan_dataset: %d, "
+            "Filtered by command_generation_failed: %d, "
+            "Passed (actions created): %d",
+            sync_group_id,
+            total_processed,
+            filter_stats["72h_check"],
+            filter_stats["missing_source_system"],
+            filter_stats["missing_pool"],
+            filter_stats["missing_target_system"],
+            filter_stats["orphan_dataset"],
+            filter_stats["command_generation_failed"],
+            filter_stats["passed"],
+        )
+
+        if filter_stats["72h_check"] > 0:
+            logger.warning(
+                "%d mismatches were filtered by the 72-hour check. "
+                "This may indicate systems appear in sync based on latest midnight snapshots "
+                "even though intermediate snapshots are missing.",
+                filter_stats["72h_check"],
+            )
 
         # Sort by priority (higher priority first)
         actions.sort(key=lambda x: x["priority"], reverse=True)

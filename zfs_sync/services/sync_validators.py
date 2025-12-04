@@ -86,6 +86,13 @@ def is_snapshot_out_of_sync_by_hours(
     if latest_source_name in target_snapshot_names:
         # Target has the latest source snapshot, but we should still check if there are missing intermediate snapshots
         # However, for the threshold guardrail, if target has the latest, they're considered in sync
+        logger.debug(
+            "Target has the latest source midnight snapshot %s (%s). "
+            "Systems appear in sync based on latest midnight snapshots, "
+            "but intermediate snapshots may still be missing.",
+            latest_source_name,
+            normalize_to_utc(latest_source.timestamp).isoformat(),
+        )
         return False  # Target has the latest, so not out of sync
 
     # Find the latest midnight snapshot on target
@@ -114,15 +121,34 @@ def is_snapshot_out_of_sync_by_hours(
     time_diff = latest_source_timestamp_utc - latest_target_timestamp_utc
     hours_diff: float = time_diff.total_seconds() / 3600
 
+    latest_target_name = comparison_service.extract_snapshot_name(latest_target.name)
+
+    # Check if target's latest snapshot exists on source (to detect orphaned snapshots)
+    target_latest_exists_on_source = latest_target_name in source_snapshot_names
+
     # Log the comparison for debugging
     logger.debug(
-        "Sync check: source latest=%s (%s), target latest=%s (%s), diff=%.2f hours",
+        "Sync check: source latest=%s (%s), target latest=%s (%s), diff=%.2f hours, "
+        "target_latest_exists_on_source=%s",
         latest_source_name,
         latest_source_timestamp_utc.isoformat(),
-        comparison_service.extract_snapshot_name(latest_target.name),
+        latest_target_name,
         latest_target_timestamp_utc.isoformat(),
         hours_diff,
+        target_latest_exists_on_source,
     )
+
+    # If target's latest snapshot doesn't exist on source, it might be an orphaned snapshot
+    if not target_latest_exists_on_source:
+        logger.warning(
+            "Target's latest midnight snapshot %s (%s) does not exist on source. "
+            "This may be an orphaned snapshot. Source latest: %s (%s), diff=%.2f hours",
+            latest_target_name,
+            latest_target_timestamp_utc.isoformat(),
+            latest_source_name,
+            latest_source_timestamp_utc.isoformat(),
+            hours_diff,
+        )
 
     # If source is ahead by more than threshold hours, systems are out of sync
     result = hours_diff > threshold_hours
