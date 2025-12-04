@@ -96,6 +96,13 @@ class DatasetSyncInstruction(BaseModel):
     source_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for source system")
     target_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for target system")
     sync_group_id: str = Field(..., description="Sync group ID")
+    commands: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Ready-to-execute sync commands for this dataset "
+            "(e.g. 'zfs send -c -I ... | ssh ... zfs receive ...')."
+        ),
+    )
 
 
 class SyncInstructionsResponse(BaseModel):

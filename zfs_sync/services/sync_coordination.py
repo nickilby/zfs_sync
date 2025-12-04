@@ -19,6 +19,7 @@ from zfs_sync.models import SyncStatus
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 from zfs_sync.services.ssh_command_generator import SSHCommandGenerator
 from zfs_sync.services.sync_validators import (
+    get_latest_allowed_snapshot_before_now,
     is_midnight_snapshot,
     is_snapshot_out_of_sync_by_72h,
     validate_snapshot_gap,
@@ -340,21 +341,23 @@ class SyncCoordinationService:
             "passed": 0,
         }
 
+        # Pre-compute, per (source_system, target_system, dataset), the latest allowed
+        # source snapshot name according to the now-72h rule. This is used to cap the
+        # ending snapshot while still respecting the existing latest-midnight guardrail.
+        allowed_latest_by_pair: Dict[Tuple[UUID, UUID, str], Optional[str]] = {}
+
         for mismatch in mismatches:
-            source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
-            target_system_id = UUID(mismatch["target_system_id"])
+            src_id = UUID(mismatch["source_system_ids"][0])
+            tgt_id = UUID(mismatch["target_system_id"])
             dataset = mismatch["dataset"]
-            missing_snapshot = mismatch["missing_snapshot"]
+            key = (src_id, tgt_id, dataset)
+            if key in allowed_latest_by_pair:
+                continue
 
-            # Check 72-hour time gate: only create actions if systems are sufficiently out of sync
-            source_snapshots = self.snapshot_repo.get_by_dataset(
-                dataset=dataset, system_id=source_system_id
-            )
-            target_snapshots = self.snapshot_repo.get_by_dataset(
-                dataset=dataset, system_id=target_system_id
-            )
+            source_snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=src_id)
+            target_snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=tgt_id)
 
-            # Filter to midnight snapshots for the time gate check
+            # Existing guardrail: only proceed if systems are more than 72h out of sync
             source_midnight_names = {
                 self.comparison_service.extract_snapshot_name(s.name)
                 for s in source_snapshots
@@ -366,27 +369,6 @@ class SyncCoordinationService:
                 if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
             }
 
-            # Find latest midnight snapshots for diagnostic logging
-            source_latest_midnight = None
-            target_latest_midnight = None
-            if source_snapshots:
-                source_midnight_snaps = [
-                    s
-                    for s in source_snapshots
-                    if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
-                ]
-                if source_midnight_snaps:
-                    source_latest_midnight = max(source_midnight_snaps, key=lambda s: s.timestamp)
-            if target_snapshots:
-                target_midnight_snaps = [
-                    s
-                    for s in target_snapshots
-                    if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
-                ]
-                if target_midnight_snaps:
-                    target_latest_midnight = max(target_midnight_snaps, key=lambda s: s.timestamp)
-
-            # Check if systems are more than 72 hours out of sync
             is_out_of_sync_72h = is_snapshot_out_of_sync_by_72h(
                 source_snapshots,
                 target_snapshots,
@@ -396,40 +378,53 @@ class SyncCoordinationService:
             )
 
             if not is_out_of_sync_72h:
+                allowed_latest_by_pair[key] = None
+                continue
+
+            source_name_ts_pairs = [
+                (
+                    self.comparison_service.extract_snapshot_name(s.name),
+                    s.timestamp,
+                )
+                for s in source_snapshots
+            ]
+            allowed_latest = get_latest_allowed_snapshot_before_now(source_name_ts_pairs)
+            allowed_latest_by_pair[key] = allowed_latest
+
+        for mismatch in mismatches:
+            source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
+            target_system_id = UUID(mismatch["target_system_id"])
+            dataset = mismatch["dataset"]
+            missing_snapshot = mismatch["missing_snapshot"]
+
+            pair_key = (source_system_id, target_system_id, dataset)
+            allowed_latest = allowed_latest_by_pair.get(pair_key)
+
+            # If pair appears in sync or nothing is old enough under now-72h, skip.
+            if not allowed_latest:
                 filter_stats["72h_check"] += 1
-                source_latest_name = (
-                    self.comparison_service.extract_snapshot_name(source_latest_midnight.name)
-                    if source_latest_midnight
-                    else "none"
-                )
-                target_latest_name = (
-                    self.comparison_service.extract_snapshot_name(target_latest_midnight.name)
-                    if target_latest_midnight
-                    else "none"
-                )
-                source_timestamp = (
-                    source_latest_midnight.timestamp.isoformat()
-                    if source_latest_midnight
-                    else "none"
-                )
-                target_timestamp = (
-                    target_latest_midnight.timestamp.isoformat()
-                    if target_latest_midnight
-                    else "none"
-                )
                 logger.warning(
                     "[FILTER] 72h_check: Skipping mismatch for dataset=%s snapshot=%s "
-                    "source_system=%s target_system=%s. "
-                    "Source latest midnight: %s (%s), Target latest midnight: %s (%s). "
-                    "Systems appear within 72-hour sync window.",
+                    "source_system=%s target_system=%s. No source snapshot older than 72h "
+                    "allowed as ending point or pair appears in sync.",
                     dataset,
                     missing_snapshot,
                     source_system_id,
                     target_system_id,
-                    source_latest_name,
-                    source_timestamp,
-                    target_latest_name,
-                    target_timestamp,
+                )
+                continue
+
+            # Also skip mismatches whose snapshot is newer than the allowed latest.
+            if missing_snapshot > allowed_latest:
+                filter_stats["72h_check"] += 1
+                logger.debug(
+                    "[FILTER] 72h_check: Skipping snapshot %s for dataset=%s on pair (%s -> %s) "
+                    "because it is newer than allowed_latest=%s under now-72h rule.",
+                    missing_snapshot,
+                    dataset,
+                    source_system_id,
+                    target_system_id,
+                    allowed_latest,
                 )
                 continue
 

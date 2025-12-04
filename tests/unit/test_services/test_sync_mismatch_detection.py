@@ -231,6 +231,180 @@ class TestSyncMismatchDetection:
             "2025-10-30-000000" in l1s4dat1_instruction["starting_snapshot"]
         ), f"Starting snapshot should be from common base 2025-10-30-000000, got: {l1s4dat1_instruction['starting_snapshot']}"
 
+    def test_l1s4dat1_72h_gate_generates_expected_command(self, test_db):
+        """
+        Reproduce the L1S4DAT1 production scenario and assert the 72-hour gate
+        produces the expected incremental send range.
+
+        This uses the snapshot sets from the /snapshots/compare-dataset output:
+        - Common snapshots include 2025-10-30-000000
+        - Source (hub) has snapshots up to 2025-12-03-120000
+        - Target has snapshots up to 2025-11-04-000000
+
+        With comparison time 2025-12-04T09:13Z, the 72-hour rule (only send
+        snapshots at least 72 hours older than \"now\") should allow an ending
+        snapshot of 2025-12-01-000000, but not 2025-12-01-120000 or later.
+        """
+        system_repo = SystemRepository(test_db)
+        source = system_repo.create(
+            hostname="hqs10",
+            platform="linux",
+            connectivity_status="online",
+            ssh_hostname="hqs10.example.com",
+            ssh_user="root",
+            ssh_port=22,
+        )
+        target = system_repo.create(
+            hostname="hqs7",
+            platform="linux",
+            connectivity_status="online",
+            ssh_hostname="hqs7-san",
+            ssh_user="root",
+            ssh_port=22,
+        )
+
+        sync_group_repo = SyncGroupRepository(test_db)
+        sync_group = sync_group_repo.create(
+            name="l1s4dat1-72h-test",
+            description="L1S4DAT1 72h gate test group",
+            enabled=True,
+        )
+        sync_group_repo.add_system(sync_group.id, source.id)
+        sync_group_repo.add_system(sync_group.id, target.id)
+
+        snapshot_repo = SnapshotRepository(test_db)
+
+        # Source snapshots (matching the JSON example for system 72c0c3d5-...)
+        source_snapshots = [
+            # Common snapshots
+            ("2025-10-09-000000", datetime(2025, 10, 9, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-16-000000", datetime(2025, 10, 16, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-23-000000", datetime(2025, 10, 23, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-30-000000", datetime(2025, 10, 30, 0, 0, 0, tzinfo=timezone.utc)),
+            # Older unique snapshots
+            ("2025-09-04-000000", datetime(2025, 9, 4, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-09-11-000000", datetime(2025, 9, 11, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-09-18-000000", datetime(2025, 9, 18, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-09-25-000000", datetime(2025, 9, 25, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-02-000000", datetime(2025, 10, 2, 0, 0, 0, tzinfo=timezone.utc)),
+            # Newer unique snapshots on source
+            ("2025-11-06-000000", datetime(2025, 11, 6, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-13-000000", datetime(2025, 11, 13, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-18-000000", datetime(2025, 11, 18, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-19-000000", datetime(2025, 11, 19, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-20-000000", datetime(2025, 11, 20, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-21-000000", datetime(2025, 11, 21, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-22-000000", datetime(2025, 11, 22, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-23-000000", datetime(2025, 11, 23, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-24-000000", datetime(2025, 11, 24, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-25-000000", datetime(2025, 11, 25, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-26-000000", datetime(2025, 11, 26, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-27-000000", datetime(2025, 11, 27, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-28-000000", datetime(2025, 11, 28, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-29-000000", datetime(2025, 11, 29, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-30-000000", datetime(2025, 11, 30, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-01-000000", datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-01-120000", datetime(2025, 12, 1, 12, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-02-000000", datetime(2025, 12, 2, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-02-120000", datetime(2025, 12, 2, 12, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-03-000000", datetime(2025, 12, 3, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-12-03-120000", datetime(2025, 12, 3, 12, 0, 0, tzinfo=timezone.utc)),
+        ]
+
+        # Target snapshots (matching the JSON example for system 58125bc5-...)
+        target_snapshots = [
+            ("2025-10-08-000000", datetime(2025, 10, 8, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-10-000000", datetime(2025, 10, 10, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-11-000000", datetime(2025, 10, 11, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-12-000000", datetime(2025, 10, 12, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-13-000000", datetime(2025, 10, 13, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-14-000000", datetime(2025, 10, 14, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-15-000000", datetime(2025, 10, 15, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-16-000000", datetime(2025, 10, 16, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-17-000000", datetime(2025, 10, 17, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-18-000000", datetime(2025, 10, 18, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-19-000000", datetime(2025, 10, 19, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-20-000000", datetime(2025, 10, 20, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-21-000000", datetime(2025, 10, 21, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-22-000000", datetime(2025, 10, 22, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-23-000000", datetime(2025, 10, 23, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-24-000000", datetime(2025, 10, 24, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-25-000000", datetime(2025, 10, 25, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-26-000000", datetime(2025, 10, 26, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-27-000000", datetime(2025, 10, 27, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-28-000000", datetime(2025, 10, 28, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-29-000000", datetime(2025, 10, 29, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-30-000000", datetime(2025, 10, 30, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-10-31-000000", datetime(2025, 10, 31, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-01-000000", datetime(2025, 11, 1, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-02-000000", datetime(2025, 11, 2, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-03-000000", datetime(2025, 11, 3, 0, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-03-120000", datetime(2025, 11, 3, 12, 0, 0, tzinfo=timezone.utc)),
+            ("2025-11-04-000000", datetime(2025, 11, 4, 0, 0, 0, tzinfo=timezone.utc)),
+        ]
+
+        for name, ts in source_snapshots:
+            snapshot_repo.create(
+                name=f"hqs10p1/L1S4DAT1@{name}",
+                pool="hqs10p1",
+                dataset="L1S4DAT1",
+                system_id=source.id,
+                timestamp=ts,
+                size=0,
+            )
+
+        for name, ts in target_snapshots:
+            snapshot_repo.create(
+                name=f"hqs7p1/L1S4DAT1@{name}",
+                pool="hqs7p1",
+                dataset="L1S4DAT1",
+                system_id=target.id,
+                timestamp=ts,
+                size=0,
+            )
+
+        service = SyncCoordinationService(test_db)
+        instructions = service.get_sync_instructions(
+            system_id=target.id,
+            sync_group_id=sync_group.id,
+            include_diagnostics=True,
+        )
+
+        assert instructions["dataset_count"] > 0, (
+            f"Expected sync instructions for L1S4DAT1 dataset, but got "
+            f"{instructions['dataset_count']} datasets. Instructions: {instructions}"
+        )
+
+        l1s4dat1_instruction = None
+        for dataset in instructions["datasets"]:
+            if dataset["dataset"] == "L1S4DAT1":
+                l1s4dat1_instruction = dataset
+                break
+
+        assert l1s4dat1_instruction is not None, (
+            f"No sync instruction found for L1S4DAT1 dataset. "
+            f"Available datasets: {[d['dataset'] for d in instructions['datasets']]}"
+        )
+
+        # Starting snapshot should be last common: 2025-10-30-000000
+        assert (
+            l1s4dat1_instruction["starting_snapshot"] == "2025-10-30-000000"
+        ), f"Expected starting_snapshot=2025-10-30-000000, got: {l1s4dat1_instruction['starting_snapshot']}"
+
+        # Ending snapshot should be gated to 2025-12-01-000000 (older than now-72h)
+        assert (
+            l1s4dat1_instruction["ending_snapshot"] == "2025-12-01-000000"
+        ), f"Expected ending_snapshot=2025-12-01-000000, got: {l1s4dat1_instruction['ending_snapshot']}"
+
+        # Commands should include a single incremental send from starting to ending
+        commands = l1s4dat1_instruction.get("commands", [])
+        assert commands, f"Expected at least one command for L1S4DAT1, got: {commands}"
+        command = commands[0]
+
+        assert "zfs send" in command and "-I" in command, f"Unexpected command: {command}"
+        assert "@2025-10-30-000000" in command, f"Incremental base missing in command: {command}"
+        assert "@2025-12-01-000000" in command, f"Ending snapshot missing in command: {command}"
+
     def test_directional_sync_hub_system_instructions(self, test_db):
         """
         Test directional sync behavior when requesting instructions for the hub system.

@@ -1,7 +1,7 @@
 """Validation helpers for sync coordination."""
 
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from zfs_sync.database.models import SnapshotModel
 from zfs_sync.logging_config import get_logger
@@ -224,6 +224,48 @@ def is_snapshot_out_of_sync_by_72h(
         comparison_service=comparison_service,
         threshold_hours=72.0,
     )
+
+
+def get_latest_allowed_snapshot_before_now(
+    snapshots: Iterable[Tuple[str, datetime]],
+    now: Optional[datetime] = None,
+    min_age_hours: float = float(MIN_SNAPSHOT_GAP_HOURS),
+) -> Optional[str]:
+    """
+    Return the latest snapshot name whose timestamp is at least ``min_age_hours``
+    older than ``now``.
+
+    This is used to implement the policy:
+    - Only send snapshots whose timestamps are at least 72 hours older than "now"
+      (so the target always lags source by at most ~72 hours).
+
+    Args:
+        snapshots: Iterable of (snapshot_name, timestamp) pairs for the source.
+        now: Reference time (defaults to datetime.now(timezone.utc)).
+        min_age_hours: Minimum age in hours a snapshot must have to be eligible.
+
+    Returns:
+        The latest eligible snapshot name, or None if none are old enough.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    cutoff = now - timedelta(hours=min_age_hours)
+
+    eligible: List[Tuple[str, datetime]] = []
+    for name, ts in snapshots:
+        ts_utc = normalize_to_utc(ts)
+        if ts_utc <= cutoff:
+            eligible.append((name, ts_utc))
+
+    if not eligible:
+        return None
+
+    # Return the latest-by-timestamp eligible snapshot
+    eligible.sort(key=lambda item: item[1])
+    return eligible[-1][0]
 
 
 def validate_snapshot_exists(
