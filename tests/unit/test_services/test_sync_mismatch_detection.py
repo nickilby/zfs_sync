@@ -216,11 +216,12 @@ class TestSyncMismatchDetection:
         assert l1s4dat1_instruction["target_pool"] == "hqs7p1", "Target pool should be hqs7p1"
         assert l1s4dat1_instruction["ending_snapshot"] is not None, "Should have an ending snapshot"
 
-        # Check that the latest snapshot is included in the ending snapshot
-        # The actual latest snapshot is 2025-11-30-120000, not 2025-11-30-000000
+        # Check that the latest midnight snapshot is included in the ending snapshot
+        # Since we now filter to only midnight snapshots, the ending snapshot will be
+        # the latest midnight snapshot that's older than 72 hours (2025-11-30-000000)
         assert (
-            "2025-11-30-120000" in l1s4dat1_instruction["ending_snapshot"]
-        ), f"Ending snapshot should include the latest snapshot 2025-11-30-120000, got: {l1s4dat1_instruction['ending_snapshot']}"
+            l1s4dat1_instruction["ending_snapshot"] == "2025-11-30-000000"
+        ), f"Ending snapshot should be the latest midnight snapshot 2025-11-30-000000, got: {l1s4dat1_instruction['ending_snapshot']}"
 
         # Check that incremental base is from the common snapshot
         assert (
