@@ -434,27 +434,27 @@ class SyncCoordinationService:
             # If pair appears in sync or nothing is old enough under now-72h, skip.
             if not allowed_latest:
                 filter_stats["72h_check"] += 1
-                logger.warning(
-                    "[FILTER] 72h_check: Skipping mismatch for dataset=%s snapshot=%s "
-                    "source_system=%s target_system=%s. No source snapshot older than 72h "
-                    "allowed as ending point or pair appears in sync.",
+                source_hostname = self._get_system_hostname(source_system_id)
+                target_hostname = self._get_system_hostname(target_system_id)
+                logger.debug(
+                    "72h_check: Skipping %s -> %s (dataset=%s) - systems appear in sync (no snapshots older than 72h)",
+                    source_hostname,
+                    target_hostname,
                     dataset,
-                    missing_snapshot,
-                    source_system_id,
-                    target_system_id,
                 )
                 continue
 
             # Also skip mismatches whose snapshot is newer than the allowed latest.
             if missing_snapshot > allowed_latest:
                 filter_stats["72h_check"] += 1
+                source_hostname = self._get_system_hostname(source_system_id)
+                target_hostname = self._get_system_hostname(target_system_id)
                 logger.debug(
-                    "[FILTER] 72h_check: Skipping snapshot %s for dataset=%s on pair (%s -> %s) "
-                    "because it is newer than allowed_latest=%s under now-72h rule.",
+                    "72h_check: Skipping snapshot %s for dataset=%s (%s -> %s) - newer than allowed_latest=%s",
                     missing_snapshot,
                     dataset,
-                    source_system_id,
-                    target_system_id,
+                    source_hostname,
+                    target_hostname,
                     allowed_latest,
                 )
                 continue
@@ -1135,6 +1135,21 @@ class SyncCoordinationService:
         if target_snapshots:
             return target_snapshots[0].pool
         return None
+
+    def _get_system_hostname(self, system_id: UUID) -> str:
+        """
+        Get hostname for a system, falling back to system ID if not found.
+
+        Args:
+            system_id: UUID of the system
+
+        Returns:
+            Hostname string, or system ID as string if system not found
+        """
+        system = self.system_repo.get(system_id)
+        if system and system.hostname:
+            return system.hostname
+        return str(system_id)
 
     def _find_incremental_base(
         self,
