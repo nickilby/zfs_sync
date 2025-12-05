@@ -84,12 +84,11 @@ def is_snapshot_out_of_sync_by_hours(
 
     # Check if target has this snapshot
     if latest_source_name in target_snapshot_names:
-        # Target has the latest source snapshot, but we should still check if there are missing intermediate snapshots
-        # However, for the threshold guardrail, if target has the latest, they're considered in sync
-        logger.warning(
+        # Target has the latest source snapshot - this is the expected "in sync" state
+        # Log as INFO since this is successful/expected behavior, not a warning
+        logger.info(
             "[72h_check] Target has the latest source midnight snapshot %s (%s). "
-            "Systems appear in sync based on latest midnight snapshots, "
-            "but intermediate snapshots may still be missing. Returning False (not out of sync).",
+            "Systems are in sync based on latest midnight snapshots.",
             latest_source_name,
             normalize_to_utc(latest_source.timestamp).isoformat(),
         )

@@ -149,22 +149,39 @@ class SyncSchedulerService:
                 system_ids, sync_coord_service.snapshot_repo
             )
 
-            # Detect conflicts for each pool/dataset combination
-            # Note: Conflicts are still detected per pool/dataset, not just dataset name
-            # Deduplicate (pool, dataset_name) pairs since detect_conflicts operates on all systems in the sync group
-            unique_pool_datasets = set()
-            for dataset_name, pool_systems in dataset_mappings.items():
-                for pool, _ in pool_systems:
-                    unique_pool_datasets.add((pool, dataset_name))
+            # Log which datasets are being evaluated for transparency (Bug 2 fix)
+            dataset_names = sorted(dataset_mappings.keys())
+            logger.info(
+                f"Evaluating {len(dataset_names)} datasets for sync group {sync_group_id}: {dataset_names}"
+            )
 
-            # Call detect_conflicts once per unique (pool, dataset_name) combination
-            for pool, dataset_name in unique_pool_datasets:
+            # Detect conflicts for each unique dataset name only (not per pool)
+            # This prevents duplicate conflict logging when the same dataset exists
+            # on different pools across systems (Bug 1 fix)
+            # Track logged conflicts to prevent duplicates: (dataset, snapshot_name)
+            logged_conflicts: set[tuple[str, str]] = set()
+
+            for dataset_name in dataset_names:
+                # Get the first pool associated with this dataset for conflict detection
+                # The conflict detection checks across all systems regardless of pool
+                pool_systems = dataset_mappings[dataset_name]
+                if not pool_systems:
+                    continue
+                pool, _ = pool_systems[0]
+
                 try:
                     conflicts = conflict_service.detect_conflicts(
                         sync_group_id=sync_group_id, pool=pool, dataset=dataset_name
                     )
                     for conflict in conflicts:
-                        self._log_conflict(conflict)
+                        # Deduplicate by (dataset, snapshot_name) to avoid logging same conflict multiple times
+                        conflict_key = (
+                            conflict.get("dataset", ""),
+                            conflict.get("snapshot_name", ""),
+                        )
+                        if conflict_key not in logged_conflicts:
+                            logged_conflicts.add(conflict_key)
+                            self._log_conflict(conflict)
                 except Exception as e:
                     logger.warning(
                         f"Error detecting conflicts for {pool}/{dataset_name} in sync group {sync_group_id}: {e}"

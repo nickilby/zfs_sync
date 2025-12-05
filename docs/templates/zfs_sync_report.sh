@@ -302,6 +302,19 @@ report_snapshots() {
         return 0
     fi
 
+    # Extract and display unique datasets for transparency
+    local unique_datasets=$(echo "$snapshots_json" | jq -r '[.[].dataset] | unique | sort | .[]' 2>/dev/null)
+    local dataset_count=$(echo "$unique_datasets" | grep -c . || echo "0")
+    
+    if [ "$dataset_count" -gt 0 ]; then
+        log_info "Datasets reported ($dataset_count):"
+        echo "$unique_datasets" | while read -r dataset; do
+            if [ -n "$dataset" ]; then
+                echo "  - $dataset" >&2
+            fi
+        done
+    fi
+
     # Determine if chunking is needed
     local chunk_size=${SNAPSHOT_BATCH_CHUNK_SIZE:-1000}
     local total_created=0
