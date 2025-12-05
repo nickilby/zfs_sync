@@ -44,12 +44,14 @@ class TestSyncMismatchDetection:
             ssh_port=22,
         )
 
-        # Create sync group
+        # Create sync group (directional with hqs10 as hub)
         sync_group_repo = SyncGroupRepository(test_db)
         sync_group = sync_group_repo.create(
             name="test-sync-group",
             description="Test sync group",
             enabled=True,
+            directional=True,
+            hub_system_id=hqs10.id,
         )
         sync_group_repo.add_system(sync_group.id, hqs10.id)
         sync_group_repo.add_system(sync_group.id, hqs7.id)
@@ -269,6 +271,8 @@ class TestSyncMismatchDetection:
             name="l1s4dat1-72h-test",
             description="L1S4DAT1 72h gate test group",
             enabled=True,
+            directional=True,
+            hub_system_id=source.id,
         )
         sync_group_repo.add_system(sync_group.id, source.id)
         sync_group_repo.add_system(sync_group.id, target.id)
@@ -584,39 +588,20 @@ class TestSyncMismatchDetection:
         if source_instructions.get("diagnostics"):
             print(f"Source diagnostics: {source_instructions['diagnostics']}")
 
-        # Source system should receive instructions (hub -> source)
+        # Source system (target) should receive instructions (hub -> source)
         assert source_instructions["dataset_count"] > 0, (
-            f"Source system should receive instructions to sync from hub. "
+            f"Source system (target) should receive instructions to sync from hub. "
             f"Got {source_instructions['dataset_count']} datasets. "
             f"Diagnostics: {source_instructions.get('diagnostics', [])}"
         )
 
-        # Hub should receive instructions on what snapshots to send to sources
-        # Hub is source of truth and needs to know what to send to spoke systems
-        assert hub_instructions["dataset_count"] > 0, (
-            f"Hub system should receive instructions on what snapshots to send to sources. "
+        # Hub should NOT receive instructions - it's the source, not the target
+        # In one-way sync, only targets receive instructions on what to receive
+        assert hub_instructions["dataset_count"] == 0, (
+            f"Hub system should NOT receive instructions (it's the source, not the target). "
             f"Got {hub_instructions['dataset_count']} datasets. "
             f"Diagnostics: {hub_instructions.get('diagnostics', [])}"
         )
-
-        # Verify hub instructions contain L1S4DAT1 dataset
-        hub_datasets = [d["dataset"] for d in hub_instructions["datasets"]]
-        assert "L1S4DAT1" in hub_datasets, (
-            f"Hub instructions should include L1S4DAT1 dataset. " f"Found datasets: {hub_datasets}"
-        )
-
-        # Find the instruction for L1S4DAT1
-        hub_l1s4dat1_instruction = None
-        for dataset in hub_instructions["datasets"]:
-            if dataset["dataset"] == "L1S4DAT1":
-                hub_l1s4dat1_instruction = dataset
-                break
-
-        assert hub_l1s4dat1_instruction is not None, "Hub should have instruction for L1S4DAT1"
-        assert hub_l1s4dat1_instruction["pool"] == "hubp1", "Pool should be hubp1 (hub's pool)"
-        assert (
-            hub_l1s4dat1_instruction["ending_snapshot"] is not None
-        ), "Should have an ending snapshot"
 
     def test_orphaned_snapshots_filter_mismatches(self, test_db):
         """

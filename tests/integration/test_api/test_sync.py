@@ -41,11 +41,13 @@ class TestSyncInstructionsEndpoints:
             ssh_port=22,
         )
 
-        # Create sync group and add both systems
+        # Create sync group (directional with source as hub) and add both systems
         sync_group = sync_group_repo.create(
             name="l1s4dat1-api-72h-test",
             description="API test for L1S4DAT1 72h gate",
             enabled=True,
+            directional=True,
+            hub_system_id=source.id,
         )
         sync_group_repo.add_system(sync_group.id, source.id)
         sync_group_repo.add_system(sync_group.id, target.id)
