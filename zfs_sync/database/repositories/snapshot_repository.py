@@ -1,6 +1,6 @@
 """Repository for Snapshot operations."""
 
-from typing import List, Optional
+from typing import List, Optional, Set, Tuple
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -27,17 +27,29 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
         )
 
     def get_by_system(
-        self, system_id: UUID, skip: int = 0, limit: int = 100
+        self, system_id: UUID, skip: int = 0, limit: Optional[int] = 100
     ) -> List[SnapshotModel]:
-        """Get all snapshots for a system, ordered by timestamp descending (most recent first)."""
-        return (
+        """
+        Get all snapshots for a system, ordered by timestamp descending (most recent first).
+
+        Args:
+            system_id: System UUID
+            skip: Number of records to skip (for pagination)
+            limit: Maximum number of records to return (None for all, default 100)
+
+        Returns:
+            List of snapshots for the system
+        """
+        query = (
             self.db.query(SnapshotModel)
             .filter(SnapshotModel.system_id == system_id)
             .order_by(SnapshotModel.timestamp.desc())
-            .offset(skip)
-            .limit(limit)
-            .all()
         )
+        if skip > 0:
+            query = query.offset(skip)
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def get_by_system_and_dataset(
         self, system_id: UUID, dataset: str, skip: int = 0, limit: Optional[int] = None
@@ -107,3 +119,41 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
         if system_id:
             query = query.filter(SnapshotModel.system_id == system_id)
         return query.all()
+
+    def delete_snapshots_not_in_set(
+        self, system_id: UUID, reported_snapshots: Set[Tuple[str, str, str]]
+    ) -> tuple[int, List[Tuple[str, str, str]]]:
+        """
+        Delete snapshots for a system that aren't in the reported set.
+
+        Args:
+            system_id: System UUID
+            reported_snapshots: Set of (pool, dataset, name) tuples representing current snapshots
+                               Note: name is stored as-is (e.g., "L1S6DAT1@2025-11-02-000000" or "2025-11-02-000000")
+
+        Returns:
+            Tuple of (count of deleted snapshots, list of deleted (pool, dataset, name) tuples)
+        """
+        # Get all existing snapshots for this system
+        existing = self.get_by_system(system_id, skip=0, limit=None)  # Get all, no limit
+
+        # Find snapshots to delete (in DB but not in reported set)
+        to_delete = []
+        deleted_keys = []
+        for snapshot in existing:
+            key = (snapshot.pool, snapshot.dataset, snapshot.name)
+            if key not in reported_snapshots:
+                to_delete.append(snapshot.id)
+                deleted_keys.append(key)
+
+        # Delete in bulk
+        if to_delete:
+            count = (
+                self.db.query(SnapshotModel)
+                .filter(SnapshotModel.id.in_(to_delete))
+                .delete(synchronize_session=False)
+            )
+            self.db.commit()
+            return count, deleted_keys
+
+        return 0, []

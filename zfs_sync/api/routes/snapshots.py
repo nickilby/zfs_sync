@@ -1,5 +1,6 @@
 """Snapshot management endpoints."""
 
+from collections import defaultdict
 from typing import List, Optional
 from uuid import UUID
 
@@ -76,6 +77,15 @@ async def create_snapshots_batch(snapshots: List[SnapshotCreate], db: Session = 
             detail=error_msg,
         )
 
+    # Group snapshots by system_id for sync operation
+    snapshots_by_system: dict[UUID, list] = defaultdict(list)
+    for snapshot_data in snapshots:
+        snapshots_by_system[snapshot_data.system_id].append(snapshot_data)
+
+    logger.info(
+        f"Processing batch snapshot report: {len(snapshots)} snapshots from {len(snapshots_by_system)} system(s)"
+    )
+
     # Process snapshots with individual error handling
     repo = SnapshotRepository(db)
     created = []
@@ -117,13 +127,67 @@ async def create_snapshots_batch(snapshots: List[SnapshotCreate], db: Session = 
                 }
             )
 
-    # Log summary
+    # Log creation summary
     logger.info(
-        f"Batch snapshot creation completed: {len(created)} successful, {len(failed)} failed out of {len(snapshots)} total"
+        f"Created/updated {len(created)} snapshots, {len(failed)} failed out of {len(snapshots)} total"
     )
 
     if failed:
         logger.warning(f"Failed snapshots: {failed}")
+
+    # Sync database: delete snapshots that are no longer on ZFS systems
+    total_deleted = 0
+    for system_id, system_snapshots in snapshots_by_system.items():
+        system = system_repo.get(system_id)
+        system_hostname = system.hostname if system else str(system_id)
+
+        # Build set of reported snapshot identifiers: (pool, dataset, name)
+        reported_snapshots: set[tuple[str, str, str]] = set()
+        for snapshot_data in system_snapshots:
+            key = (snapshot_data.pool, snapshot_data.dataset, snapshot_data.name)
+            reported_snapshots.add(key)
+
+        logger.info(
+            f"Syncing database for system {system_hostname} (system_id: {system_id}): "
+            f"{len(reported_snapshots)} snapshots reported"
+        )
+
+        # Delete snapshots from database that aren't in the reported set
+        deleted_count, deleted_keys = repo.delete_snapshots_not_in_set(
+            system_id, reported_snapshots
+        )
+
+        if deleted_count > 0:
+            # Format deleted snapshot names for logging
+            deleted_snapshot_names = [
+                f"{pool}/{dataset}@{name}" for pool, dataset, name in deleted_keys
+            ]
+
+            logger.info(
+                f"Deleted {deleted_count} stale snapshots from database for system {system_hostname}: "
+                f"{', '.join(deleted_snapshot_names[:10])}"
+                + (
+                    f" and {len(deleted_snapshot_names) - 10} more"
+                    if len(deleted_snapshot_names) > 10
+                    else ""
+                )
+            )
+        else:
+            logger.debug(
+                f"No stale snapshots to delete for system {system_hostname} - database is in sync"
+            )
+
+        total_deleted += deleted_count
+
+    # Final summary
+    if total_deleted > 0:
+        logger.info(
+            f"Batch snapshot sync completed: {len(created)} created/updated, {total_deleted} deleted across {len(snapshots_by_system)} system(s)"
+        )
+    else:
+        logger.info(
+            f"Batch snapshot sync completed: {len(created)} created/updated, no deletions needed"
+        )
 
     # Return only successfully created snapshots
     return created
