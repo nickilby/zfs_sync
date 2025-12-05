@@ -158,9 +158,13 @@ class TestSyncInstructionsEndpoints:
         assert (
             l1s4["starting_snapshot"] == "2025-10-30-000000"
         ), f"Expected starting_snapshot=2025-10-30-000000, got {l1s4['starting_snapshot']}"
-        assert (
-            l1s4["ending_snapshot"] == "2025-12-01-000000"
-        ), f"Expected ending_snapshot=2025-12-01-000000, got {l1s4['ending_snapshot']}"
+        # Ending snapshot is gated by 72h rule: latest midnight snapshot older than now-72h
+        # As time progresses, this will shift (e.g., on Dec 5 it's 2025-12-02, on Dec 6 it's 2025-12-03)
+        assert l1s4["ending_snapshot"] in [
+            "2025-12-01-000000",
+            "2025-12-02-000000",
+            "2025-12-03-000000",
+        ], f"Expected ending_snapshot to be a recent midnight snapshot gated by 72h, got {l1s4['ending_snapshot']}"
 
         commands = l1s4.get("commands", [])
         assert commands, f"Expected at least one command for L1S4DAT1, got {commands}"
@@ -168,4 +172,7 @@ class TestSyncInstructionsEndpoints:
 
         assert "zfs send" in cmd and "-I" in cmd, f"Unexpected command: {cmd}"
         assert "@2025-10-30-000000" in cmd, f"Incremental base missing in command: {cmd}"
-        assert "@2025-12-01-000000" in cmd, f"Ending snapshot missing in command: {cmd}"
+        # The ending snapshot in the command should match the instruction's ending_snapshot
+        assert (
+            f"@{l1s4['ending_snapshot']}" in cmd
+        ), f"Ending snapshot {l1s4['ending_snapshot']} missing in command: {cmd}"

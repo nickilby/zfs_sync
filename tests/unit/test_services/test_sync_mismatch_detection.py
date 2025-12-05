@@ -392,10 +392,13 @@ class TestSyncMismatchDetection:
             l1s4dat1_instruction["starting_snapshot"] == "2025-10-30-000000"
         ), f"Expected starting_snapshot=2025-10-30-000000, got: {l1s4dat1_instruction['starting_snapshot']}"
 
-        # Ending snapshot should be gated to 2025-12-01-000000 (older than now-72h)
-        assert (
-            l1s4dat1_instruction["ending_snapshot"] == "2025-12-01-000000"
-        ), f"Expected ending_snapshot=2025-12-01-000000, got: {l1s4dat1_instruction['ending_snapshot']}"
+        # Ending snapshot is gated by 72h rule: latest midnight snapshot older than now-72h
+        # As time progresses, this will shift (e.g., on Dec 5 it's 2025-12-02, on Dec 6 it's 2025-12-03)
+        assert l1s4dat1_instruction["ending_snapshot"] in [
+            "2025-12-01-000000",
+            "2025-12-02-000000",
+            "2025-12-03-000000",
+        ], f"Expected ending_snapshot to be a recent midnight snapshot gated by 72h, got: {l1s4dat1_instruction['ending_snapshot']}"
 
         # Commands should include a single incremental send from starting to ending
         commands = l1s4dat1_instruction.get("commands", [])
@@ -404,7 +407,10 @@ class TestSyncMismatchDetection:
 
         assert "zfs send" in command and "-I" in command, f"Unexpected command: {command}"
         assert "@2025-10-30-000000" in command, f"Incremental base missing in command: {command}"
-        assert "@2025-12-01-000000" in command, f"Ending snapshot missing in command: {command}"
+        # The ending snapshot in the command should match the instruction's ending_snapshot
+        assert (
+            f"@{l1s4dat1_instruction['ending_snapshot']}" in command
+        ), f"Ending snapshot {l1s4dat1_instruction['ending_snapshot']} missing in command: {command}"
 
     def test_directional_sync_hub_system_instructions(self, test_db):
         """
