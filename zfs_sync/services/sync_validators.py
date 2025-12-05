@@ -82,13 +82,17 @@ def is_snapshot_out_of_sync_by_hours(
     latest_source = max(source_midnight_snapshots, key=lambda s: s.timestamp)
     latest_source_name = comparison_service.extract_snapshot_name(latest_source.name)
 
+    # Get dataset name from snapshots (all snapshots should have the same dataset)
+    dataset_name = source_snapshots[0].dataset if source_snapshots else "unknown"
+
     # Check if target has this snapshot
     if latest_source_name in target_snapshot_names:
         # Target has the latest source snapshot - this is the expected "in sync" state
         # Log as INFO since this is successful/expected behavior, not a warning
         logger.info(
-            "[72h_check] Target has the latest source midnight snapshot %s (%s). "
+            "[72h_check] Dataset '%s': Target has the latest source midnight snapshot %s (%s). "
             "Systems are in sync based on latest midnight snapshots.",
+            dataset_name,
             latest_source_name,
             normalize_to_utc(latest_source.timestamp).isoformat(),
         )
@@ -140,8 +144,9 @@ def is_snapshot_out_of_sync_by_hours(
     # If target's latest snapshot doesn't exist on source, it might be an orphaned snapshot
     if not target_latest_exists_on_source:
         logger.warning(
-            "Target's latest midnight snapshot %s (%s) does not exist on source. "
+            "[72h_check] Dataset '%s': Target's latest midnight snapshot %s (%s) does not exist on source. "
             "This may be an orphaned snapshot. Source latest: %s (%s), diff=%.2f hours",
+            dataset_name,
             latest_target_name,
             latest_target_timestamp_utc.isoformat(),
             latest_source_name,
@@ -152,8 +157,9 @@ def is_snapshot_out_of_sync_by_hours(
     # If source is ahead by more than threshold hours, systems are out of sync
     result = hours_diff > threshold_hours
     logger.warning(
-        "[72h_check] Sync check result: %s (hours_diff=%.2f > %.2f=%s). "
+        "[72h_check] Dataset '%s': Sync check result: %s (hours_diff=%.2f > %.2f=%s). "
         "Source latest: %s (%s), Target latest: %s (%s)",
+        dataset_name,
         result,
         hours_diff,
         threshold_hours,
