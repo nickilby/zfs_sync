@@ -19,9 +19,7 @@ from zfs_sync.models import SyncStatus
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 from zfs_sync.services.ssh_command_generator import SSHCommandGenerator
 from zfs_sync.services.sync_validators import (
-    get_latest_allowed_snapshot_before_now,
     is_midnight_snapshot,
-    is_snapshot_out_of_sync_by_72h,
     validate_snapshot_gap,
 )
 
@@ -41,18 +39,14 @@ class SyncCoordinationService:
         self.comparison_service = SnapshotComparisonService(db)
         self.diagnostics: List[Dict[str, Any]] = []
         self.settings = get_settings()
-        self._orphan_datasets_logged: Set[Tuple[str, UUID]] = set()
 
     def detect_sync_mismatches(self, sync_group_id: UUID) -> List[Dict[str, Any]]:
         """
-        Detect snapshot mismatches for a sync group.
+        Detect if target systems are behind hub system for any datasets.
 
-        Returns a list of mismatches that need to be synchronized.
-        Note: This detects missing snapshots, not conflicts. Use ConflictResolutionService
-        to detect conflicts.
+        Only evaluates latest midnight snapshot per dataset.
+        Returns mismatches only for hub → target direction.
         """
-        logger.info("Detecting sync mismatches for sync group %s", sync_group_id)
-
         sync_group = self.sync_group_repo.get(sync_group_id)
         if not sync_group:
             raise ValueError(
@@ -64,204 +58,172 @@ class SyncCoordinationService:
             logger.info("Sync group %s is disabled", sync_group_id)
             return []
 
-        # Get all systems in the sync group
-        system_ids = [assoc.system_id for assoc in sync_group.system_associations]
+        # Verify this is a directional sync group with a hub
+        if not sync_group.directional or not sync_group.hub_system_id:
+            logger.warning(
+                "Sync group %s is not configured for directional sync with hub. "
+                "Only directional hub→target sync is supported.",
+                sync_group_id,
+            )
+            return []
 
-        if len(system_ids) < 2:
+        # Get all systems in the sync group
+        all_system_ids = [assoc.system_id for assoc in sync_group.system_associations]
+        hub_system_id = sync_group.hub_system_id
+
+        if hub_system_id not in all_system_ids:
+            logger.warning(
+                "Hub system %s not in sync group %s",
+                hub_system_id,
+                sync_group_id,
+            )
+            return []
+
+        if len(all_system_ids) < 2:
             logger.warning("Sync group %s has less than 2 systems", sync_group_id)
             return []
 
-        # Handle directional sync logic
-        if sync_group.directional and sync_group.hub_system_id:
-            hub_system_id = sync_group.hub_system_id
-            if hub_system_id not in system_ids:
-                logger.warning(
-                    "Hub system %s not in sync group %s, falling back to bidirectional sync",
-                    hub_system_id,
-                    sync_group_id,
-                )
-                # Continue with bidirectional logic
-            else:
-                logger.info(
-                    "Using directional sync for group %s with hub system %s",
-                    sync_group_id,
-                    hub_system_id,
-                )
+        # Get target systems (all systems except hub)
+        target_system_ids = [sid for sid in all_system_ids if sid != hub_system_id]
 
-        # Get all systems for snapshot source checking (even in directional mode)
-        all_system_ids = [assoc.system_id for assoc in sync_group.system_associations]
-
-        # Handle directional sync logic
-        if sync_group.directional and sync_group.hub_system_id:
-            # For directional sync, check mismatches for both:
-            # 1. Source systems missing snapshots from hub (hub -> sources)
-            # 2. Hub system missing snapshots from sources (sources -> hub)
-            hub_system_id = sync_group.hub_system_id
-            source_system_ids = [
-                sid for sid in all_system_ids if sid != hub_system_id
-            ]  # Source systems for mismatch detection
-            logger.debug(
-                "Directional sync: hub_system_id=%s, source systems: %s",
-                hub_system_id,
-                [str(sid) for sid in source_system_ids],
-            )
-            # For dataset discovery, use all systems to find all datasets
-            system_ids_for_datasets = all_system_ids
-        else:
-            source_system_ids = None
-            hub_system_id = None
-            system_ids_for_datasets = all_system_ids
-            logger.debug(
-                "Bidirectional sync: checking mismatches for all systems: %s",
-                [str(sid) for sid in system_ids_for_datasets],
-            )
-
-        # Get all datasets that should be synced (from existing snapshots)
-        # Use all systems to discover datasets, not just source systems
-        datasets = self._get_datasets_for_systems(system_ids_for_datasets)
-        logger.debug(
-            "Found %d datasets for systems %s: %s",
-            len(datasets),
-            [str(sid) for sid in system_ids_for_datasets],
-            datasets,
-        )
-
-        mismatches = []
-        for dataset in datasets:
-            if sync_group.directional and sync_group.hub_system_id and hub_system_id:
-                # For directional sync, check mismatches in both directions:
-                # 1. Source systems missing snapshots from hub (hub -> sources)
-                # 2. Hub system missing snapshots from sources (sources -> hub)
-                # hub_system_id and source_system_ids are already defined above
-                logger.debug(
-                    "Directional sync: checking dataset %s, hub=%s, sources=%s",
-                    dataset,
-                    hub_system_id,
-                    [str(sid) for sid in source_system_ids],
-                )
-
-                # Get comparison for all systems to find what each system is missing
-                comparison = self.comparison_service.compare_snapshots_by_dataset(
-                    dataset=dataset, system_ids=all_system_ids
-                )
-                logger.debug(
-                    "Comparison for dataset %s: missing_snapshots keys=%s",
-                    dataset,
-                    list(comparison.get("missing_snapshots", {}).keys()),
-                )
-
-                # 1. Create mismatches for source systems missing snapshots from hub ONLY
-                # In directional mode, sources should ONLY receive from hub, never from other sources
-                hub_snapshots = self.snapshot_repo.get_by_dataset(
-                    dataset=dataset, system_id=hub_system_id
-                )
-                hub_snapshot_names = {
-                    self.comparison_service.extract_snapshot_name(s.name) for s in hub_snapshots
-                }
-
-                for source_system_id in source_system_ids:
-                    source_missing = comparison["missing_snapshots"].get(str(source_system_id), [])
-                    logger.debug(
-                        "Source system %s missing %d snapshots for dataset %s",
-                        source_system_id,
-                        len(source_missing),
-                        dataset,
-                    )
-
-                    for missing_snapshot in source_missing:
-                        # Only process midnight snapshots to reduce noise
-                        if not is_midnight_snapshot(missing_snapshot):
-                            continue
-
-                        # Only create mismatch if hub has this snapshot
-                        # Sources should never sync between each other in directional mode
-                        if missing_snapshot in hub_snapshot_names:
-                            # Hub has it, create mismatch with hub as source
-                            mismatch = {
-                                "sync_group_id": str(sync_group_id),
-                                "dataset": dataset,
-                                "target_system_id": str(source_system_id),
-                                "missing_snapshot": missing_snapshot,
-                                "source_system_ids": [str(hub_system_id)],
-                                "priority": self._calculate_priority(missing_snapshot, comparison),
-                                "directional": True,
-                                "reason": "source_missing_from_hub",
-                            }
-                            mismatches.append(mismatch)
-                            logger.debug(
-                                "Created mismatch: target=%s (source), snapshot=%s, source=%s (hub)",
-                                source_system_id,
-                                missing_snapshot,
-                                hub_system_id,
-                            )
-
-                # In distribution mode, hub is source of truth - no need to sync TO hub
-                # However, check if hub is missing snapshots for diagnostic purposes
-                hub_missing = comparison["missing_snapshots"].get(str(hub_system_id), [])
-                if hub_missing:
-                    logger.debug(
-                        "Hub system %s is missing %d snapshots for dataset %s, "
-                        "but will not receive sync instructions in distribution mode (hub is source of truth)",
-                        hub_system_id,
-                        len(hub_missing),
-                        dataset,
-                    )
-            else:
-                # Bidirectional sync: existing logic
-                comparison = self.comparison_service.compare_snapshots_by_dataset(
-                    dataset=dataset, system_ids=system_ids
-                )
-
-                # Find systems with missing snapshots
-                for system_id_str, missing_snapshots in comparison["missing_snapshots"].items():
-                    if missing_snapshots:
-                        system_id = UUID(system_id_str)
-                        logger.debug(
-                            "System %s missing %d snapshots for dataset %s",
-                            system_id,
-                            len(missing_snapshots),
-                            dataset,
-                        )
-                        for missing_snapshot in missing_snapshots:
-                            # Only process midnight snapshots to reduce noise
-                            if not is_midnight_snapshot(missing_snapshot):
-                                continue
-
-                            # Find which systems have this snapshot
-                            source_systems = self._find_systems_with_snapshot(
-                                dataset, missing_snapshot, system_ids
-                            )
-
-                            if source_systems:
-                                mismatch = {
-                                    "sync_group_id": str(sync_group_id),
-                                    "dataset": dataset,
-                                    "target_system_id": str(system_id),
-                                    "missing_snapshot": missing_snapshot,
-                                    "source_system_ids": [str(sid) for sid in source_systems],
-                                    "priority": self._calculate_priority(
-                                        missing_snapshot, comparison
-                                    ),
-                                    "directional": False,
-                                    "reason": "bidirectional_mismatch",
-                                }
-                                mismatches.append(mismatch)
-                                logger.debug(
-                                    "Created mismatch: target=%s, snapshot=%s, sources=%s",
-                                    system_id,
-                                    missing_snapshot,
-                                    source_systems,
-                                )
+        # Get hub and target system info for logging
+        hub_system = self.system_repo.get(hub_system_id)
+        hub_hostname = hub_system.hostname if hub_system else str(hub_system_id)
 
         logger.info(
-            "Detected %d mismatches for sync group %s (directional=%s)",
+            "Evaluating sync group '%s' (hub: %s, targets: %s)",
+            sync_group.name if sync_group.name else str(sync_group_id),
+            hub_hostname,
+            [
+                self.system_repo.get(sid).hostname if self.system_repo.get(sid) else str(sid)
+                for sid in target_system_ids
+            ],
+        )
+
+        # Get all datasets that should be synced (from all systems in group)
+        datasets = self._get_datasets_for_systems(all_system_ids)
+        logger.info("Found %d datasets to evaluate", len(datasets))
+
+        mismatches = []
+
+        for dataset in datasets:
+            # Get all snapshots for hub and targets for this dataset
+            hub_snapshots = self.snapshot_repo.get_by_dataset(
+                dataset=dataset, system_id=hub_system_id
+            )
+
+            # Find latest midnight snapshot from hub
+            hub_midnight_snapshots = [
+                s
+                for s in hub_snapshots
+                if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
+            ]
+
+            if not hub_midnight_snapshots:
+                logger.debug(
+                    "Dataset %s: Hub (%s) has no midnight snapshots, skipping",
+                    dataset,
+                    hub_hostname,
+                )
+                continue
+
+            hub_latest = max(hub_midnight_snapshots, key=lambda s: s.timestamp)
+            hub_latest_name = self.comparison_service.extract_snapshot_name(hub_latest.name)
+            hub_latest_timestamp = hub_latest.timestamp
+
+            # Check each target system
+            for target_system_id in target_system_ids:
+                target_system = self.system_repo.get(target_system_id)
+                target_hostname = target_system.hostname if target_system else str(target_system_id)
+
+                target_snapshots = self.snapshot_repo.get_by_dataset(
+                    dataset=dataset, system_id=target_system_id
+                )
+
+                # Find latest midnight snapshot from target
+                target_midnight_snapshots = [
+                    s
+                    for s in target_snapshots
+                    if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
+                ]
+
+                if not target_midnight_snapshots:
+                    # Target has no midnight snapshots - it's behind
+                    logger.info(
+                        "Dataset %s: Hub (%s) latest: %s, Target (%s) latest: (none) - OUT OF SYNC (target has no snapshots)",
+                        dataset,
+                        hub_hostname,
+                        hub_latest_name,
+                        target_hostname,
+                    )
+                    mismatch = {
+                        "sync_group_id": str(sync_group_id),
+                        "dataset": dataset,
+                        "target_system_id": str(target_system_id),
+                        "missing_snapshot": hub_latest_name,
+                        "source_system_ids": [str(hub_system_id)],
+                        "hub_latest_snapshot": hub_latest_name,
+                        "hub_latest_timestamp": hub_latest_timestamp,
+                        "target_latest_snapshot": None,
+                        "target_latest_timestamp": None,
+                    }
+                    mismatches.append(mismatch)
+                    continue
+
+                target_latest = max(target_midnight_snapshots, key=lambda s: s.timestamp)
+                target_latest_name = self.comparison_service.extract_snapshot_name(
+                    target_latest.name
+                )
+                target_latest_timestamp = target_latest.timestamp
+
+                # Check if target has hub's latest snapshot
+                if target_latest_name == hub_latest_name:
+                    # Target has hub's latest - in sync
+                    logger.info(
+                        "Dataset %s: Hub (%s) latest: %s, Target (%s) latest: %s - IN SYNC",
+                        dataset,
+                        hub_hostname,
+                        hub_latest_name,
+                        target_hostname,
+                        target_latest_name,
+                    )
+                    continue
+
+                # Target doesn't have hub's latest - check if it's behind
+                if target_latest_timestamp < hub_latest_timestamp:
+                    # Calculate time difference
+                    time_diff = hub_latest_timestamp - target_latest_timestamp
+                    hours_behind = time_diff.total_seconds() / 3600
+                    days_behind = hours_behind / 24
+
+                    logger.info(
+                        "Dataset %s: Hub (%s) latest: %s, Target (%s) latest: %s - OUT OF SYNC (%.1f days behind)",
+                        dataset,
+                        hub_hostname,
+                        hub_latest_name,
+                        target_hostname,
+                        target_latest_name,
+                        days_behind,
+                    )
+
+                    mismatch = {
+                        "sync_group_id": str(sync_group_id),
+                        "dataset": dataset,
+                        "target_system_id": str(target_system_id),
+                        "missing_snapshot": hub_latest_name,
+                        "source_system_ids": [str(hub_system_id)],
+                        "hub_latest_snapshot": hub_latest_name,
+                        "hub_latest_timestamp": hub_latest_timestamp,
+                        "target_latest_snapshot": target_latest_name,
+                        "target_latest_timestamp": target_latest_timestamp,
+                    }
+                    mismatches.append(mismatch)
+
+        logger.info(
+            "Detected %d mismatches for sync group %s (hub → targets)",
             len(mismatches),
             sync_group_id,
-            sync_group.directional if sync_group else False,
         )
-        if mismatches:
-            target_systems = {m["target_system_id"] for m in mismatches}
-            logger.debug("Mismatches target systems: %s", target_systems)
 
         return mismatches
 
@@ -269,329 +231,144 @@ class SyncCoordinationService:
         self, sync_group_id: UUID, system_id: Optional[UUID] = None
     ) -> List[Dict[str, Any]]:
         """
-        Determine sync actions needed for a sync group or specific system.
+        Generate sync actions for systems that are behind hub.
 
-        Returns a list of actions that should be performed.
+        Logic:
+        1. Get mismatches (hub → target only)
+        2. For each mismatch:
+           a. Check if target is >72h behind hub's latest midnight snapshot
+           b. If yes: Find incremental base (last common midnight snapshot)
+           c. Generate sync command (incremental if base exists, full if not)
+           d. Log human-readable message
+        3. Return actions
         """
-        logger.info("Determining sync actions for sync group %s", sync_group_id)
-
         mismatches = self.detect_sync_mismatches(sync_group_id)
-        logger.debug("Found %d total mismatches", len(mismatches))
 
+        # Filter to specific system if requested
         if system_id:
-            # Filter to actions for specific system
-            mismatches_before_filter = len(mismatches)
-
-            # Check if this is a hub system in directional sync
-            sync_group = self.sync_group_repo.get(sync_group_id)
-            is_hub_in_directional = (
-                sync_group and sync_group.directional and sync_group.hub_system_id == system_id
-            )
-
-            if is_hub_in_directional:
-                # For hub in directional sync, filter mismatches where hub is the SOURCE
-                # Hub needs instructions on what to SEND TO sources
-                mismatches = [
-                    m for m in mismatches if str(system_id) in m.get("source_system_ids", [])
-                ]
-                logger.debug(
-                    "Filtered mismatches for hub system %s (as source): %d -> %d",
-                    system_id,
-                    mismatches_before_filter,
-                    len(mismatches),
-                )
-            else:
-                # For normal systems, filter mismatches where system is the TARGET
-                # System needs instructions on what to RECEIVE
-                mismatches = [m for m in mismatches if UUID(m["target_system_id"]) == system_id]
-                logger.debug(
-                    "Filtered mismatches for system %s (as target): %d -> %d",
-                    system_id,
-                    mismatches_before_filter,
-                    len(mismatches),
-                )
-
-            if mismatches_before_filter > 0 and len(mismatches) == 0:
-                all_mismatches = self.detect_sync_mismatches(sync_group_id)
-                target_systems = {m["target_system_id"] for m in all_mismatches}
-                source_systems = set()
-                for m in all_mismatches:
-                    source_systems.update(m.get("source_system_ids", []))
-                logger.warning(
-                    "No mismatches found for system %s. Mismatches target: %s, sources: %s",
-                    system_id,
-                    target_systems,
-                    source_systems,
-                )
-                if is_hub_in_directional:
-                    logger.info(
-                        "Hub system %s should receive instructions on what to send to sources. "
-                        "Found %d mismatches where hub is source.",
-                        system_id,
-                        len(
-                            [
-                                m
-                                for m in all_mismatches
-                                if str(system_id) in m.get("source_system_ids", [])
-                            ]
-                        ),
-                    )
+            # For target systems, filter mismatches where system is the TARGET
+            mismatches = [m for m in mismatches if UUID(m["target_system_id"]) == system_id]
 
         actions = []
-        # Diagnostic counters
-        filter_stats = {
-            "72h_check": 0,
-            "missing_source_system": 0,
-            "missing_pool": 0,
-            "missing_target_system": 0,
-            "orphan_dataset": 0,
-            "command_generation_failed": 0,
-            "passed": 0,
-        }
-
-        # Pre-compute, per (source_system, target_system, dataset), the latest allowed
-        # source snapshot name according to the now-72h rule. This is used to cap the
-        # ending snapshot while still respecting the existing latest-midnight guardrail.
-        allowed_latest_by_pair: Dict[Tuple[UUID, UUID, str], Optional[str]] = {}
+        in_sync_count = 0
+        out_of_sync_count = 0
 
         for mismatch in mismatches:
-            src_id = UUID(mismatch["source_system_ids"][0])
-            tgt_id = UUID(mismatch["target_system_id"])
-            dataset = mismatch["dataset"]
-            key = (src_id, tgt_id, dataset)
-            if key in allowed_latest_by_pair:
-                continue
-
-            source_snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=src_id)
-            target_snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=tgt_id)
-
-            # Existing guardrail: only proceed if systems are more than 72h out of sync
-            source_midnight_names = {
-                self.comparison_service.extract_snapshot_name(s.name)
-                for s in source_snapshots
-                if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
-            }
-            target_midnight_names = {
-                self.comparison_service.extract_snapshot_name(s.name)
-                for s in target_snapshots
-                if is_midnight_snapshot(self.comparison_service.extract_snapshot_name(s.name))
-            }
-
-            is_out_of_sync_72h = is_snapshot_out_of_sync_by_72h(
-                source_snapshots,
-                target_snapshots,
-                source_midnight_names,
-                target_midnight_names,
-                self.comparison_service,
-            )
-
-            logger.debug(
-                "[72h_check] Dataset=%s, source=%s, target=%s: is_out_of_sync_72h=%s",
-                dataset,
-                src_id,
-                tgt_id,
-                is_out_of_sync_72h,
-            )
-
-            if not is_out_of_sync_72h:
-                allowed_latest_by_pair[key] = None
-                logger.debug(
-                    "[72h_check] Pair (%s -> %s, dataset=%s) appears in sync or not out of sync by 72h. "
-                    "Setting allowed_latest=None",
-                    src_id,
-                    tgt_id,
-                    dataset,
-                )
-                continue
-
-            source_name_ts_pairs = [
-                (
-                    self.comparison_service.extract_snapshot_name(s.name),
-                    s.timestamp,
-                )
-                for s in source_snapshots
-            ]
-            allowed_latest = get_latest_allowed_snapshot_before_now(source_name_ts_pairs)
-            logger.debug(
-                "[72h_check] Pair (%s -> %s, dataset=%s): allowed_latest=%s (from %d source snapshots)",
-                src_id,
-                tgt_id,
-                dataset,
-                allowed_latest,
-                len(source_name_ts_pairs),
-            )
-            allowed_latest_by_pair[key] = allowed_latest
-
-        for mismatch in mismatches:
-            source_system_id = UUID(mismatch["source_system_ids"][0])  # Use first available
+            hub_system_id = UUID(mismatch["source_system_ids"][0])
             target_system_id = UUID(mismatch["target_system_id"])
             dataset = mismatch["dataset"]
-            missing_snapshot = mismatch["missing_snapshot"]
+            hub_latest_snapshot = mismatch["hub_latest_snapshot"]
+            hub_latest_timestamp = mismatch["hub_latest_timestamp"]
+            target_latest_timestamp = mismatch.get("target_latest_timestamp")
 
-            pair_key = (source_system_id, target_system_id, dataset)
-            allowed_latest = allowed_latest_by_pair.get(pair_key)
+            # Get system info for logging
+            hub_system = self.system_repo.get(hub_system_id)
+            target_system = self.system_repo.get(target_system_id)
 
-            # If pair appears in sync or nothing is old enough under now-72h, skip.
-            if not allowed_latest:
-                filter_stats["72h_check"] += 1
-                source_hostname = self._get_system_hostname(source_system_id)
-                target_hostname = self._get_system_hostname(target_system_id)
-                logger.debug(
-                    "72h_check: Skipping %s -> %s (dataset=%s) - systems appear in sync (no snapshots older than 72h)",
-                    source_hostname,
-                    target_hostname,
-                    dataset,
-                )
-                continue
-
-            # Also skip mismatches whose snapshot is newer than the allowed latest.
-            if missing_snapshot > allowed_latest:
-                filter_stats["72h_check"] += 1
-                source_hostname = self._get_system_hostname(source_system_id)
-                target_hostname = self._get_system_hostname(target_system_id)
-                logger.debug(
-                    "72h_check: Skipping snapshot %s for dataset=%s (%s -> %s) - newer than allowed_latest=%s",
-                    missing_snapshot,
-                    dataset,
-                    source_hostname,
-                    target_hostname,
-                    allowed_latest,
-                )
-                continue
-
-            # Get source system for SSH details
-            source_system = self.system_repo.get(source_system_id)
-            if not source_system:
-                filter_stats["missing_source_system"] += 1
+            if not hub_system or not target_system:
                 logger.warning(
-                    "[FILTER] missing_source_system: Skipping mismatch for dataset=%s snapshot=%s "
-                    "source_system=%s target_system=%s. Source system not found.",
-                    dataset,
-                    missing_snapshot,
-                    source_system_id,
-                    target_system_id,
+                    "Skipping mismatch for dataset %s: hub or target system not found", dataset
                 )
                 continue
 
-            # Find snapshot_id and pool from source system
+            hub_hostname = hub_system.hostname
+            target_hostname = target_system.hostname
+
+            # Check 72-hour window: target must be more than 72 hours behind hub
+            if target_latest_timestamp:
+                time_diff = hub_latest_timestamp - target_latest_timestamp
+                hours_behind = time_diff.total_seconds() / 3600
+            else:
+                # Target has no snapshots - definitely out of sync
+                hours_behind = float("inf")
+
+            if hours_behind <= 72.0:
+                # Within 72-hour window - systems are in sync
+                in_sync_count += 1
+                logger.info(
+                    "Dataset %s: Target system '%s' is in sync with hub system '%s' "
+                    "(within 72h window). Hub latest: %s, Target latest: %s",
+                    dataset,
+                    target_hostname,
+                    hub_hostname,
+                    hub_latest_snapshot,
+                    mismatch.get("target_latest_snapshot", "none"),
+                )
+                continue
+
+            # Out of sync by more than 72 hours - generate sync command
+            out_of_sync_count += 1
+            days_behind = hours_behind / 24
+
+            logger.info(
+                "Target system '%s' is behind hub system '%s' for dataset '%s' (%.1f days behind). "
+                "Hub latest: %s, Target latest: %s. Creating sync instructions.",
+                target_hostname,
+                hub_hostname,
+                dataset,
+                days_behind,
+                hub_latest_snapshot,
+                mismatch.get("target_latest_snapshot", "none"),
+            )
+
+            # Find snapshot_id and pool from hub system
             snapshot_id, pool = self._find_snapshot_id_and_pool(
                 dataset=dataset,
-                snapshot_name=mismatch["missing_snapshot"],
-                system_id=source_system_id,
+                snapshot_name=hub_latest_snapshot,
+                system_id=hub_system_id,
             )
 
             if not pool:
-                filter_stats["missing_pool"] += 1
-                self.diagnostics.append(
-                    {
-                        "dataset": dataset,
-                        "reason": f"Could not determine pool for snapshot {mismatch['missing_snapshot']} on source system {source_system_id}.",
-                        "skipped_action": "generate_sync_command",
-                    }
-                )
                 logger.warning(
-                    "[FILTER] missing_pool: Skipping mismatch for dataset=%s snapshot=%s "
-                    "source_system=%s target_system=%s. Could not determine pool for snapshot.",
+                    "Could not determine pool for snapshot %s on hub system %s for dataset %s",
+                    hub_latest_snapshot,
+                    hub_hostname,
                     dataset,
-                    missing_snapshot,
-                    source_system_id,
-                    target_system_id,
                 )
                 continue
 
-            # Check if incremental send is possible
+            # Find incremental base (last common midnight snapshot)
             incremental_base = self._find_incremental_base(
                 dataset=dataset,
                 target_system_id=target_system_id,
-                source_system_id=source_system_id,
+                source_system_id=hub_system_id,
             )
             is_incremental = incremental_base is not None
 
-            # Determine target system and pool
-            sync_command = None
-            target_system = self.system_repo.get(target_system_id)
-            if not target_system:
-                filter_stats["missing_target_system"] += 1
-                logger.warning(
-                    "[FILTER] missing_target_system: Skipping mismatch for dataset=%s snapshot=%s "
-                    "source_system=%s target_system=%s. Target system not found.",
-                    dataset,
-                    missing_snapshot,
-                    source_system_id,
-                    target_system_id,
-                )
-                continue
+            # Get target pool
             target_pool = self._get_target_pool(dataset, target_system_id)
+            if not target_pool:
+                # Target has no snapshots yet - will need full send
+                target_pool = pool  # Use hub's pool as fallback
 
-            # Generate sync command if target SSH details and pool are available
-            if target_system and target_system.ssh_hostname and target_pool:
+            # Generate sync command
+            sync_command = None
+            if target_system.ssh_hostname:
                 try:
                     if is_incremental and incremental_base:
                         sync_command = SSHCommandGenerator.generate_incremental_sync_command(
                             pool=pool,
                             dataset=dataset,
-                            snapshot_name=mismatch["missing_snapshot"],
+                            snapshot_name=hub_latest_snapshot,
                             incremental_base=incremental_base,
                             target_ssh_hostname=target_system.ssh_hostname,
                             target_pool=target_pool,
                             target_dataset=dataset,
                         )
+                        logger.info("Creating incremental sync command: %s", sync_command)
                     else:
                         sync_command = SSHCommandGenerator.generate_full_sync_command(
                             pool=pool,
                             dataset=dataset,
-                            snapshot_name=mismatch["missing_snapshot"],
+                            snapshot_name=hub_latest_snapshot,
                             target_ssh_hostname=target_system.ssh_hostname,
                             target_pool=target_pool,
                             target_dataset=dataset,
                         )
+                        logger.info("Creating full sync command: %s", sync_command)
                 except (ValueError, TypeError, AttributeError) as e:
-                    filter_stats["command_generation_failed"] += 1
-                    logger.warning(
-                        "[FILTER] command_generation_failed: Failed to generate sync command for "
-                        "dataset=%s snapshot=%s source_system=%s target_system=%s: %s",
-                        dataset,
-                        missing_snapshot,
-                        source_system_id,
-                        target_system_id,
-                        e,
-                    )
-                    self.diagnostics.append(
-                        {
-                            "dataset": dataset,
-                            "reason": f"Failed to generate sync command: {e}",
-                            "skipped_action": "generate_sync_command",
-                        }
-                    )
-            elif target_system and not target_pool:
-                # Orphan dataset scenario: target has no snapshots yet
-                orphan_key = (dataset, target_system_id)
-                if (
-                    self.settings.suppress_orphan_dataset_logs
-                    and orphan_key in self._orphan_datasets_logged
-                ):
-                    # Skip repeated logging/diagnostics but still count it
-                    filter_stats["orphan_dataset"] += 1
-                else:
-                    filter_stats["orphan_dataset"] += 1
-                    self.diagnostics.append(
-                        {
-                            "dataset": dataset,
-                            "reason": f"Target system {target_system_id} has no snapshots for dataset {dataset} yet (orphan).",
-                            "skipped_action": "generate_sync_command",
-                        }
-                    )
-                    logger.warning(
-                        "[FILTER] orphan_dataset: Skipping mismatch for dataset=%s snapshot=%s "
-                        "source_system=%s target_system=%s. Target has no snapshots yet (orphan). "
-                        "Suppressed=%s",
-                        dataset,
-                        missing_snapshot,
-                        source_system_id,
-                        target_system_id,
-                        self.settings.suppress_orphan_dataset_logs,
-                    )
-                    self._orphan_datasets_logged.add(orphan_key)
+                    logger.warning("Failed to generate sync command for dataset %s: %s", dataset, e)
+                    continue
 
             action = {
                 "action_type": "sync_snapshot",
@@ -600,59 +377,35 @@ class SyncCoordinationService:
                 "target_pool": target_pool,
                 "dataset": dataset,
                 "target_system_id": mismatch["target_system_id"],
-                "source_system_id": mismatch["source_system_ids"][0],  # Use first available
-                "snapshot_name": mismatch["missing_snapshot"],
+                "source_system_id": str(hub_system_id),
+                "snapshot_name": hub_latest_snapshot,
                 "snapshot_id": str(snapshot_id) if snapshot_id else None,
-                "priority": mismatch["priority"],
+                "priority": 10,  # Simple priority - can be enhanced later
                 "estimated_size": self._estimate_snapshot_size(
                     dataset=dataset,
-                    snapshot_name=mismatch["missing_snapshot"],
-                    source_system_id=source_system_id,
+                    snapshot_name=hub_latest_snapshot,
+                    source_system_id=hub_system_id,
                 ),
-                "source_ssh_hostname": source_system.ssh_hostname,
-                "source_ssh_user": source_system.ssh_user,
-                "source_ssh_port": source_system.ssh_port,
+                "source_ssh_hostname": hub_system.ssh_hostname,
+                "source_ssh_user": hub_system.ssh_user,
+                "source_ssh_port": hub_system.ssh_port,
                 "target_ssh_hostname": target_system.ssh_hostname if target_system else None,
                 "sync_command": sync_command,
                 "incremental_base": incremental_base,
                 "is_incremental": is_incremental,
             }
             actions.append(action)
-            filter_stats["passed"] += 1
 
-        # Log filter statistics
-        total_processed = sum(filter_stats.values())
+        # Summary logging
+        total_evaluated = in_sync_count + out_of_sync_count
         logger.info(
-            "Sync action filter statistics for sync group %s: "
-            "Total mismatches processed: %d, "
-            "Filtered by 72h_check: %d, "
-            "Filtered by missing_source_system: %d, "
-            "Filtered by missing_pool: %d, "
-            "Filtered by missing_target_system: %d, "
-            "Filtered by orphan_dataset: %d, "
-            "Filtered by command_generation_failed: %d, "
-            "Passed (actions created): %d",
-            sync_group_id,
-            total_processed,
-            filter_stats["72h_check"],
-            filter_stats["missing_source_system"],
-            filter_stats["missing_pool"],
-            filter_stats["missing_target_system"],
-            filter_stats["orphan_dataset"],
-            filter_stats["command_generation_failed"],
-            filter_stats["passed"],
+            "Summary: %d datasets evaluated, %d in sync (within 72h window), "
+            "%d out of sync, %d sync commands generated",
+            total_evaluated,
+            in_sync_count,
+            out_of_sync_count,
+            len(actions),
         )
-
-        if filter_stats["72h_check"] > 0:
-            logger.warning(
-                "%d mismatches were filtered by the 72-hour check. "
-                "This may indicate systems appear in sync based on latest midnight snapshots "
-                "even though intermediate snapshots are missing.",
-                filter_stats["72h_check"],
-            )
-
-        # Sort by priority (higher priority first)
-        actions.sort(key=lambda x: x["priority"], reverse=True)
 
         return actions
 
@@ -1055,47 +808,6 @@ class SyncCoordinationService:
             for snapshot in snapshots:
                 datasets.add(snapshot.dataset)
         return list(datasets)
-
-    def _find_systems_with_snapshot(
-        self, dataset: str, snapshot_name: str, system_ids: List[UUID]
-    ) -> List[UUID]:
-        """Find which systems have a specific snapshot."""
-        systems_with_snapshot = []
-        for system_id in system_ids:
-            snapshots = self.snapshot_repo.get_by_dataset(dataset=dataset, system_id=system_id)
-            for snapshot in snapshots:
-                if self.comparison_service.extract_snapshot_name(snapshot.name) == snapshot_name:
-                    systems_with_snapshot.append(system_id)
-                    break
-        return systems_with_snapshot
-
-    def _calculate_priority(self, snapshot_name: str, comparison: Dict) -> int:
-        """
-        Calculate priority for syncing a snapshot.
-
-        Higher priority = more important to sync.
-        """
-        priority = 10  # Base priority
-
-        # If it's the latest snapshot, increase priority
-        latest_snapshots = comparison.get("latest_snapshots", {})
-        for latest_info in latest_snapshots.values():
-            latest_snapshot_name = self.comparison_service.extract_snapshot_name(
-                latest_info.get("name", "")
-            )
-            if latest_snapshot_name == snapshot_name:
-                priority += 20
-                break
-
-        # If many systems are missing it, increase priority
-        missing_count = sum(
-            1
-            for missing_list in comparison.get("missing_snapshots", {}).values()
-            if snapshot_name in missing_list
-        )
-        priority += missing_count * 5
-
-        return priority
 
     def _find_snapshot_id_and_pool(
         self, dataset: str, snapshot_name: str, system_id: UUID
