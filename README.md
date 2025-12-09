@@ -177,9 +177,30 @@ Based on the architecture and requirements outlined above, here's the step-by-st
 
 ## Getting Started
 
+### Documentation
+
+ZFS Sync v2.0 includes comprehensive documentation for different use cases:
+
+**📚 Documentation on GitHub Pages** (if enabled) | **📖 [View in Repository](docs/)**
+
+- **[SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** - Complete setup instructions for technical users, including installation, configuration, sync group creation, and SSH setup
+- **[HOW_TO_USE.md](HOW_TO_USE.md)** - Beginner-friendly guide with API usage examples and basic workflows
+- **[OPERATIONS_GUIDE.md](docs/OPERATIONS_GUIDE.md)** - Production operations, automation examples, maintenance tasks, and backup/recovery
+- **[TROUBLESHOOTING_GUIDE.md](docs/TROUBLESHOOTING_GUIDE.md)** - Systematic diagnostic steps and solutions for common issues
+- **[DASHBOARD_GUIDE.md](docs/DASHBOARD_GUIDE.md)** - Web dashboard usage and features
+- **[IMPROVEMENTS_ROADMAP.md](docs/IMPROVEMENTS_ROADMAP.md)** - Future improvements and feature roadmap
+- **[QUICK_START.md](QUICK_START.md)** - Fast setup guide for Linux systems
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and design documentation
+
+> **Note**: Documentation is available in this repository. If GitHub Pages is enabled (Settings > Pages), documentation is also available at `https://your-username.github.io/zfs_sync/` with a better reading experience. See [docs/GITHUB_PAGES_SETUP.md](docs/GITHUB_PAGES_SETUP.md) for setup instructions.
+
 ### For End Users
 
-**New to ZFS Sync?** Start with the **[How to Use Guide](HOW_TO_USE.md)** - a beginner-friendly walkthrough that explains how to set up and use the system step-by-step.
+**New to ZFS Sync?**
+- **First-time setup**: Start with **[SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** for complete setup instructions
+- **API usage**: See **[HOW_TO_USE.md](HOW_TO_USE.md)** for API examples and workflows
+- **Daily operations**: See **[OPERATIONS_GUIDE.md](docs/OPERATIONS_GUIDE.md)** for automation and maintenance
+- **Issues?**: Check **[TROUBLESHOOTING_GUIDE.md](docs/TROUBLESHOOTING_GUIDE.md)** for solutions
 
 ### For Developers
 
@@ -601,6 +622,10 @@ docker inspect zfs-sync | grep -A 10 Health
 # Manual health check
 curl http://localhost:8000/api/v1/health
 ```
+
+#### Documentation
+
+For detailed troubleshooting, see **[TROUBLESHOOTING_GUIDE.md](docs/TROUBLESHOOTING_GUIDE.md)**.
 
 #### Troubleshooting
 

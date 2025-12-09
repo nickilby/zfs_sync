@@ -2,6 +2,18 @@
 
 A beginner-friendly guide to using the ZFS Sync witness service for keeping snapshots synchronized across multiple systems.
 
+## Documentation Overview
+
+This guide provides API usage examples and basic workflows. For more detailed information, see:
+
+**📚 Full Documentation** - Also available on GitHub Pages if enabled (see repository Settings > Pages)
+
+- **[SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** - Complete setup instructions, configuration, and sync group creation
+- **[OPERATIONS_GUIDE.md](docs/OPERATIONS_GUIDE.md)** - Daily operations, automation, and maintenance
+- **[TROUBLESHOOTING_GUIDE.md](docs/TROUBLESHOOTING_GUIDE.md)** - Systematic issue resolution
+- **[DASHBOARD_GUIDE.md](docs/DASHBOARD_GUIDE.md)** - Web dashboard usage
+- **[IMPROVEMENTS_ROADMAP.md](docs/IMPROVEMENTS_ROADMAP.md)** - Future improvements and features
+
 ## Table of Contents
 
 1. [What is ZFS Sync?](#what-is-zfs-sync)
@@ -468,7 +480,11 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 
 ## Troubleshooting
 
-### Problem: "API key required" error
+For comprehensive troubleshooting guidance, see **[TROUBLESHOOTING_GUIDE.md](docs/TROUBLESHOOTING_GUIDE.md)**.
+
+### Quick Fixes
+
+**Problem: "API key required" error**
 
 **Solution:** Make sure you're including the API key in the request header:
 
@@ -476,7 +492,7 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 -H "X-API-Key: your-api-key-here"
 ```
 
-### Problem: System shows as "offline"
+**Problem: System shows as "offline"**
 
 **Solution:**
 
@@ -484,7 +500,7 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 2. Verify the heartbeat timeout setting (default: 300 seconds)
 3. Send a heartbeat manually to test
 
-### Problem: Can't see snapshots from other systems
+**Problem: Can't see snapshots from other systems**
 
 **Solution:**
 
@@ -492,7 +508,7 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 2. Verify snapshots are being reported correctly
 3. Check the sync group is enabled
 
-### Problem: "System not found" error
+**Problem: "System not found" error**
 
 **Solution:**
 
@@ -500,13 +516,15 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 2. Check the system exists: `GET /api/v1/systems/{system_id}`
 3. Make sure you registered the system first
 
-### Problem: Server won't start
+**Problem: Server won't start**
 
 **Solution:**
 
 1. Check if port 8000 is already in use
 2. Verify all dependencies are installed: `pip install -r requirements.txt`
 3. Check the logs for error messages
+
+For more detailed troubleshooting, including diagnostic steps, log analysis, and common issues, see **[TROUBLESHOOTING_GUIDE.md](docs/TROUBLESHOOTING_GUIDE.md)**.
 
 ---
 
@@ -549,9 +567,13 @@ Save this as `zfs_sync_report.sh`, make it executable (`chmod +x zfs_sync_report
 
 ## Getting Help
 
-- Check the API documentation at `http://localhost:8000/docs`
-- Review the main README.md for technical details
-- Check server logs for error messages
+- **API Documentation**: Interactive API docs at `http://localhost:8000/docs`
+- **Setup Guide**: See [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for detailed setup instructions
+- **Operations Guide**: See [OPERATIONS_GUIDE.md](docs/OPERATIONS_GUIDE.md) for automation and maintenance
+- **Troubleshooting**: See [TROUBLESHOOTING_GUIDE.md](docs/TROUBLESHOOTING_GUIDE.md) for systematic issue resolution
+- **Dashboard Guide**: See [DASHBOARD_GUIDE.md](docs/DASHBOARD_GUIDE.md) for web interface usage
+- **Main README**: Review [README.md](README.md) for technical details and deployment
+- **Server Logs**: Check server logs for error messages
 
 ---
 
