@@ -3,7 +3,7 @@
 
 # Application settings
 app_name: "zfs-sync"
-app_version: "0.1.78"
+app_version: "0.2.0"
 debug: false
 log_level: "INFO"
 
