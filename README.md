@@ -234,19 +234,21 @@ python -m zfs_sync
 
 #### Automatic Version Incrementing
 
-The project includes a Git pre-commit hook that automatically increments the patch version (e.g., 0.1.4 → 0.1.5) before each commit. The hook:
+The project includes a Git pre-commit hook that automatically increments the patch version (e.g., 0.2.0 → 0.2.1) before each commit. The hook:
 
-- Reads the current version from `pyproject.toml` or `zfs_sync/__init__.py`
-- Increments the patch version number
+- Reads the current version from `zfs_sync/__init__.py` or `pyproject.toml`
+- Increments the patch version number (0.2.0 → 0.2.1 → 0.2.2, etc.)
 - Updates all version files:
   - `pyproject.toml`
   - `zfs_sync/__init__.py`
-  - `zfs_sync/config/settings.py`
   - `config/zfs_sync.yaml.example`
-- Automatically stages the updated version files
+- Note: `zfs_sync/config/settings.py` imports version from `__init__.py`, so it doesn't need separate updating
+- The pre-commit framework automatically stages the updated version files
 - Includes the version bump in your commit
 
-**Note:** The hook is located at `.git/hooks/pre-commit` and runs automatically on every commit. If you need to skip version incrementing for a specific commit, use `git commit --no-verify`.
+**Current Version Format:** Version 2.x uses `0.2.x` format (0.2.0, 0.2.1, 0.2.2, etc.)
+
+**Note:** The hook runs automatically on every commit via the pre-commit framework. If you need to skip version incrementing for a specific commit, use `git commit --no-verify`.
 
 #### Option 2: Docker Development (Recommended for Testing Production-like Environment)
 
