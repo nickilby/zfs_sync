@@ -3,7 +3,7 @@
 from typing import List
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SyncGroup(BaseModel):
@@ -22,10 +22,8 @@ class SyncGroup(BaseModel):
     )
     metadata: dict = Field(default_factory=dict, description="Additional sync group metadata")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174002",
                 "name": "production-backup-group",
@@ -37,3 +35,4 @@ class SyncGroup(BaseModel):
                 "sync_interval_seconds": 3600,
             }
         }
+    )

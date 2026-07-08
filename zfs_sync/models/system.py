@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class System(BaseModel):
@@ -27,10 +27,8 @@ class System(BaseModel):
     api_key: Optional[str] = Field(default=None, description="API key for authentication")
     metadata: dict = Field(default_factory=dict, description="Additional system metadata")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "hostname": "zfs-server-01",
@@ -40,3 +38,4 @@ class System(BaseModel):
                 "metadata": {"pool_count": 3, "zfs_version": "2.1.0"},
             }
         }
+    )

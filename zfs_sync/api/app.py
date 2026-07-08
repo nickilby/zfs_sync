@@ -1,5 +1,7 @@
 """FastAPI application setup."""
 
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -19,6 +21,81 @@ logger = get_logger(__name__)
 
 # Settings already loaded above for logging setup
 
+def _running_under_pytest() -> bool:
+    """Return True when running under pytest."""
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+async def _run_startup(app_instance: FastAPI) -> None:
+    """Initialize application resources."""
+    logger.info("Starting %s v%s", settings.app_name, settings.app_version)
+    logger.info("Debug mode: %s", settings.debug)
+    logger.info("Database: %s", settings.database_url)
+
+    # Skip validation and database initialization if we're in a test environment
+    # (tests handle their own database setup via fixtures)
+    if _running_under_pytest():
+        logger.info(
+            "Skipping configuration validation and database initialization in test environment"
+        )
+        return
+
+    # Validate configuration before proceeding
+    try:
+        from zfs_sync.config.validation import ConfigurationError, validate_configuration
+
+        validate_configuration(settings)
+        logger.info("Configuration validation passed")
+    except ConfigurationError as exc:
+        logger.error("Configuration validation failed: %s", exc)
+        raise
+
+    # Initialize database
+    from zfs_sync.database import init_db
+
+    init_db()
+    logger.info("Database initialized")
+
+    # Start sync scheduler if enabled
+    if settings.auto_sync_enabled:
+        try:
+            from zfs_sync.services.sync_scheduler import SyncSchedulerService
+
+            scheduler = SyncSchedulerService()
+            await scheduler.start_scheduler()
+            # Store scheduler instance in app state for shutdown
+            app_instance.state.sync_scheduler = scheduler
+            logger.info("Sync scheduler started")
+        except (RuntimeError, ValueError, OSError) as exc:
+            logger.error("Failed to start sync scheduler: %s", exc, exc_info=True)
+    else:
+        logger.info("Automatic sync is disabled")
+
+
+async def _run_shutdown(app_instance: FastAPI) -> None:
+    """Cleanup application resources."""
+    logger.info("Shutting down %s", settings.app_name)
+
+    # Stop sync scheduler if it was started
+    if hasattr(app_instance.state, "sync_scheduler"):
+        try:
+            scheduler = app_instance.state.sync_scheduler
+            await scheduler.stop_scheduler()
+            logger.info("Sync scheduler stopped")
+        except (RuntimeError, ValueError, OSError) as exc:
+            logger.error("Error stopping sync scheduler: %s", exc, exc_info=True)
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    """Manage FastAPI startup/shutdown lifecycle."""
+    await _run_startup(app_instance)
+    try:
+        yield
+    finally:
+        await _run_shutdown(app_instance)
+
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.app_name,
@@ -26,6 +103,7 @@ app = FastAPI(
     description="A witness service to keep ZFS snapshots in sync across different platforms",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 
@@ -76,70 +154,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup."""
-    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    logger.info(f"Debug mode: {settings.debug}")
-    logger.info(f"Database: {settings.database_url}")
-
-    # Skip validation and database initialization if we're in a test environment
-    # (tests handle their own database setup via fixtures)
-    import os
-
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        logger.info(
-            "Skipping configuration validation and database initialization in test environment"
-        )
-        return
-
-    # Validate configuration before proceeding
-    try:
-        from zfs_sync.config.validation import validate_configuration
-
-        validate_configuration(settings)
-        logger.info("Configuration validation passed")
-    except Exception as e:
-        logger.error(f"Configuration validation failed: {e}")
-        raise
-
-    # Initialize database
-    from zfs_sync.database import init_db
-
-    init_db()
-    logger.info("Database initialized")
-
-    # Start sync scheduler if enabled
-    if settings.auto_sync_enabled:
-        try:
-            from zfs_sync.services.sync_scheduler import SyncSchedulerService
-
-            scheduler = SyncSchedulerService()
-            await scheduler.start_scheduler()
-            # Store scheduler instance in app state for shutdown
-            app.state.sync_scheduler = scheduler
-            logger.info("Sync scheduler started")
-        except Exception as e:
-            logger.error(f"Failed to start sync scheduler: {e}", exc_info=True)
-    else:
-        logger.info("Automatic sync is disabled")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info(f"Shutting down {settings.app_name}")
-
-    # Stop sync scheduler if it was started
-    if hasattr(app.state, "sync_scheduler"):
-        try:
-            scheduler = app.state.sync_scheduler
-            await scheduler.stop_scheduler()
-            logger.info("Sync scheduler stopped")
-        except Exception as e:
-            logger.error(f"Error stopping sync scheduler: {e}", exc_info=True)
-
-
 # Import routes (must be after app creation)
 from zfs_sync.api.routes import (  # noqa: E402
     conflicts,
@@ -176,13 +190,13 @@ for route_name, route_module, tag in routers_to_include:
         if router is None:
             raise ValueError(f"Router for {route_name} is None")
         app.include_router(router, prefix=settings.api_prefix, tags=[tag])
-        logger.debug(f"Successfully included router: {route_name}")
-    except Exception as e:
-        logger.error(f"Failed to include router {route_name}: {e}")
+        logger.debug("Successfully included router: %s", route_name)
+    except Exception as exc:
+        logger.error("Failed to include router %s: %s", route_name, exc)
         raise RuntimeError(
-            f"Failed to include router '{route_name}': {e}. "
+            f"Failed to include router '{route_name}': {exc}. "
             f"This is a configuration error that must be fixed."
-        ) from e
+        ) from exc
 
 
 # Root route - redirect to API docs
@@ -205,17 +219,17 @@ assets_mounted = False
 if assets_dir.exists() and any(assets_dir.iterdir()):
     try:
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-        logger.info(f"Mounted static assets from {assets_dir}")
+        logger.info("Mounted static assets from %s", assets_dir)
         assets_mounted = True
-    except Exception as e:
-        logger.warning(f"Could not mount assets directory: {e}")
+    except (RuntimeError, OSError) as exc:
+        logger.warning("Could not mount assets directory: %s", exc)
 
 if static_dir.exists() and any(static_dir.iterdir()):
     try:
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-        logger.info(f"Mounted static files from {static_dir}")
-    except Exception as e:
-        logger.warning(f"Could not mount static directory: {e}")
+        logger.info("Mounted static files from %s", static_dir)
+    except (RuntimeError, OSError) as exc:
+        logger.warning("Could not mount static directory: %s", exc)
 
 
 # Handle favicon requests gracefully
@@ -234,7 +248,7 @@ app.include_router(dashboard.router, tags=["Dashboard"])
 if not assets_mounted:
 
     @app.get("/assets/{path:path}")
-    async def assets_catchall(path: str):
+    async def assets_catchall(_path: str):
         """Handle asset requests when assets directory is not available."""
         from fastapi.responses import Response
 

@@ -2,6 +2,27 @@
 
 A witness service to keep ZFS snapshots in sync across different platforms and systems.
 
+## Current Status
+
+`zfs_sync` is a **working alpha**. The core witness workflow is implemented and tested, and the
+project is currently focused on hardening for broader operational use.
+
+### Implemented Today
+
+- System registration and API key authentication
+- Snapshot ingestion and state tracking
+- Sync-group management (including directional hub-and-spoke mode)
+- Sync mismatch detection and incremental sync instruction generation
+- Conflict detection and conflict reporting
+- Health and dashboard API routes
+- CI workflow with tests, linting, Docker build, and dependency/security checks
+
+### Current Hardening Priorities
+
+- Expand unit and integration coverage for scheduler/validation/runtime bootstrap paths
+- Reduce framework deprecations and compatibility warnings (FastAPI/SQLAlchemy/Pydantic)
+- Strengthen operational runbooks and troubleshooting guidance
+
 ## Overview
 
 `zfs_sync` is designed to coordinate and synchronize ZFS snapshots across multiple systems, ensuring data consistency and enabling reliable backup and replication workflows. The application acts as a centralized witness that tracks snapshot states and coordinates synchronization operations between different ZFS pools and platforms.
@@ -15,7 +36,7 @@ The primary goal of this application is to:
 - **Witness Pattern Implementation**: Act as a centralized witness service that tracks snapshot states and coordinates synchronization without directly managing the ZFS pools
 - **Reliable Backup Workflows**: Enable reliable backup and disaster recovery scenarios by ensuring snapshots are synchronized before critical operations
 
-## Planned Features
+## Core Features
 
 ### Core Functionality
 
@@ -48,9 +69,9 @@ For comprehensive architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE
 - **Data Replication**: Coordinate snapshot creation before replication operations
 - **Backup Verification**: Verify that backup snapshots are consistent across systems
 
-## Implementation Plan
+## Engineering Roadmap
 
-Based on the architecture and requirements outlined above, here's the step-by-step plan to build `zfs_sync`:
+The sections below describe the roadmap used to move from alpha to production-hardening:
 
 ### Phase 1: Foundation & Project Setup
 

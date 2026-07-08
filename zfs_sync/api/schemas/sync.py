@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from zfs_sync.models import SyncStatus
 
@@ -32,11 +32,7 @@ class SyncStateResponse(BaseModel):
             return {}
         return v if isinstance(v, dict) else {}
 
-    class Config:
-        """Pydantic configuration."""
-
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class SyncActionResponse(BaseModel):

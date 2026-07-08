@@ -5,7 +5,7 @@ from enum import Enum
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SyncStatus(str, Enum):
@@ -35,10 +35,8 @@ class SyncState(BaseModel):
     error_message: Optional[str] = Field(default=None, description="Error message if sync failed")
     metadata: dict = Field(default_factory=dict, description="Additional sync state metadata")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174003",
                 "sync_group_id": "123e4567-e89b-12d3-a456-426614174002",
@@ -52,3 +50,4 @@ class SyncState(BaseModel):
                 "last_check": "2024-01-15T11:30:00Z",
             }
         }
+    )

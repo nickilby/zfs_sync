@@ -28,6 +28,12 @@ pytest
 pytest --cov=zfs_sync --cov-report=html
 ```
 
+### Run with terminal coverage summary
+
+```bash
+pytest --cov=zfs_sync --cov-report=term-missing
+```
+
 ### Run only unit tests
 
 ```bash
@@ -46,6 +52,12 @@ pytest tests/integration/
 pytest tests/unit/test_services/test_conflict_resolution.py
 ```
 
+### Run only hardening-focused unit tests
+
+```bash
+pytest tests/unit/test_config/test_validation.py tests/unit/test_services/test_sync_scheduler.py tests/unit/test_services/test_sync_queries.py -q
+```
+
 ### Run with verbose output
 
 ```bash
@@ -57,7 +69,7 @@ pytest -v
 The `conftest.py` file provides shared fixtures:
 
 - `verify_database_setup`: Autouse fixture that verifies database models are registered (session-scoped)
-- `test_db`: In-memory SQLite database session with automatic table creation and verification (function-scoped)
+- `test_db`: File-based SQLite database session with automatic table creation and verification (function-scoped)
 - `test_client`: FastAPI TestClient with database dependency override and table verification
 - `sample_system_data`: Sample data for creating test systems
 - `sample_snapshot_data`: Sample data for creating test snapshots
@@ -67,9 +79,9 @@ The `conftest.py` file provides shared fixtures:
 
 The test suite uses a robust database initialization approach:
 
-1. **Model Registration Verification**: An autouse fixture verifies all database models are properly registered with SQLAlchemy's metadata before any tests run.
+1. **Model Registration Verification**: An autouse fixture verifies all database models are properly registered with SQLAlchemy metadata before any tests run.
 
-2. **Table Creation**: Each test gets a fresh in-memory SQLite database with all tables automatically created via the `test_db` fixture.
+2. **Table Creation**: Each test gets a fresh SQLite database with all tables automatically created via the `test_db` fixture.
 
 3. **Table Verification**: Before each test runs, the fixtures verify that all expected tables exist in the database, providing clear error messages if something goes wrong.
 
@@ -133,9 +145,9 @@ def test_create_system(test_client):
 
 ## Notes
 
-- All tests use an in-memory SQLite database for speed and isolation
+- All tests use a temporary file-based SQLite database for isolation across multiple DB connections
 - Each test function gets a fresh database session with all tables pre-created
 - The test client automatically overrides the database dependency
 - Database tables are verified to exist before each test runs
 - If database initialization fails, you'll get clear error messages indicating which tables are missing
-- The app startup event is automatically disabled during tests to prevent database conflicts
+- Application startup initialization is skipped under pytest to prevent database conflicts

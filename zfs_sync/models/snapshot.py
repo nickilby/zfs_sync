@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Snapshot(BaseModel):
@@ -25,10 +25,8 @@ class Snapshot(BaseModel):
     )
     metadata: dict = Field(default_factory=dict, description="Additional snapshot metadata")
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174001",
                 "name": "backup-20240115-103000",
@@ -41,3 +39,4 @@ class Snapshot(BaseModel):
                 "used": 1048576,
             }
         }
+    )
