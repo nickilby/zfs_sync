@@ -595,13 +595,22 @@ class TestSyncMismatchDetection:
             f"Diagnostics: {source_instructions.get('diagnostics', [])}"
         )
 
-        # Hub should NOT receive instructions - it's the source, not the target
-        # In one-way sync, only targets receive instructions on what to receive
-        assert hub_instructions["dataset_count"] == 0, (
-            f"Hub system should NOT receive instructions (it's the source, not the target). "
+        # Hub (source) SHOULD receive instructions to send to targets
+        # Sync commands run on the source system, so the hub needs instructions on what to send
+        assert hub_instructions["dataset_count"] > 0, (
+            f"Hub system (source) should receive instructions to send snapshots to targets. "
             f"Got {hub_instructions['dataset_count']} datasets. "
             f"Diagnostics: {hub_instructions.get('diagnostics', [])}"
         )
+
+        # Verify hub instructions are for sending (source role)
+        hub_dataset = hub_instructions["datasets"][0]
+        assert (
+            hub_dataset["target_ssh_hostname"] is not None
+        ), "Hub instructions should include target_ssh_hostname for sending"
+        assert (
+            hub_dataset["ending_snapshot"] is not None
+        ), "Hub instructions should include ending_snapshot to send"
 
     def test_orphaned_snapshots_filter_mismatches(self, test_db):
         """

@@ -1,0 +1,51 @@
+# Jekyll configuration for GitHub Pages
+# Note: Update 'baseurl' to match your repository name
+# If your repo is 'username/zfs_sync', baseurl should be '/zfs_sync'
+# If your repo is 'username/zfs-sync', baseurl should be '/zfs-sync'
+title: ZFS Sync Documentation
+description: Documentation for ZFS Sync - A witness service to keep ZFS snapshots in sync across different platforms and systems
+url: https://github.io
+baseurl: /zfs_sync
+
+# Jekyll settings
+markdown: kramdown
+highlighter: rouge
+theme: minima
+
+# Exclude files from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - .git
+  - .github
+  - README.md
+  - LICENSE
+  - Makefile
+  - requirements.txt
+  - requirements-dev.txt
+  - setup.sh
+  - Dockerfile
+  - docker-compose.yml
+  - docker-compose.prod.yml
+  - pyproject.toml
+  - .pre-commit-config.yaml
+  - .gitignore
+  - .dockerignore
+  - .bandit
+  - test_*.py
+  - scripts/
+  - tests/
+  - zfs_sync/
+  - alembic/
+  - config/
+  - docker/
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+
+# Navigation (optional - can be customized)
+nav_exclude: false

@@ -231,23 +231,113 @@ class SyncCoordinationService:
         self, sync_group_id: UUID, system_id: Optional[UUID] = None
     ) -> List[Dict[str, Any]]:
         """
-        Generate sync actions for systems that are behind hub.
+        Determine sync actions needed for a sync group or specific system.
 
-        Logic:
-        1. Get mismatches (hub → target only)
-        2. For each mismatch:
-           a. Check if target is >72h behind hub's latest midnight snapshot
-           b. If yes: Find incremental base (last common midnight snapshot)
-           c. Generate sync command (incremental if base exists, full if not)
-           d. Log human-readable message
-        3. Return actions
+        For bidirectional sync groups, when a system_id is provided:
+        - Includes mismatches where the system is the SOURCE (to send snapshots)
+        - Includes mismatches where the system is the TARGET (to receive snapshots)
+
+        Note: Sync commands are designed to run on the SOURCE system.
+        Format: zfs send ... | ssh target "zfs receive ..."
+        Source systems should request sync instructions to send snapshots.
+
+        Returns a list of actions that should be performed.
         """
         mismatches = self.detect_sync_mismatches(sync_group_id)
+        logger.debug("Found %d total mismatches", len(mismatches))
 
-        # Filter to specific system if requested
         if system_id:
-            # For target systems, filter mismatches where system is the TARGET
-            mismatches = [m for m in mismatches if UUID(m["target_system_id"]) == system_id]
+            # Filter to actions for specific system
+            mismatches_before_filter = len(mismatches)
+
+            # Check if this is a hub system in directional sync
+            sync_group = self.sync_group_repo.get(sync_group_id)
+            is_hub_in_directional = (
+                sync_group and sync_group.directional and sync_group.hub_system_id == system_id
+            )
+
+            if is_hub_in_directional:
+                # For hub in directional sync, filter mismatches where hub is the SOURCE
+                # Hub needs instructions on what to SEND TO sources
+                mismatches = [
+                    m for m in mismatches if str(system_id) in m.get("source_system_ids", [])
+                ]
+                logger.debug(
+                    "Filtered mismatches for hub system %s (as source): %d -> %d",
+                    system_id,
+                    mismatches_before_filter,
+                    len(mismatches),
+                )
+            else:
+                # For bidirectional sync (or non-hub systems), include mismatches where:
+                # 1. System is the SOURCE (to send snapshots to targets) - PRIMARY
+                # 2. System is the TARGET (to receive snapshots from sources) - SECONDARY
+                #
+                # Note: Sync commands are designed to run on the SOURCE system.
+                # Format: zfs send ... | ssh target "zfs receive ..."
+                # Source systems should request instructions to send, not target systems.
+                source_mismatches = [
+                    m for m in mismatches if str(system_id) in m.get("source_system_ids", [])
+                ]
+                target_mismatches = [
+                    m for m in mismatches if UUID(m["target_system_id"]) == system_id
+                ]
+                mismatches = source_mismatches + target_mismatches
+
+                logger.debug(
+                    "Filtered mismatches for system %s (bidirectional sync): %d -> %d "
+                    "(source: %d, target: %d)",
+                    system_id,
+                    mismatches_before_filter,
+                    len(mismatches),
+                    len(source_mismatches),
+                    len(target_mismatches),
+                )
+
+            if mismatches_before_filter > 0 and len(mismatches) == 0:
+                all_mismatches = self.detect_sync_mismatches(sync_group_id)
+                target_systems = {m["target_system_id"] for m in all_mismatches}
+                source_systems = set()
+                for m in all_mismatches:
+                    source_systems.update(m.get("source_system_ids", []))
+                logger.warning(
+                    "No mismatches found for system %s. Mismatches target: %s, sources: %s",
+                    system_id,
+                    target_systems,
+                    source_systems,
+                )
+                if is_hub_in_directional:
+                    logger.info(
+                        "Hub system %s should receive instructions on what to send to sources. "
+                        "Found %d mismatches where hub is source.",
+                        system_id,
+                        len(
+                            [
+                                m
+                                for m in all_mismatches
+                                if str(system_id) in m.get("source_system_ids", [])
+                            ]
+                        ),
+                    )
+                else:
+                    # For bidirectional sync, check both source and target roles
+                    source_count = len(
+                        [
+                            m
+                            for m in all_mismatches
+                            if str(system_id) in m.get("source_system_ids", [])
+                        ]
+                    )
+                    target_count = len(
+                        [m for m in all_mismatches if UUID(m["target_system_id"]) == system_id]
+                    )
+                    logger.info(
+                        "System %s in bidirectional sync: found %d mismatches as source, "
+                        "%d mismatches as target. Sync commands should be executed by source systems.",
+                        system_id,
+                        source_count,
+                        target_count,
+                    )
 
         actions = []
         in_sync_count = 0
@@ -417,6 +507,13 @@ class SyncCoordinationService:
     ) -> Dict[str, Any]:
         """
         Get sync instructions for a system, grouped by dataset.
+
+        For bidirectional sync, source systems should request instructions to send snapshots.
+        The generated sync commands are designed to run on the source system:
+        Format: zfs send ... | ssh target "zfs receive ..."
+
+        Target systems passively receive snapshots via SSH when source systems execute
+        the sync commands.
         """
         logger.info("Getting sync instructions for system %s", system_id)
         self.diagnostics = []  # Reset diagnostics
@@ -521,21 +618,25 @@ class SyncCoordinationService:
             incremental_base = (
                 action.get("incremental_base") if action.get("is_incremental") else None
             )
-            # Source pool is where the snapshot comes from (hub's pool when hub is source)
+            # Source pool is where the snapshot comes from (requesting system's pool when it's the source)
             source_pool = action.get("pool")
             # Target pool is where the snapshot goes to (receiving system's pool)
             target_pool = action.get("target_pool") or source_pool
 
             if entry is None:
                 consolidated[dataset] = {
-                    "pool": source_pool,  # Source pool (hub's pool when hub is sending)
+                    "pool": source_pool,  # Source pool (requesting system's pool when it's the source)
                     "dataset": dataset,
                     "target_pool": target_pool,  # Target pool (receiving system's pool)
                     "target_dataset": dataset,
                     "starting_snapshot": incremental_base,
                     "ending_snapshot": snapshot_name,
-                    "source_ssh_hostname": action.get("source_ssh_hostname"),
-                    "target_ssh_hostname": action.get("target_ssh_hostname"),
+                    "source_ssh_hostname": action.get(
+                        "source_ssh_hostname"
+                    ),  # Source system's SSH hostname
+                    "target_ssh_hostname": action.get(
+                        "target_ssh_hostname"
+                    ),  # Target system's SSH hostname
                     "sync_group_id": action.get("sync_group_id"),
                 }
             else:
@@ -634,7 +735,8 @@ class SyncCoordinationService:
                 if source_pool and target_pool:
                     try:
                         if starting_snapshot:
-                            # Incremental sync command
+                            # Incremental sync command (runs on source system)
+                            # Format: zfs send -c -I base@snapshot ending@snapshot | ssh target "zfs receive ..."
                             command = SSHCommandGenerator.generate_incremental_sync_command(
                                 pool=source_pool,
                                 dataset=dataset,
@@ -646,7 +748,8 @@ class SyncCoordinationService:
                             )
                             commands.append(command)
                         else:
-                            # Full sync command
+                            # Full sync command (runs on source system)
+                            # Format: zfs send -c snapshot | ssh target "zfs receive ..."
                             command = SSHCommandGenerator.generate_full_sync_command(
                                 pool=source_pool,
                                 dataset=dataset,
