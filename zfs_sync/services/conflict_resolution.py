@@ -302,7 +302,7 @@ class ConflictResolutionService:
         if strategy == ConflictResolutionStrategy.USE_MAJORITY:
             # Use the snapshot that appears on most systems
             # For now, use the first system (would need more complex logic for true majority)
-            first_system = list(systems.keys())[0]
+            first_system = next(iter(systems.keys()))
             return self._create_resolution_action(conflict, first_system, "use_majority")
 
         if strategy == ConflictResolutionStrategy.AUTO_RESOLVE:
@@ -322,7 +322,7 @@ class ConflictResolutionService:
         source_info = systems.get(source_system_id, {})
 
         # Determine target systems (all except source)
-        target_systems = [sid for sid in systems.keys() if sid != source_system_id]
+        target_systems = [sid for sid in systems if sid != source_system_id]
 
         return {
             "status": "resolved",
@@ -366,9 +366,8 @@ class ConflictResolutionService:
                 # Check if there's a snapshot with similar name pattern (simplified check)
                 if other_name.startswith(
                     snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name
-                ):
-                    if other_snap.timestamp < snapshot.timestamp:
-                        return True
+                ) and other_snap.timestamp < snapshot.timestamp:
+                    return True
 
         return False
 
@@ -423,7 +422,7 @@ class ConflictResolutionService:
         sync_group_id = UUID(conflict.get("sync_group_id"))
         dataset = conflict.get("dataset")
 
-        for system_id_str in systems_involved.keys():
+        for system_id_str in systems_involved:
             system_id = UUID(system_id_str)
 
             # Update sync state to reflect conflict resolution
@@ -471,7 +470,7 @@ class ConflictResolutionService:
             dataset = conflict.get("dataset")
             sync_group_id = UUID(conflict.get("sync_group_id"))
 
-            for system_id_str in systems.keys():
+            for system_id_str in systems:
                 system_id = UUID(system_id_str)
 
                 sync_service.update_sync_state(

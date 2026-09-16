@@ -383,7 +383,7 @@ Container: zfs-sync
 
 ### Dataset Comparison Strategy
 
-The system uses **pool-agnostic dataset comparison**, meaning datasets are compared by dataset name only, regardless of pool differences. This allows systems with different pool names (e.g., `hqs10p1` vs `hqs7p1`) to synchronize the same logical dataset (e.g., `L1S4DAT1`).
+The system uses **pool-agnostic dataset comparison**, meaning datasets are compared by dataset name only, regardless of pool differences. This allows systems with different pool names (e.g., `hubpool1` vs `spokepool1`) to synchronize the same logical dataset (e.g., `DATA1`).
 
 **Key Points:**
 
@@ -394,8 +394,8 @@ The system uses **pool-agnostic dataset comparison**, meaning datasets are compa
 
 **Example:**
 
-- System A: `hqs10p1/L1S4DAT1@2025-11-26-000000`
-- System B: `hqs7p1/L1S4DAT1@2025-11-04-000000`
+- System A: `hubpool1/DATA1@2025-11-26-000000`
+- System B: `spokepool1/DATA1@2025-11-04-000000`
 - The system recognizes these as the same logical dataset and detects that System B is missing snapshots from `2025-11-04-120000` through `2025-11-26-000000`
 
 ### Mismatch Detection

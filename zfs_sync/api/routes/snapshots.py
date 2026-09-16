@@ -207,7 +207,7 @@ async def compare_snapshots_by_dataset(
 
 @router.get("/snapshots/compare-dataset")
 async def compare_snapshots_by_dataset_name(
-    dataset: str = Query(..., description="Dataset name (pool-agnostic, e.g., 'L1S4DAT1')"),
+    dataset: str = Query(..., description="Dataset name (pool-agnostic, e.g., 'DATA1')"),
     system_ids: List[UUID] = Query(..., description="System IDs to compare"),
     db: Session = Depends(get_db),
 ):

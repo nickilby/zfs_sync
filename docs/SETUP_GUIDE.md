@@ -445,8 +445,8 @@ curl -X POST "http://localhost:8000/api/v1/sync-groups" \
 ZFS Sync uses **pool-agnostic dataset comparison**, meaning systems with different pool names can sync the same logical dataset.
 
 **Example Scenario**:
-- System A: Pool `hqs10p1`, Dataset `L1S4DAT1`
-- System B: Pool `hqs7p1`, Dataset `L1S4DAT1`
+- System A: Pool `hubpool1`, Dataset `DATA1`
+- System B: Pool `spokepool1`, Dataset `DATA1`
 
 These are recognized as the same logical dataset and will sync correctly, even though the pool names differ.
 

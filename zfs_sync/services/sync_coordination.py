@@ -1085,7 +1085,7 @@ class SyncCoordinationService:
             # Check if all systems have the same snapshots
             if system_snapshot_names:
                 all_in_sync = all(
-                    names == list(system_snapshot_names.values())[0]
+                    names == next(iter(system_snapshot_names.values()))
                     for names in system_snapshot_names.values()
                 )
                 sync_status = "in_sync" if all_in_sync else "out_of_sync"

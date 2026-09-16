@@ -2,18 +2,18 @@
 
 ## Problem Description
 
-The sync system is not detecting that HQS7 is behind HQS10 for the L1S4DAT1 dataset, even though HQS7 is missing many snapshots.
+The sync system is not detecting that SPOKE1 is behind HUB1 for the DATA1 dataset, even though SPOKE1 is missing many snapshots.
 
 ### Observed Behavior
 
-- HQS10 has snapshots from 2025-09-04 to 2025-11-30
-- HQS7 has snapshots from 2025-10-08 to 2025-11-04
-- HQS7 is missing snapshots from 2025-11-05 onwards (26 days behind)
+- HUB1 has snapshots from 2025-09-04 to 2025-11-30
+- SPOKE1 has snapshots from 2025-10-08 to 2025-11-04
+- SPOKE1 is missing snapshots from 2025-11-05 onwards (26 days behind)
 - The sync report script reports "No datasets require syncing"
 
 ### Expected Behavior
 
-The system should detect that HQS7 is missing snapshots and generate sync instructions to sync from HQS10 to HQS7.
+The system should detect that SPOKE1 is missing snapshots and generate sync instructions to sync from HUB1 to SPOKE1.
 
 ## Root Cause Analysis
 
@@ -39,9 +39,9 @@ However, `source_snapshot_names` is already filtered to only midnight snapshots 
 
 A test case has been created in `tests/unit/test_services/test_sync_mismatch_detection.py` that reproduces the exact scenario:
 
-- HQS10 (source) with snapshots from 2025-09-04 to 2025-11-30
-- HQS7 (target) with snapshots from 2025-10-08 to 2025-11-04
-- Verifies that the system detects HQS7 as out of sync and generates sync instructions
+- HUB1 (source) with snapshots from 2025-09-04 to 2025-11-30
+- SPOKE1 (target) with snapshots from 2025-10-08 to 2025-11-04
+- Verifies that the system detects SPOKE1 as out of sync and generates sync instructions
 
 ## Verification
 
@@ -61,9 +61,9 @@ The function `is_snapshot_out_of_sync_by_72h` is a guardrail that prevents synci
 1. Calculates the time difference between the two
 1. Returns True if the difference is > 72 hours
 
-In the HQS7/HQS10 case:
+In the SPOKE1/HUB1 case:
 
-- Latest HQS10: 2025-11-30-000000
-- Latest HQS7: 2025-11-04-000000
+- Latest HUB1: 2025-11-30-000000
+- Latest SPOKE1: 2025-11-04-000000
 - Time difference: 26 days = 624 hours > 72 hours
 - Should return: True (out of sync)

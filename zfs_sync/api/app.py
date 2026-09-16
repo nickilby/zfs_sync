@@ -186,7 +186,7 @@ for route_name, route_module, tag in routers_to_include:
                 f"Module {route_name} does not have a 'router' attribute. "
                 f"Available attributes: {dir(route_module)}"
             )
-        router = getattr(route_module, "router")
+        router = route_module.router
         if router is None:
             raise ValueError(f"Router for {route_name} is None")
         app.include_router(router, prefix=settings.api_prefix, tags=[tag])

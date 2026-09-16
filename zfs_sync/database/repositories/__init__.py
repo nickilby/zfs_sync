@@ -6,8 +6,8 @@ from zfs_sync.database.repositories.sync_group_repository import SyncGroupReposi
 from zfs_sync.database.repositories.sync_state_repository import SyncStateRepository
 
 __all__ = [
-    "SystemRepository",
     "SnapshotRepository",
     "SyncGroupRepository",
     "SyncStateRepository",
+    "SystemRepository",
 ]

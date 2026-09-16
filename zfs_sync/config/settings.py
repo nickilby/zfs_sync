@@ -62,7 +62,9 @@ class Settings(BaseSettings):
     )
 
     # Server
-    host: str = Field(default="0.0.0.0", description="Server host")
+    # Binding all interfaces is the intended default for a containerised
+    # service; exposure is controlled by the container/network, not here.
+    host: str = Field(default="0.0.0.0", description="Server host")  # noqa: S104
     port: int = Field(default=8000, description="Server port")
     api_prefix: str = Field(default="/api/v1", description="API prefix")
 
@@ -189,7 +191,7 @@ class Settings(BaseSettings):
     def validate_host(cls, v: str) -> str:
         """Validate host is a valid IP address or hostname."""
         # Allow common special values
-        if v in ("0.0.0.0", "127.0.0.1", "localhost", "*"):
+        if v in ("0.0.0.0", "127.0.0.1", "localhost", "*"):  # noqa: S104 -- comparison, not a bind
             return v
 
         # Try to validate as IP address
@@ -277,7 +279,7 @@ _settings: Optional[Settings] = None
 
 def get_settings() -> Settings:
     """Get or create the global settings instance."""
-    global _settings  # noqa: PLW0603
+    global _settings
     if _settings is None:
         # Check for config file in common locations
         config_paths = [
@@ -295,10 +297,7 @@ def get_settings() -> Settings:
                 config_file = path
                 break
 
-        if config_file:
-            _settings = Settings.from_file(config_file)
-        else:
-            _settings = Settings()
+        _settings = Settings.from_file(config_file) if config_file else Settings()
 
     # Type assertion: _settings is guaranteed to be non-None after the if block
     assert _settings is not None, "Settings should be initialized"

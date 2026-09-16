@@ -59,3 +59,17 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Operator config (only the .example is tracked -- tracking the live file
+# invites merge conflicts and leaks site-specific settings)
+config/zfs_sync.yaml
+
+# Captured production logs must never be committed
+log.txt
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+
+# Build markers
+.docker_build_complete

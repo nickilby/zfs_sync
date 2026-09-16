@@ -70,7 +70,7 @@ class SnapshotComparisonService:
                 else set()
             )
             unique = names - other_names
-            unique_snapshots[system_id] = sorted(list(unique))
+            unique_snapshots[system_id] = sorted(unique)
 
         # Find missing snapshots per system
         missing_snapshots: Dict[UUID, List[str]] = {}
@@ -79,7 +79,7 @@ class SnapshotComparisonService:
         )
         for system_id, names in system_snapshot_names.items():
             missing = all_snapshots - names
-            missing_snapshots[system_id] = sorted(list(missing))
+            missing_snapshots[system_id] = sorted(missing)
 
         # Find latest snapshot per system
         latest_snapshots: Dict[UUID, Dict[str, Any]] = {}
@@ -94,7 +94,7 @@ class SnapshotComparisonService:
 
         return {
             "dataset": dataset,
-            "common_snapshots": sorted(list(common_snapshots)),
+            "common_snapshots": sorted(common_snapshots),
             "unique_snapshots": {str(sid): names for sid, names in unique_snapshots.items()},
             "missing_snapshots": {str(sid): names for sid, names in missing_snapshots.items()},
             "latest_snapshots": {str(sid): info for sid, info in latest_snapshots.items()},
@@ -119,9 +119,9 @@ class SnapshotComparisonService:
         names_1 = {self.extract_snapshot_name(s.name) for s in snapshots_1}
         names_2 = {self.extract_snapshot_name(s.name) for s in snapshots_2}
 
-        only_in_1 = sorted(list(names_1 - names_2))
-        only_in_2 = sorted(list(names_2 - names_1))
-        in_both = sorted(list(names_1 & names_2))
+        only_in_1 = sorted(names_1 - names_2)
+        only_in_2 = sorted(names_2 - names_1)
+        in_both = sorted(names_1 & names_2)
 
         return {
             "system_1": str(system_id_1),

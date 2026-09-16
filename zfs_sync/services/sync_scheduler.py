@@ -13,6 +13,7 @@ from zfs_sync.logging_config import get_logger
 from zfs_sync.services.conflict_resolution import ConflictResolutionService
 from zfs_sync.services.sync_coordination import SyncCoordinationService
 from zfs_sync.services.sync_queries import get_datasets_for_systems
+import contextlib
 
 logger = get_logger(__name__)
 
@@ -48,10 +49,8 @@ class SyncSchedulerService:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         logger.info("Sync scheduler stopped")
 
     async def _scheduler_loop(self) -> None:

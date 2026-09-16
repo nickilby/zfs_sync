@@ -10,10 +10,10 @@ from zfs_sync.services.snapshot_history import SnapshotHistoryService
 from zfs_sync.services.sync_coordination import SyncCoordinationService
 
 __all__ = [
-    "SnapshotComparisonService",
-    "SnapshotHistoryService",
-    "SyncCoordinationService",
     "ConflictResolutionService",
     "ConflictResolutionStrategy",
     "ConflictType",
+    "SnapshotComparisonService",
+    "SnapshotHistoryService",
+    "SyncCoordinationService",
 ]

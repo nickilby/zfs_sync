@@ -177,7 +177,7 @@ class TestSSHTargetIsNotInjectable:
             "backup-host",
             "backup.example.com",
             "192.0.2.10",
-            "hub-a-san",
+            "hub1-san",
         ]:
             command = SSHCommandGenerator.generate_full_sync_command(
                 pool="tank",

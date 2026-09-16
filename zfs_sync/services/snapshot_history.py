@@ -176,8 +176,8 @@ class SnapshotHistoryService:
 
         return {
             "system_id": str(system_id),
-            "added_snapshots": sorted(list(added)),
-            "removed_snapshots": sorted(list(removed)),
-            "unchanged_snapshots": sorted(list(unchanged)),
+            "added_snapshots": sorted(added),
+            "removed_snapshots": sorted(removed),
+            "unchanged_snapshots": sorted(unchanged),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

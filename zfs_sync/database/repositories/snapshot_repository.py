@@ -129,7 +129,7 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
         Args:
             system_id: System UUID
             reported_snapshots: Set of (pool, dataset, name) tuples representing current snapshots
-                               Note: name is stored as-is (e.g., "L1S6DAT1@2025-11-02-000000" or "2025-11-02-000000")
+                               Note: name is stored as-is (e.g., "DATA2@2025-11-02-000000" or "2025-11-02-000000")
 
         Returns:
             Tuple of (count of deleted snapshots, list of deleted (pool, dataset, name) tuples)

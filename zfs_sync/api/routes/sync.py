@@ -130,4 +130,4 @@ async def analyze_sync_group(group_id: UUID, db: Session = Depends(get_db)):
         analysis = service.analyze_sync_group(sync_group_id=group_id)
         return analysis
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

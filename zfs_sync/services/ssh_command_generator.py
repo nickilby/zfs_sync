@@ -53,10 +53,7 @@ class SSHCommandGenerator:
         # templates, so an unescaped target is a command-injection path.
         # shlex.quote leaves ordinary hostnames untouched -- @ . - _ are all safe
         # characters -- and only quotes values that would otherwise break out.
-        if user:
-            target = f"{user}@{hostname}"
-        else:
-            target = hostname
+        target = f"{user}@{hostname}" if user else hostname
 
         ssh_parts.append(SSHCommandGenerator.escape_shell_string(target))
 
@@ -136,10 +133,7 @@ class SSHCommandGenerator:
         """
         flags = "-F" if force else ""
         # Dataset may already include pool (e.g., "tank/data") or just be dataset name
-        if "/" in dataset:
-            target_dataset = dataset
-        else:
-            target_dataset = f"{pool}/{dataset}"
+        target_dataset = dataset if "/" in dataset else f"{pool}/{dataset}"
         return (
             f"zfs receive {flags} {SSHCommandGenerator.escape_shell_string(target_dataset)}".strip()
         )
@@ -180,10 +174,7 @@ class SSHCommandGenerator:
             full_snapshot = f"{pool}/{dataset}@{snapshot_name}"
 
         # Build target dataset path
-        if "/" in tgt_dataset:
-            target_dataset_path = tgt_dataset
-        else:
-            target_dataset_path = f"{tgt_pool}/{tgt_dataset}"
+        target_dataset_path = tgt_dataset if "/" in tgt_dataset else f"{tgt_pool}/{tgt_dataset}"
 
         # Generate zfs send command (runs locally on source)
         # -c flag for compressed send
@@ -243,10 +234,7 @@ class SSHCommandGenerator:
             base_snapshot = f"{pool}/{dataset}@{incremental_base}"
 
         # Build target dataset path
-        if "/" in tgt_dataset:
-            target_dataset_path = tgt_dataset
-        else:
-            target_dataset_path = f"{tgt_pool}/{tgt_dataset}"
+        target_dataset_path = tgt_dataset if "/" in tgt_dataset else f"{tgt_pool}/{tgt_dataset}"
 
         # Generate zfs send command (runs locally on source)
         # -c flag for compressed send; -I flag for incremental send (base snapshot first, ending snapshot second)

@@ -82,18 +82,18 @@ class TestSyncCoordinationService:
         self, test_db, sample_system_data, sample_snapshot_data
     ):
         """Test directional sync in hub-and-spoke mode."""
-        # Create three systems: hqs7 (hub), hqs8 (source), hqs10 (source)
+        # Create three systems: spoke1 (hub), spoke2 (source), hub1 (source)
         system_repo = SystemRepository(test_db)
         hub_data = sample_system_data.copy()
-        hub_data["hostname"] = "hqs7"
+        hub_data["hostname"] = "spoke1"
         hub_system = system_repo.create(**hub_data)
 
         source1_data = sample_system_data.copy()
-        source1_data["hostname"] = "hqs8"
+        source1_data["hostname"] = "spoke2"
         source1_system = system_repo.create(**source1_data)
 
         source2_data = sample_system_data.copy()
-        source2_data["hostname"] = "hqs10"
+        source2_data["hostname"] = "hub1"
         source2_system = system_repo.create(**source2_data)
 
         # Create directional sync group with hub
@@ -111,14 +111,14 @@ class TestSyncCoordinationService:
         # Create snapshots only on source systems (hub has no snapshots)
         snapshot_repo = SnapshotRepository(test_db)
 
-        # Snapshot on source1 (hqs8)
+        # Snapshot on source1 (spoke2)
         snapshot1_data = sample_snapshot_data.copy()
         snapshot1_data["system_id"] = source1_system.id
         snapshot1_data["name"] = "dataset1@snap1"
         snapshot1_data["dataset"] = "dataset1"
         snapshot_repo.create(**snapshot1_data)
 
-        # Snapshot on source2 (hqs10)
+        # Snapshot on source2 (hub1)
         snapshot2_data = sample_snapshot_data.copy()
         snapshot2_data["system_id"] = source2_system.id
         snapshot2_data["name"] = "dataset2@snap1"

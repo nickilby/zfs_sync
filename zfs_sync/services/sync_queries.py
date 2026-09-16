@@ -90,10 +90,12 @@ def find_systems_with_snapshot_by_dataset_name(
         all_snapshots = snapshot_repo.get_by_system(system_id)
         # Filter by dataset name (ignoring pool)
         for snapshot in all_snapshots:
-            if snapshot.dataset == dataset_name:
-                if comparison_service._extract_snapshot_name(snapshot.name) == snapshot_name:
-                    systems_with_snapshot.append((system_id, snapshot.pool))
-                    break
+            if (
+                snapshot.dataset == dataset_name
+                and comparison_service._extract_snapshot_name(snapshot.name) == snapshot_name
+            ):
+                systems_with_snapshot.append((system_id, snapshot.pool))
+                break
     return systems_with_snapshot
 
 

@@ -17,7 +17,9 @@ import zfs_sync.database.models  # noqa: F401
 
 # Use file-based SQLite for tests to ensure consistent database across connections
 # In-memory SQLite creates separate databases per connection, causing test failures
-_test_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+# Suppression justified: the handle is closed on the next line, but the file
+# must outlive this statement -- it is the database every test connects to.
+_test_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")  # noqa: SIM115
 _test_db_file.close()
 TEST_DATABASE_URL = f"sqlite:///{_test_db_file.name}"
 

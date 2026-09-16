@@ -16,53 +16,53 @@ from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 class TestSyncMismatchDetection:
     """Test suite to expose sync mismatch detection bugs."""
 
-    def test_hqs7_hqs10_l1s4dat1_mismatch(self, test_db):
+    def test_spoke1_hub1_data1_mismatch(self, test_db):
         """
-        Test that reproduces the HQS7/HQS10 L1S4DAT1 sync issue.
+        Test that reproduces the SPOKE1/HUB1 DATA1 sync issue.
 
         Scenario:
-        - HQS10 (source) has snapshots from 2025-09-04 to 2025-11-30
-        - HQS7 (target) has snapshots from 2025-10-08 to 2025-11-04
-        - HQS7 is missing many snapshots and should be detected as out of sync
+        - HUB1 (source) has snapshots from 2025-09-04 to 2025-11-30
+        - SPOKE1 (target) has snapshots from 2025-10-08 to 2025-11-04
+        - SPOKE1 is missing many snapshots and should be detected as out of sync
         """
         # Create systems
         system_repo = SystemRepository(test_db)
-        hqs10 = system_repo.create(
-            hostname="hqs10",
+        hub1 = system_repo.create(
+            hostname="hub1",
             platform="linux",
             connectivity_status="online",
-            ssh_hostname="hqs10.example.com",
+            ssh_hostname="hub1.example.com",
             ssh_user="root",
             ssh_port=22,
         )
-        hqs7 = system_repo.create(
-            hostname="hqs7",
+        spoke1 = system_repo.create(
+            hostname="spoke1",
             platform="linux",
             connectivity_status="online",
-            ssh_hostname="hqs7.example.com",
+            ssh_hostname="spoke1.example.com",
             ssh_user="root",
             ssh_port=22,
         )
 
-        # Create sync group (directional with hqs10 as hub)
+        # Create sync group (directional with hub1 as hub)
         sync_group_repo = SyncGroupRepository(test_db)
         sync_group = sync_group_repo.create(
             name="test-sync-group",
             description="Test sync group",
             enabled=True,
             directional=True,
-            hub_system_id=hqs10.id,
+            hub_system_id=hub1.id,
         )
-        sync_group_repo.add_system(sync_group.id, hqs10.id)
-        sync_group_repo.add_system(sync_group.id, hqs7.id)
+        sync_group_repo.add_system(sync_group.id, hub1.id)
+        sync_group_repo.add_system(sync_group.id, spoke1.id)
 
         # Create snapshot repository
         snapshot_repo = SnapshotRepository(test_db)
         comparison_service = SnapshotComparisonService(test_db)
 
-        # HQS10 snapshots (source - has more snapshots, including latest)
+        # HUB1 snapshots (source - has more snapshots, including latest)
         # Weekly snapshots from 2025-09-04 to 2025-11-06, then daily from 2025-11-13 to 2025-11-30
-        hqs10_snapshots = [
+        hub1_snapshots = [
             # Weekly snapshots
             ("2025-09-04-000000", datetime(2025, 9, 4, 0, 0, 0, tzinfo=timezone.utc)),
             ("2025-09-11-000000", datetime(2025, 9, 11, 0, 0, 0, tzinfo=timezone.utc)),
@@ -94,8 +94,8 @@ class TestSyncMismatchDetection:
             ("2025-11-30-120000", datetime(2025, 11, 30, 12, 0, 0, tzinfo=timezone.utc)),
         ]
 
-        # HQS7 snapshots (target - missing many snapshots, stops at 2025-11-04)
-        hqs7_snapshots = [
+        # SPOKE1 snapshots (target - missing many snapshots, stops at 2025-11-04)
+        spoke1_snapshots = [
             # Daily snapshots from 2025-10-08 to 2025-11-04
             ("2025-10-08-000000", datetime(2025, 10, 8, 0, 0, 0, tzinfo=timezone.utc)),
             ("2025-10-09-000000", datetime(2025, 10, 9, 0, 0, 0, tzinfo=timezone.utc)),
@@ -128,115 +128,115 @@ class TestSyncMismatchDetection:
             ("2025-11-04-000000", datetime(2025, 11, 4, 0, 0, 0, tzinfo=timezone.utc)),
         ]
 
-        # Create snapshots for HQS10
-        for snapshot_name, timestamp in hqs10_snapshots:
+        # Create snapshots for HUB1
+        for snapshot_name, timestamp in hub1_snapshots:
             snapshot_repo.create(
-                name=f"hqs10p1/L1S4DAT1@{snapshot_name}",
-                pool="hqs10p1",
-                dataset="L1S4DAT1",
-                system_id=hqs10.id,
+                name=f"hubpool1/DATA1@{snapshot_name}",
+                pool="hubpool1",
+                dataset="DATA1",
+                system_id=hub1.id,
                 timestamp=timestamp,
                 size=100 * 1024 * 1024 * 1024,  # 100GB
             )
 
-        # Create snapshots for HQS7
-        for snapshot_name, timestamp in hqs7_snapshots:
+        # Create snapshots for SPOKE1
+        for snapshot_name, timestamp in spoke1_snapshots:
             snapshot_repo.create(
-                name=f"hqs7p1/L1S4DAT1@{snapshot_name}",
-                pool="hqs7p1",
-                dataset="L1S4DAT1",
-                system_id=hqs7.id,
+                name=f"spokepool1/DATA1@{snapshot_name}",
+                pool="spokepool1",
+                dataset="DATA1",
+                system_id=spoke1.id,
                 timestamp=timestamp,
                 size=50 * 1024 * 1024 * 1024,  # 50GB
             )
 
         # Test the is_snapshot_out_of_sync_by_72h function directly
-        hqs10_snapshot_models = snapshot_repo.get_by_pool_dataset(
-            pool="hqs10p1", dataset="L1S4DAT1", system_id=hqs10.id
+        hub1_snapshot_models = snapshot_repo.get_by_pool_dataset(
+            pool="hubpool1", dataset="DATA1", system_id=hub1.id
         )
-        hqs7_snapshot_models = snapshot_repo.get_by_pool_dataset(
-            pool="hqs7p1", dataset="L1S4DAT1", system_id=hqs7.id
+        spoke1_snapshot_models = snapshot_repo.get_by_pool_dataset(
+            pool="spokepool1", dataset="DATA1", system_id=spoke1.id
         )
 
         # Extract midnight snapshot names
-        hqs10_midnight_names = {
+        hub1_midnight_names = {
             comparison_service.extract_snapshot_name(s.name)
-            for s in hqs10_snapshot_models
+            for s in hub1_snapshot_models
             if comparison_service.extract_snapshot_name(s.name).endswith("-000000")
         }
-        hqs7_midnight_names = {
+        spoke1_midnight_names = {
             comparison_service.extract_snapshot_name(s.name)
-            for s in hqs7_snapshot_models
+            for s in spoke1_snapshot_models
             if comparison_service.extract_snapshot_name(s.name).endswith("-000000")
         }
 
         # Test the validator function
         is_out_of_sync = is_snapshot_out_of_sync_by_72h(
-            source_snapshots=hqs10_snapshot_models,
-            target_snapshots=hqs7_snapshot_models,
-            source_snapshot_names=hqs10_midnight_names,
-            target_snapshot_names=hqs7_midnight_names,
+            source_snapshots=hub1_snapshot_models,
+            target_snapshots=spoke1_snapshot_models,
+            source_snapshot_names=hub1_midnight_names,
+            target_snapshot_names=spoke1_midnight_names,
             comparison_service=comparison_service,
         )
 
-        # HQS7 is missing snapshots from 2025-11-05 onwards, so it should be out of sync
-        # Latest HQS10: 2025-11-30-000000
-        # Latest HQS7: 2025-11-04-000000
+        # SPOKE1 is missing snapshots from 2025-11-05 onwards, so it should be out of sync
+        # Latest HUB1: 2025-11-30-000000
+        # Latest SPOKE1: 2025-11-04-000000
         # Time difference: 26 days = 624 hours > 72 hours
         assert is_out_of_sync, (
-            "HQS7 should be detected as out of sync (missing snapshots from 2025-11-05 onwards, "
-            "latest HQS10 snapshot is 2025-11-30, latest HQS7 is 2025-11-04, "
+            "SPOKE1 should be detected as out of sync (missing snapshots from 2025-11-05 onwards, "
+            "latest HUB1 snapshot is 2025-11-30, latest SPOKE1 is 2025-11-04, "
             f"26 days difference). is_out_of_sync returned: {is_out_of_sync}"
         )
 
         # Test the full sync instruction generation
         service = SyncCoordinationService(test_db)
         instructions = service.get_sync_instructions(
-            system_id=hqs7.id,  # HQS7 is the target
+            system_id=spoke1.id,  # SPOKE1 is the target
             sync_group_id=sync_group.id,
         )
 
-        # Should detect that HQS7 needs to sync from HQS10
+        # Should detect that SPOKE1 needs to sync from HUB1
         assert instructions["dataset_count"] > 0, (
-            f"Expected sync instructions for L1S4DAT1 dataset, but got {instructions['dataset_count']} datasets. "
+            f"Expected sync instructions for DATA1 dataset, but got {instructions['dataset_count']} datasets. "
             f"Instructions: {instructions}"
         )
 
-        # Find the instruction for L1S4DAT1
-        l1s4dat1_instruction = None
+        # Find the instruction for DATA1
+        data1_instruction = None
         for dataset in instructions["datasets"]:
-            if dataset["dataset"] == "L1S4DAT1":
-                l1s4dat1_instruction = dataset
+            if dataset["dataset"] == "DATA1":
+                data1_instruction = dataset
                 break
 
-        assert l1s4dat1_instruction is not None, (
-            f"No sync instruction found for L1S4DAT1 dataset. "
+        assert data1_instruction is not None, (
+            f"No sync instruction found for DATA1 dataset. "
             f"Available datasets: {[d['dataset'] for d in instructions['datasets']]}"
         )
 
         # Verify the instruction details - updated for new consolidated format
-        assert l1s4dat1_instruction["target_pool"] == "hqs7p1", "Target pool should be hqs7p1"
-        assert l1s4dat1_instruction["ending_snapshot"] is not None, "Should have an ending snapshot"
+        assert data1_instruction["target_pool"] == "spokepool1", "Target pool should be spokepool1"
+        assert data1_instruction["ending_snapshot"] is not None, "Should have an ending snapshot"
 
         # Check that the latest midnight snapshot is included in the ending snapshot
         # Since we now filter to only midnight snapshots, the ending snapshot will be
         # the latest midnight snapshot that's older than 72 hours (2025-11-30-000000)
         assert (
-            l1s4dat1_instruction["ending_snapshot"] == "2025-11-30-000000"
-        ), f"Ending snapshot should be the latest midnight snapshot 2025-11-30-000000, got: {l1s4dat1_instruction['ending_snapshot']}"
+            data1_instruction["ending_snapshot"] == "2025-11-30-000000"
+        ), f"Ending snapshot should be the latest midnight snapshot 2025-11-30-000000, got: {data1_instruction['ending_snapshot']}"
 
         # Check that incremental base is from the common snapshot
         assert (
-            l1s4dat1_instruction["starting_snapshot"] is not None
+            data1_instruction["starting_snapshot"] is not None
         ), "Should have a starting snapshot for incremental sync"
 
         assert (
-            "2025-10-30-000000" in l1s4dat1_instruction["starting_snapshot"]
-        ), f"Starting snapshot should be from common base 2025-10-30-000000, got: {l1s4dat1_instruction['starting_snapshot']}"
+            "2025-10-30-000000" in data1_instruction["starting_snapshot"]
+        ), f"Starting snapshot should be from common base 2025-10-30-000000, got: {data1_instruction['starting_snapshot']}"
 
-    def test_l1s4dat1_72h_gate_generates_expected_command(self, test_db):
+    def test_data1_72h_gate_generates_expected_command(self, test_db):
         """
-        Reproduce the L1S4DAT1 production scenario and assert the 72-hour gate
+        Reproduce the DATA1 production scenario and assert the 72-hour gate
         produces the expected incremental send range.
 
         This uses the snapshot sets from the /snapshots/compare-dataset output:
@@ -250,26 +250,26 @@ class TestSyncMismatchDetection:
         """
         system_repo = SystemRepository(test_db)
         source = system_repo.create(
-            hostname="hqs10",
+            hostname="hub1",
             platform="linux",
             connectivity_status="online",
-            ssh_hostname="hqs10.example.com",
+            ssh_hostname="hub1.example.com",
             ssh_user="root",
             ssh_port=22,
         )
         target = system_repo.create(
-            hostname="hqs7",
+            hostname="spoke1",
             platform="linux",
             connectivity_status="online",
-            ssh_hostname="hqs7-san",
+            ssh_hostname="spoke1-san",
             ssh_user="root",
             ssh_port=22,
         )
 
         sync_group_repo = SyncGroupRepository(test_db)
         sync_group = sync_group_repo.create(
-            name="l1s4dat1-72h-test",
-            description="L1S4DAT1 72h gate test group",
+            name="data1-72h-test",
+            description="DATA1 72h gate test group",
             enabled=True,
             directional=True,
             hub_system_id=source.id,
@@ -350,9 +350,9 @@ class TestSyncMismatchDetection:
 
         for name, ts in source_snapshots:
             snapshot_repo.create(
-                name=f"hqs10p1/L1S4DAT1@{name}",
-                pool="hqs10p1",
-                dataset="L1S4DAT1",
+                name=f"hubpool1/DATA1@{name}",
+                pool="hubpool1",
+                dataset="DATA1",
                 system_id=source.id,
                 timestamp=ts,
                 size=0,
@@ -360,9 +360,9 @@ class TestSyncMismatchDetection:
 
         for name, ts in target_snapshots:
             snapshot_repo.create(
-                name=f"hqs7p1/L1S4DAT1@{name}",
-                pool="hqs7p1",
-                dataset="L1S4DAT1",
+                name=f"spokepool1/DATA1@{name}",
+                pool="spokepool1",
+                dataset="DATA1",
                 system_id=target.id,
                 timestamp=ts,
                 size=0,
@@ -376,45 +376,45 @@ class TestSyncMismatchDetection:
         )
 
         assert instructions["dataset_count"] > 0, (
-            f"Expected sync instructions for L1S4DAT1 dataset, but got "
+            f"Expected sync instructions for DATA1 dataset, but got "
             f"{instructions['dataset_count']} datasets. Instructions: {instructions}"
         )
 
-        l1s4dat1_instruction = None
+        data1_instruction = None
         for dataset in instructions["datasets"]:
-            if dataset["dataset"] == "L1S4DAT1":
-                l1s4dat1_instruction = dataset
+            if dataset["dataset"] == "DATA1":
+                data1_instruction = dataset
                 break
 
-        assert l1s4dat1_instruction is not None, (
-            f"No sync instruction found for L1S4DAT1 dataset. "
+        assert data1_instruction is not None, (
+            f"No sync instruction found for DATA1 dataset. "
             f"Available datasets: {[d['dataset'] for d in instructions['datasets']]}"
         )
 
         # Starting snapshot should be last common: 2025-10-30-000000
         assert (
-            l1s4dat1_instruction["starting_snapshot"] == "2025-10-30-000000"
-        ), f"Expected starting_snapshot=2025-10-30-000000, got: {l1s4dat1_instruction['starting_snapshot']}"
+            data1_instruction["starting_snapshot"] == "2025-10-30-000000"
+        ), f"Expected starting_snapshot=2025-10-30-000000, got: {data1_instruction['starting_snapshot']}"
 
         # Ending snapshot is gated by 72h rule: latest midnight snapshot older than now-72h
         # As time progresses, this will shift (e.g., on Dec 5 it's 2025-12-02, on Dec 6 it's 2025-12-03)
-        assert l1s4dat1_instruction["ending_snapshot"] in [
+        assert data1_instruction["ending_snapshot"] in [
             "2025-12-01-000000",
             "2025-12-02-000000",
             "2025-12-03-000000",
-        ], f"Expected ending_snapshot to be a recent midnight snapshot gated by 72h, got: {l1s4dat1_instruction['ending_snapshot']}"
+        ], f"Expected ending_snapshot to be a recent midnight snapshot gated by 72h, got: {data1_instruction['ending_snapshot']}"
 
         # Commands should include a single incremental send from starting to ending
-        commands = l1s4dat1_instruction.get("commands", [])
-        assert commands, f"Expected at least one command for L1S4DAT1, got: {commands}"
+        commands = data1_instruction.get("commands", [])
+        assert commands, f"Expected at least one command for DATA1, got: {commands}"
         command = commands[0]
 
         assert "zfs send" in command and "-I" in command, f"Unexpected command: {command}"
         assert "@2025-10-30-000000" in command, f"Incremental base missing in command: {command}"
         # The ending snapshot in the command should match the instruction's ending_snapshot
         assert (
-            f"@{l1s4dat1_instruction['ending_snapshot']}" in command
-        ), f"Ending snapshot {l1s4dat1_instruction['ending_snapshot']} missing in command: {command}"
+            f"@{data1_instruction['ending_snapshot']}" in command
+        ), f"Ending snapshot {data1_instruction['ending_snapshot']} missing in command: {command}"
 
     def test_directional_sync_hub_system_instructions(self, test_db):
         """
@@ -535,9 +535,9 @@ class TestSyncMismatchDetection:
         # Create snapshots for hub system
         for snapshot_name, timestamp in hub_snapshots:
             snapshot_repo.create(
-                name=f"hubp1/L1S4DAT1@{snapshot_name}",
+                name=f"hubp1/DATA1@{snapshot_name}",
                 pool="hubp1",
-                dataset="L1S4DAT1",
+                dataset="DATA1",
                 system_id=hub_system.id,
                 timestamp=timestamp,
                 size=100 * 1024 * 1024 * 1024,  # 100GB
@@ -546,9 +546,9 @@ class TestSyncMismatchDetection:
         # Create snapshots for source system
         for snapshot_name, timestamp in source_snapshots:
             snapshot_repo.create(
-                name=f"sourcep1/L1S4DAT1@{snapshot_name}",
+                name=f"sourcep1/DATA1@{snapshot_name}",
                 pool="sourcep1",
-                dataset="L1S4DAT1",
+                dataset="DATA1",
                 system_id=source_system.id,
                 timestamp=timestamp,
                 size=50 * 1024 * 1024 * 1024,  # 50GB
@@ -556,7 +556,7 @@ class TestSyncMismatchDetection:
 
         # Verify snapshot comparison shows mismatches
         comparison = comparison_service.compare_snapshots_by_dataset(
-            dataset="L1S4DAT1", system_ids=[hub_system.id, source_system.id]
+            dataset="DATA1", system_ids=[hub_system.id, source_system.id]
         )
         assert (
             len(comparison["missing_snapshots"].get(str(hub_system.id), [])) > 0
@@ -724,9 +724,9 @@ class TestSyncMismatchDetection:
         # Create snapshots for System A
         for snapshot_name, timestamp in system_a_snapshots:
             snapshot_repo.create(
-                name=f"hqs10p1/M1S2MIR1@{snapshot_name}",
-                pool="hqs10p1",
-                dataset="M1S2MIR1",
+                name=f"hubpool1/MIRROR1@{snapshot_name}",
+                pool="hubpool1",
+                dataset="MIRROR1",
                 system_id=system_a.id,
                 timestamp=timestamp,
                 size=100 * 1024 * 1024 * 1024,  # 100GB
@@ -735,9 +735,9 @@ class TestSyncMismatchDetection:
         # Create snapshots for System B
         for snapshot_name, timestamp in system_b_snapshots:
             snapshot_repo.create(
-                name=f"hqs7p1/M1S2MIR1@{snapshot_name}",
-                pool="hqs7p1",
-                dataset="M1S2MIR1",
+                name=f"spokepool1/MIRROR1@{snapshot_name}",
+                pool="spokepool1",
+                dataset="MIRROR1",
                 system_id=system_b.id,
                 timestamp=timestamp,
                 size=50 * 1024 * 1024 * 1024,  # 50GB
@@ -745,7 +745,7 @@ class TestSyncMismatchDetection:
 
         # Verify snapshot comparison shows mismatches
         comparison = comparison_service.compare_snapshots_by_dataset(
-            dataset="M1S2MIR1", system_ids=[system_a.id, system_b.id]
+            dataset="MIRROR1", system_ids=[system_a.id, system_b.id]
         )
         system_b_missing = comparison["missing_snapshots"].get(str(system_b.id), [])
         assert (

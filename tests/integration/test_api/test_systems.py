@@ -199,7 +199,7 @@ class TestSSHFieldsRejectShellMetacharacters:
                 ("backup.example.com", "zfs_sync"),
                 ("192.0.2.10", "root"),
                 ("2001:db8::1", "ops-user"),
-                ("hub-a-san", None),
+                ("hub1-san", None),
             ]
         ):
             payload = {

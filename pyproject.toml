@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zfs-sync"
-version = "0.2.4"
+version = "0.2.7"
 description = "A witness service to keep ZFS snapshots in sync across different platforms"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -56,6 +56,26 @@ target-version = ['py39']
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.ruff.lint]
+# Without an explicit select, ruff runs only E/F. These add the checks that
+# matter here: bugbear (B) for likely bugs, flake8-bandit (S) for security,
+# simplify (SIM), comprehensions (C4), and flake8-logging-format (G) for the
+# f-string-vs-lazy logging inconsistency spread across this codebase.
+# "G" (logging format) and "UP" (pyupgrade) are deliberately not enabled yet:
+# G reports 64 findings that are the logging-style inconsistency being reworked
+# when log levels are corrected, and UP reports 209 purely mechanical
+# typing.List -> list rewrites that would collide with the sync core rewrite.
+# Both are tracked to be turned on once that work lands.
+select = ["E", "F", "B", "S", "SIM", "C4", "RUF"]
+ignore = [
+    "E501",    # line length is enforced by the formatter
+    "S101",    # asserts are fine in tests
+    "B008",    # FastAPI Depends() in defaults is the framework idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
 
 [tool.mypy]
 python_version = "3.9"

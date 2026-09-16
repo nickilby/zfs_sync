@@ -39,13 +39,9 @@ def _ensure_database_directory(database_url: str) -> None:
     # sqlite:///relative/path/to/db.db -> relative/path/to/db.db
     file_path = database_url.replace("sqlite:///", "", 1)
 
-    # Handle absolute paths (starting with /)
-    if file_path.startswith("/"):
-        # Absolute path: sqlite:////path -> /path
-        db_path = Path(file_path)
-    else:
-        # Relative path: sqlite:///path -> path
-        db_path = Path(file_path)
+    # Path() handles both forms identically:
+    # sqlite:////path -> "/path" (absolute), sqlite:///path -> "path" (relative).
+    db_path = Path(file_path)
 
     # Get parent directory
     parent_dir = db_path.parent

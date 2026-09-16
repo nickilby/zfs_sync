@@ -3,8 +3,10 @@
 
 # Skip these tests (by test ID)
 # B101: assert_used - We allow asserts in tests
-# B601: shell_injection_subprocess - We use subprocess for ZFS commands intentionally
-skips = B101,B601
+# Note: B601 was previously skipped on the grounds that "we use subprocess for
+# ZFS commands intentionally". That is not true -- the witness never executes
+# ZFS or SSH itself, it only generates command strings. The skip is removed.
+skips = B101
 
 # Exclude these paths from scanning
 exclude_dirs = tests,__pycache__,.git,.pytest_cache,htmlcov

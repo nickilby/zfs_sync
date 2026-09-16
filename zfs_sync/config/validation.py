@@ -97,11 +97,9 @@ def validate_database_config(settings: Settings) -> None:
         # Validate SQLite database path
         file_path = database_url.replace("sqlite:///", "", 1)
 
-        # Handle absolute paths
-        if file_path.startswith("/"):
-            db_path = Path(file_path)
-        else:
-            db_path = Path(file_path)
+        # Path() handles absolute and relative forms identically here:
+        # sqlite://// -> "/abs/path", sqlite:/// -> "relative/path".
+        db_path = Path(file_path)
 
         # Get parent directory
         parent_dir = db_path.parent
@@ -181,11 +179,7 @@ def validate_log_directory() -> None:
     """
     # Check if log directory is configured via environment
     log_dir_env = os.getenv("ZFS_SYNC_LOG_DIR", None)
-    if log_dir_env:
-        log_dir = Path(log_dir_env)
-    else:
-        # Default log directory
-        log_dir = Path("logs")
+    log_dir = Path(log_dir_env) if log_dir_env else Path("logs")
 
     # Create directory if it doesn't exist
     if not log_dir.exists():
@@ -223,11 +217,15 @@ def validate_network_config(settings: Settings) -> None:
     port = settings.port
 
     # Check if port is already in use (only if host is 0.0.0.0 or localhost)
-    if host in ("0.0.0.0", "127.0.0.1", "localhost"):
+    if host in ("0.0.0.0", "127.0.0.1", "localhost"):  # noqa: S104 -- comparison, not a bind
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
-            result = sock.connect_ex((host if host != "0.0.0.0" else "127.0.0.1", port))
+            # Connect to the loopback address when the configured host is the
+            # wildcard -- 0.0.0.0 is not a connectable destination.
+            result = sock.connect_ex(
+                (host if host != "0.0.0.0" else "127.0.0.1", port)  # noqa: S104
+            )
             sock.close()
 
             if result == 0:
@@ -243,7 +241,7 @@ def validate_network_config(settings: Settings) -> None:
             logger.warning("Could not check if port %s is available: %s", port, e)
 
     # Validate host format (already done in field validator, but double-check)
-    if host not in ("0.0.0.0", "127.0.0.1", "localhost", "*"):
+    if host not in ("0.0.0.0", "127.0.0.1", "localhost", "*"):  # noqa: S104 -- comparison, not a bind
         try:
             # Try to resolve hostname
             socket.gethostbyname(host)

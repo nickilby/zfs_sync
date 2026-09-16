@@ -27,9 +27,12 @@ async def create_sync_group(group: SyncGroupCreate, db: Session = Depends(get_db
         )
 
     # Validate hub_system_id if directional
-    if group.directional and group.hub_system_id:
-        if group.hub_system_id not in group.system_ids:
-            raise HTTPException(
+    if (
+        group.directional
+        and group.hub_system_id
+        and group.hub_system_id not in group.system_ids
+    ):
+        raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="hub_system_id must be one of the systems in the sync group",
             )
