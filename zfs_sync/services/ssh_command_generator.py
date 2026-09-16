@@ -47,14 +47,18 @@ class SSHCommandGenerator:
         if port != 22:
             ssh_parts.append(f"-p {port}")
 
-        # Build target (user@hostname or just hostname)
-        # Note: We don't escape the target as it's part of SSH syntax
+        # Build target (user@hostname or just hostname).
+        # The target is quoted like every other interpolated value: ssh_hostname
+        # is writable through the API and this string is executed by the client
+        # templates, so an unescaped target is a command-injection path.
+        # shlex.quote leaves ordinary hostnames untouched -- @ . - _ are all safe
+        # characters -- and only quotes values that would otherwise break out.
         if user:
             target = f"{user}@{hostname}"
         else:
             target = hostname
 
-        ssh_parts.append(target)
+        ssh_parts.append(SSHCommandGenerator.escape_shell_string(target))
 
         if command:
             # Command should be quoted as a single argument to SSH
@@ -191,7 +195,8 @@ class SSHCommandGenerator:
             f"zfs receive -s {SSHCommandGenerator.escape_shell_string(target_dataset_path)}"
         )
         ssh_receive = (
-            f"ssh {target_ssh_hostname} {SSHCommandGenerator.escape_shell_string(receive_cmd)}"
+            f"ssh {SSHCommandGenerator.escape_shell_string(target_ssh_hostname)} "
+            f"{SSHCommandGenerator.escape_shell_string(receive_cmd)}"
         )
 
         return f"{send_cmd} | {ssh_receive}"
@@ -254,7 +259,8 @@ class SSHCommandGenerator:
             f"zfs receive -s {SSHCommandGenerator.escape_shell_string(target_dataset_path)}"
         )
         ssh_receive = (
-            f"ssh {target_ssh_hostname} {SSHCommandGenerator.escape_shell_string(receive_cmd)}"
+            f"ssh {SSHCommandGenerator.escape_shell_string(target_ssh_hostname)} "
+            f"{SSHCommandGenerator.escape_shell_string(receive_cmd)}"
         )
 
         return f"{send_cmd} | {ssh_receive}"

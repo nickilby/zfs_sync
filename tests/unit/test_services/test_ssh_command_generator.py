@@ -122,3 +122,69 @@ class TestSSHCommandGenerator:
         assert (
             base_index < ending_index
         ), f"Base snapshot must come before ending snapshot. Command: {command}"
+
+
+class TestSSHTargetIsNotInjectable:
+    """The SSH target must not be able to smuggle a second command.
+
+    Every other interpolated value went through shlex.quote; the target was
+    interpolated raw by explicit decision. Because `ssh_hostname` is writable
+    through the API and the rendered string is executed by the client
+    templates, an unescaped target is a remote-code-execution path.
+    """
+
+    MALICIOUS = "target.example.com; touch /tmp/pwned"
+
+    def _assert_not_injectable(self, command: str) -> None:
+        # The payload must never appear as a bare, runnable command separator.
+        # Quoting the target renders it inert; the literal text may still be
+        # present, but only inside quotes.
+        assert "; touch /tmp/pwned" not in command.replace(
+            f"'{self.MALICIOUS}'", ""
+        ).replace(f'"{self.MALICIOUS}"', ""), f"Unquoted payload survives in: {command}"
+
+    def test_full_sync_command_quotes_the_target(self):
+        command = SSHCommandGenerator.generate_full_sync_command(
+            pool="tank",
+            dataset="data",
+            snapshot_name="2025-12-02-120000",
+            target_ssh_hostname=self.MALICIOUS,
+            target_pool="backup",
+        )
+        self._assert_not_injectable(command)
+
+    def test_incremental_sync_command_quotes_the_target(self):
+        command = SSHCommandGenerator.generate_incremental_sync_command(
+            pool="tank",
+            dataset="data",
+            snapshot_name="2025-12-02-120000",
+            incremental_base="2025-12-01-000000",
+            target_ssh_hostname=self.MALICIOUS,
+            target_pool="backup",
+        )
+        self._assert_not_injectable(command)
+
+    def test_generate_ssh_command_quotes_the_target(self):
+        command = SSHCommandGenerator.generate_ssh_command(
+            hostname=self.MALICIOUS,
+            command="zfs list",
+        )
+        self._assert_not_injectable(command)
+
+    def test_ordinary_targets_are_still_usable(self):
+        """Quoting must not break the normal cases."""
+        for hostname in [
+            "backup-host",
+            "backup.example.com",
+            "192.0.2.10",
+            "hub-a-san",
+        ]:
+            command = SSHCommandGenerator.generate_full_sync_command(
+                pool="tank",
+                dataset="data",
+                snapshot_name="2025-12-02-120000",
+                target_ssh_hostname=hostname,
+                target_pool="backup",
+            )
+            assert hostname in command, f"{hostname} missing from {command}"
+            assert "zfs receive" in command

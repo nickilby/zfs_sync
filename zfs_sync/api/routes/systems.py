@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from zfs_sync.api.middleware.auth import get_current_system, get_optional_system
-from zfs_sync.api.schemas.system import SystemCreate, SystemResponse, SystemUpdate
+from zfs_sync.api.schemas.system import (
+    SystemCreate,
+    SystemCreatedResponse,
+    SystemResponse,
+    SystemUpdate,
+)
 from zfs_sync.database import get_db
 from zfs_sync.database.repositories import SystemRepository
 from zfs_sync.logging_config import get_logger
@@ -18,7 +23,9 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-@router.post("/systems", response_model=SystemResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/systems", response_model=SystemCreatedResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_system(system: SystemCreate, db: Session = Depends(get_db)):
     """Register a new system. An API key will be automatically generated."""
     repo = SystemRepository(db)
@@ -48,10 +55,12 @@ async def create_system(system: SystemCreate, db: Session = Depends(get_db)):
         ) from e
 
     logger.info(f"Created system: {db_system.hostname} ({db_system.id}) with API key")
-    response = SystemResponse.model_validate(db_system)
-    # Include API key only on creation (security: key is only shown once)
-    response.api_key = api_key
-    return response
+    # The key is attached explicitly here rather than read off the ORM row, so
+    # that registration stays the only response carrying it.
+    return SystemCreatedResponse(
+        **SystemResponse.model_validate(db_system).model_dump(),
+        api_key=api_key,
+    )
 
 
 @router.post("/systems/{system_id}/api-key", status_code=status.HTTP_200_OK)
