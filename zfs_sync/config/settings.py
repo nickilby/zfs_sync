@@ -5,7 +5,7 @@ import platform
 import re
 import socket
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import Field, field_validator, model_validator
@@ -77,6 +77,22 @@ class Settings(BaseSettings):
     # Security
     secret_key: Optional[str] = Field(
         default=None, description="Secret key for JWT/session management"
+    )
+    cors_allow_origins: List[str] = Field(
+        default_factory=lambda: ["*"],
+        description=(
+            "Browser origins permitted to call the API. The default is "
+            "permissive for local development; name specific origins in "
+            "production, which also enables credentialed requests."
+        ),
+    )
+    registration_token: Optional[str] = Field(
+        default=None,
+        description=(
+            "Shared secret required by POST /systems. Registration issues a "
+            "working API key, so leaving this unset lets anyone who can reach "
+            "the service mint credentials for it."
+        ),
     )
     api_key_length: int = Field(default=32, description="Length of generated API keys")
 

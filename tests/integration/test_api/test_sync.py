@@ -10,7 +10,7 @@ from zfs_sync.database.repositories import SnapshotRepository, SyncGroupReposito
 class TestSyncInstructionsEndpoints:
     """Test suite for sync instructions API."""
 
-    def test_data1_sync_instructions_72h_gate(self, test_client, test_db):
+    def test_data1_sync_instructions_72h_gate(self, auth_client, test_db):
         """
         End-to-end test for /sync/instructions/{system_id} using the DATA1 scenario.
 
@@ -146,7 +146,7 @@ class TestSyncInstructionsEndpoints:
             )
 
         # Call the sync instructions endpoint as the source, which executes.
-        response = test_client.get(
+        response = auth_client.get(
             f"/api/v1/sync/instructions/{source.id}",
             params={"sync_group_id": str(sync_group.id)},
         )
@@ -188,7 +188,7 @@ class TestSyncInstructionsEndpoints:
         assert "spoke1-san" in cmd, f"Target ssh host missing in command: {cmd}"
 
     def test_the_target_is_not_asked_to_run_the_source_command(
-        self, test_client, test_db
+        self, auth_client, test_db
     ):
         """A target receives no instruction, because it cannot execute one."""
         system_repo = SystemRepository(test_db)
@@ -222,13 +222,13 @@ class TestSyncInstructionsEndpoints:
                 timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=0,
             )
 
-        source_view = test_client.get(f"/api/v1/sync/instructions/{source.id}").json()
-        target_view = test_client.get(f"/api/v1/sync/instructions/{target.id}").json()
+        source_view = auth_client.get(f"/api/v1/sync/instructions/{source.id}").json()
+        target_view = auth_client.get(f"/api/v1/sync/instructions/{target.id}").json()
 
         assert source_view["dataset_count"] == 1
         assert target_view["dataset_count"] == 0
 
-    def test_an_in_sync_fleet_explains_itself(self, test_client, test_db):
+    def test_an_in_sync_fleet_explains_itself(self, auth_client, test_db):
         """An empty datasets list comes with a reason per evaluated pair.
 
         Previously a healthy fleet and a completely suppressed one returned an
@@ -260,7 +260,7 @@ class TestSyncInstructionsEndpoints:
                     timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=0,
                 )
 
-        payload = test_client.get(f"/api/v1/sync/instructions/{source.id}").json()
+        payload = auth_client.get(f"/api/v1/sync/instructions/{source.id}").json()
 
         assert payload["datasets"] == []
         assert payload["dataset_count"] == 0

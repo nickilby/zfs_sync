@@ -17,7 +17,11 @@
 #    sudo cp zfs_sync_client.sh /usr/local/bin/
 #    sudo chmod +x /usr/local/bin/zfs_sync_client.sh
 #
-# 2. Register your system with the witness service to get SYSTEM_ID and API_KEY:
+# 2. Register your system with the witness service to get SYSTEM_ID and API_KEY.
+#    The API key is shown once, at registration, and only its digest is stored
+#    server-side -- so record it now; it cannot be read back. If the service has
+#    a registration_token configured, add:
+#      -H "X-Registration-Token: <token>"
 #    curl -X POST "http://witness-service:8000/api/v1/systems" \
 #      -H "Content-Type: application/json" \
 #      -d '{"hostname": "your-system-hostname", "platform": "linux"}'

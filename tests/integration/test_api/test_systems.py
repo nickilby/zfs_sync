@@ -34,9 +34,12 @@ class TestSystemsEndpoints:
             },
         )
         system_id = register_response.json()["id"]
+        api_key = register_response.json()["api_key"]
 
-        # Then retrieve it
-        response = test_client.get(f"/api/v1/systems/{system_id}")
+        # Then retrieve it, authenticating as itself.
+        response = test_client.get(
+            f"/api/v1/systems/{system_id}", headers={"X-API-Key": api_key}
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["id"] == system_id
@@ -44,9 +47,10 @@ class TestSystemsEndpoints:
 
     def test_list_systems(self, test_client):
         """Test listing all systems."""
-        # Create a few systems
+        # Create a few systems, keeping the last key to authenticate with.
+        api_key = None
         for i in range(3):
-            test_client.post(
+            created = test_client.post(
                 "/api/v1/systems",
                 json={
                     "hostname": f"test-system-{i}",
@@ -54,9 +58,10 @@ class TestSystemsEndpoints:
                     "connectivity_status": "online",
                 },
             )
+            api_key = created.json()["api_key"]
 
-        # List all systems
-        response = test_client.get("/api/v1/systems")
+        # List all systems, authenticating as the last one registered.
+        response = test_client.get("/api/v1/systems", headers={"X-API-Key": api_key})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         # Response is a list, not a dict with "systems" key
@@ -118,7 +123,9 @@ class TestSystemResponseDoesNotLeakCredentials:
     def test_get_system_does_not_return_api_key(self, test_client):
         created = self._register(test_client, "leak-get")
 
-        response = test_client.get(f"/api/v1/systems/{created['id']}")
+        response = test_client.get(
+            f"/api/v1/systems/{created['id']}", headers={"X-API-Key": created["api_key"]}
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -129,7 +136,10 @@ class TestSystemResponseDoesNotLeakCredentials:
         first = self._register(test_client, "leak-list-1")
         second = self._register(test_client, "leak-list-2")
 
-        response = test_client.get("/api/v1/systems")
+
+        response = test_client.get(
+            "/api/v1/systems", headers={"X-API-Key": second["api_key"]}
+        )
 
         assert response.status_code == status.HTTP_200_OK
         for entry in response.json():
@@ -142,6 +152,7 @@ class TestSystemResponseDoesNotLeakCredentials:
 
         response = test_client.put(
             f"/api/v1/systems/{created['id']}",
+            headers={"X-API-Key": created["api_key"]},
             json={"connectivity_status": "offline"},
         )
 
@@ -176,6 +187,7 @@ class TestSSHFieldsRejectShellMetacharacters:
 
         response = test_client.put(
             f"/api/v1/systems/{created['id']}",
+            headers={"X-API-Key": created["api_key"]},
             json={"ssh_hostname": "backup.example.com && rm -rf /"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -188,6 +200,7 @@ class TestSSHFieldsRejectShellMetacharacters:
 
         response = test_client.put(
             f"/api/v1/systems/{created['id']}",
+            headers={"X-API-Key": created["api_key"]},
             json={"ssh_user": "root$(id)"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

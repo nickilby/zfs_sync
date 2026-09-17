@@ -28,7 +28,7 @@ DATASET = "DATA1"
 
 
 @pytest.fixture
-def instruction(test_client, test_db):
+def instruction(auth_client, test_db):
     """A real instruction response for a hub with one lagging target."""
     systems = SystemRepository(test_db)
     groups = SyncGroupRepository(test_db)
@@ -59,7 +59,7 @@ def instruction(test_client, test_db):
     groups.add_system(group.id, hub.id)
     groups.add_system(group.id, spoke.id)
 
-    payload = test_client.get(f"/api/v1/sync/instructions/{hub.id}").json()
+    payload = auth_client.get(f"/api/v1/sync/instructions/{hub.id}").json()
     assert payload["dataset_count"] == 1, "fixture should produce one instruction"
     return payload
 
@@ -130,7 +130,7 @@ class TestDeclinedFields:
     """Fields the executor reads from .declined[] to explain a quiet run."""
 
     def test_declined_entries_carry_a_dataset_target_and_reason(
-        self, test_client, test_db
+        self, auth_client, test_db
     ):
         systems = SystemRepository(test_db)
         groups = SyncGroupRepository(test_db)
@@ -155,7 +155,7 @@ class TestDeclinedFields:
         groups.add_system(group.id, hub.id)
         groups.add_system(group.id, spoke.id)
 
-        payload = test_client.get(f"/api/v1/sync/instructions/{hub.id}").json()
+        payload = auth_client.get(f"/api/v1/sync/instructions/{hub.id}").json()
 
         assert payload["dataset_count"] == 0
         entry = payload["declined"][0]
@@ -167,10 +167,10 @@ class TestDeclinedFields:
 class TestResultFields:
     """The payload sync_executor.sh posts back must be accepted."""
 
-    def test_the_reported_outcome_is_accepted(self, test_client, instruction):
+    def test_the_reported_outcome_is_accepted(self, auth_client, instruction):
         entry = instruction["datasets"][0]
 
-        response = test_client.post(
+        response = auth_client.post(
             "/api/v1/sync/results",
             json={
                 "sync_group_id": entry["sync_group_id"],
@@ -210,7 +210,7 @@ class TestShippedScriptsMatchTheApi:
         )
 
     @pytest.mark.parametrize("script", SCRIPTS)
-    def test_every_api_path_a_script_uses_exists(self, script, test_client):
+    def test_every_api_path_a_script_uses_exists(self, script, auth_client):
         """Catch endpoint drift in the scripts themselves."""
         from zfs_sync.api.app import app
 
@@ -247,18 +247,18 @@ class TestSnapshotBatchContract:
     REQUIRED: ClassVar[list] = ["created", "updated", "deleted", "failed", "scope"]
 
     @staticmethod
-    def register(test_client):
-        response = test_client.post(
+    def register(auth_client):
+        response = auth_client.post(
             "/api/v1/systems",
             json={"hostname": "reporter", "platform": "linux", "connectivity_status": "online"},
         )
         body = response.json()
         return body["id"], body["api_key"]
 
-    def test_every_field_the_scripts_read_is_present(self, test_client):
-        system_id, api_key = self.register(test_client)
+    def test_every_field_the_scripts_read_is_present(self, auth_client):
+        system_id, api_key = self.register(auth_client)
 
-        response = test_client.post(
+        response = auth_client.post(
             "/api/v1/snapshots/batch",
             headers={"X-API-Key": api_key},
             json=[
@@ -277,7 +277,7 @@ class TestSnapshotBatchContract:
         missing = [field for field in self.REQUIRED if field not in body]
         assert not missing, f"reporting scripts read fields the API omits: {missing}"
 
-    def test_the_reconcile_parameter_exists(self, test_client):
+    def test_the_reconcile_parameter_exists(self, auth_client):
         """The scripts pass reconcile=true when sending a complete inventory.
 
         An unknown query parameter is silently ignored by FastAPI, which is how

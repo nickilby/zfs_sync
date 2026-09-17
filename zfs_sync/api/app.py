@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -152,8 +152,12 @@ register_exception_handlers(app)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
+    # allow_origins=["*"] with allow_credentials=True is rejected by browsers
+    # and is the wrong default for a service that returns infrastructure
+    # topology. Origins come from configuration; credentials are only allowed
+    # when specific origins are named.
+    allow_origins=settings.cors_allow_origins,
+    allow_credentials="*" not in settings.cors_allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -174,17 +178,28 @@ from zfs_sync.api.routes import (  # noqa: E402
 if not hasattr(settings, "api_prefix") or settings.api_prefix is None:
     raise ValueError(f"settings.api_prefix is not set. Current settings: {dir(settings)}")
 
-# Validate and include routers with error handling
+from zfs_sync.api.middleware.auth import get_current_system  # noqa: E402
+
+# Authentication is applied to whole routers rather than route by route.
+# Only 6 of 54 endpoints were protected -- including none of the destructive
+# ones, and not the endpoint that returns the fleet's SSH topology. Declaring
+# it here means a new endpoint is protected by default instead of by memory.
+#
+# `health` is exempt so probes work without credentials, and `systems` is
+# exempt at the router level because registration must remain reachable; its
+# individual routes carry their own dependency.
+AUTHENTICATED = [Depends(get_current_system)]
+
 routers_to_include = [
-    ("health", health, "Health"),
-    ("systems", systems, "Systems"),
-    ("snapshots", snapshots, "Snapshots"),
-    ("sync_groups", sync_groups, "Sync Groups"),
-    ("sync", sync, "Sync"),
-    ("conflicts", conflicts, "Conflicts"),
+    ("health", health, "Health", []),
+    ("systems", systems, "Systems", []),
+    ("snapshots", snapshots, "Snapshots", AUTHENTICATED),
+    ("sync_groups", sync_groups, "Sync Groups", AUTHENTICATED),
+    ("sync", sync, "Sync", AUTHENTICATED),
+    ("conflicts", conflicts, "Conflicts", AUTHENTICATED),
 ]
 
-for route_name, route_module, tag in routers_to_include:
+for route_name, route_module, tag, dependencies in routers_to_include:
     try:
         if not hasattr(route_module, "router"):
             raise AttributeError(
@@ -194,7 +209,9 @@ for route_name, route_module, tag in routers_to_include:
         router = route_module.router
         if router is None:
             raise ValueError(f"Router for {route_name} is None")
-        app.include_router(router, prefix=settings.api_prefix, tags=[tag])
+        app.include_router(
+            router, prefix=settings.api_prefix, tags=[tag], dependencies=dependencies
+        )
         logger.debug("Successfully included router: %s", route_name)
     except Exception as exc:
         logger.error("Failed to include router %s: %s", route_name, exc)

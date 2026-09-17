@@ -194,3 +194,37 @@ api_prefix: "/api/v1"
     # Cleanup
     if os.path.exists(temp_path):
         os.unlink(temp_path)
+
+
+@pytest.fixture
+def registered_system(test_client):
+    """A registered system: returns its id and the plaintext API key.
+
+    The key is only ever returned at registration -- it is stored as a digest
+    -- so tests that need to authenticate must capture it here.
+    """
+    response = test_client.post(
+        "/api/v1/systems",
+        json={
+            "hostname": "fixture-system",
+            "platform": "linux",
+            "connectivity_status": "online",
+            "ssh_hostname": "fixture-system-san",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    return body["id"], body["api_key"]
+
+
+@pytest.fixture
+def auth_client(test_client, registered_system):
+    """A client that authenticates as `registered_system` by default.
+
+    Most endpoints require a key now; only registration, the health probes and
+    the dashboard page do not. Individual requests can still override or drop
+    the header to exercise the rejection paths.
+    """
+    _system_id, api_key = registered_system
+    test_client.headers.update({"X-API-Key": api_key})
+    return test_client

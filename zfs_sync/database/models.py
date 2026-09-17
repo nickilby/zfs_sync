@@ -26,7 +26,11 @@ class SystemModel(BaseModel):
     platform = Column(String(50), nullable=False)  # type: ignore[assignment]
     connectivity_status = Column(String(20), default="unknown", nullable=False)  # type: ignore[assignment]
     last_seen = Column(DateTime(timezone=True), nullable=True)  # type: ignore[assignment]
-    api_key = Column(String(255), nullable=True, unique=True, index=True)  # type: ignore[assignment]
+    # Stored as a SHA-256 digest, never in plaintext. The prefix is kept so an
+    # operator can tell which key a system is using without the key itself
+    # existing anywhere outside the client that holds it.
+    api_key_hash = Column(String(64), nullable=True, unique=True, index=True)  # type: ignore[assignment]
+    api_key_prefix = Column(String(16), nullable=True)  # type: ignore[assignment]
     ssh_hostname = Column(String(255), nullable=True, index=True)  # type: ignore[assignment]
     ssh_user = Column(String(100), nullable=True)  # type: ignore[assignment]
     ssh_port = Column(Integer, default=22, nullable=False)  # type: ignore[assignment]
