@@ -201,11 +201,16 @@ class SyncPlanner:
         if not sync_group.enabled:
             return PlanReason.GROUP_DISABLED
 
-        if not sync_group.directional or not sync_group.hub_system_id:
+        if not sync_group.directional:
             # Bidirectional planning has never been reachable: the previous
             # implementation returned early here too, leaving ~70 lines of
             # bidirectional branching downstream that could never execute.
             return PlanReason.GROUP_NOT_DIRECTIONAL
+
+        if not sync_group.hub_system_id:
+            # Reported separately because the remedy differs: this group needs
+            # a hub selected, not its mode changed.
+            return PlanReason.GROUP_HUB_NOT_SET
 
         system_ids = [assoc.system_id for assoc in sync_group.system_associations]
         if len(system_ids) < 2:

@@ -130,6 +130,23 @@ class TestGroupLevelSkips:
 
         assert plan.skipped_reason == PlanReason.GROUP_TOO_FEW_SYSTEMS.value
 
+    def test_directional_group_with_no_hub_says_the_hub_is_unset(self, fleet):
+        """Distinct from "not directional" -- the fix is different.
+
+        Groups created before the directional columns existed land here once
+        the schema is brought up to date, so the reason must point at the
+        actual remedy: choose a hub.
+        """
+        hub = fleet.system("hub1")
+        spoke = fleet.system("spoke1")
+        group = fleet.groups.create(name="no-hub", directional=True, hub_system_id=None)
+        fleet.groups.add_system(group.id, hub.id)
+        fleet.groups.add_system(group.id, spoke.id)
+
+        plan = SyncPlanner(fleet.db).plan_group(group.id, now=NOW)
+
+        assert plan.skipped_reason == PlanReason.GROUP_HUB_NOT_SET.value
+
     def test_hub_not_a_member_of_its_own_group(self, fleet):
         hub = fleet.system("hub1")
         spoke_a = fleet.system("spoke1")

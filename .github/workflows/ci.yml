@@ -37,6 +37,24 @@ jobs:
           pip install -e .
           python -c "import zfs_sync; import zfs_sync.api.middleware.auth; print(zfs_sync.__version__)"
 
+      - name: Verify migrations
+        run: |
+          # A second head means two revisions claim the same parent, which is
+          # what made the revision map unresolvable and every alembic command
+          # fail. Catch it here rather than on a deployment.
+          heads=$(alembic heads | grep -c '(head)' || true)
+          if [ "$heads" != "1" ]; then
+            echo "::error::expected exactly one alembic head, found $heads"
+            alembic heads
+            exit 1
+          fi
+          # And the chain must actually run, both ways, against an empty
+          # database -- it never had a baseline revision, so it could not.
+          export ZFS_SYNC_DATABASE_URL="sqlite:///$(mktemp -d)/ci.db"
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
       - name: Run tests with coverage
         run: |
           pytest --cov=zfs_sync --cov-report=xml --cov-report=term-missing --cov-report=html -v

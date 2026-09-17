@@ -9,6 +9,8 @@ Create Date: 2024-11-28 10:00:00.000000
 from alembic import op
 import sqlalchemy as sa
 
+from zfs_sync.database.base import GUID
+
 
 # revision identifiers, used by Alembic.
 revision = "003"
@@ -17,39 +19,54 @@ branch_labels = None
 depends_on = None
 
 
+def _drop_index_if_exists(index_name: str, table_name: str) -> None:
+    """Drop an index only when the database actually has it.
+
+    Deployments reached this schema through create_all() rather than through
+    migrations, so which indexes exist varies. Checking is cheaper than a
+    failed upgrade half way through.
+    """
+    inspector = sa.inspect(op.get_bind())
+    existing = {index["name"] for index in inspector.get_indexes(table_name)}
+    if index_name in existing:
+        op.drop_index(index_name, table_name=table_name)
+
+
 def upgrade():
     """Change sync_states table to use dataset instead of snapshot_id."""
-    # Clear all existing sync_states since they're ephemeral and will be regenerated
-    # This is safe because sync_states track current sync status, not historical data
+    # sync_states is a current-status projection, not history, so clearing it
+    # is safe: the scheduler repopulates it on its next pass.
     op.execute("DELETE FROM sync_states")
 
-    # Drop the foreign key constraint first
-    op.drop_constraint("sync_states_snapshot_id_fkey", "sync_states", type_="foreignkey")
+    # batch mode rebuilds the table on SQLite, which can neither drop a
+    # constraint nor reliably drop a column in place. Dropping the column also
+    # drops its foreign key on PostgreSQL, so no separate drop_constraint is
+    # needed -- the previous explicit call named a PostgreSQL-style constraint
+    # that does not exist on SQLite, and failed there.
+    # Drop the index over snapshot_id first. Batch mode reflects the existing
+    # table to rebuild it, so an index left in place would be recreated over a
+    # column this migration has just removed.
+    _drop_index_if_exists("ix_sync_states_snapshot_id", "sync_states")
 
-    # Drop the snapshot_id column
-    op.drop_column("sync_states", "snapshot_id")
+    with op.batch_alter_table("sync_states") as batch_op:
+        batch_op.drop_column("snapshot_id")
+        batch_op.add_column(
+            sa.Column("dataset", sa.String(255), nullable=False, server_default="")
+        )
 
-    # Add dataset column
-    op.add_column(
-        "sync_states", sa.Column("dataset", sa.String(255), nullable=False, server_default="")
-    )
-
-    # Create index on dataset
     op.create_index(op.f("ix_sync_states_dataset"), "sync_states", ["dataset"], unique=False)
 
 
 def downgrade():
     """Revert sync_states table back to using snapshot_id."""
-    # Drop the dataset index
     op.drop_index(op.f("ix_sync_states_dataset"), table_name="sync_states")
 
-    # Drop the dataset column
-    op.drop_column("sync_states", "dataset")
-
-    # Add snapshot_id column back (nullable for migration, but should be populated)
-    op.add_column("sync_states", sa.Column("snapshot_id", sa.GUID(), nullable=True))
-
-    # Recreate foreign key constraint
-    op.create_foreign_key(
-        "sync_states_snapshot_id_fkey", "sync_states", "snapshots", ["snapshot_id"], ["id"]
-    )
+    # sa.GUID does not exist -- SQLAlchemy has no such type, so this downgrade
+    # raised AttributeError the moment it was reached. The project's own GUID
+    # TypeDecorator is what the model uses.
+    with op.batch_alter_table("sync_states") as batch_op:
+        batch_op.drop_column("dataset")
+        batch_op.add_column(sa.Column("snapshot_id", GUID(), nullable=True))
+        batch_op.create_foreign_key(
+            "sync_states_snapshot_id_fkey", "snapshots", ["snapshot_id"], ["id"]
+        )

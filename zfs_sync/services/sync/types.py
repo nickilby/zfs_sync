@@ -31,6 +31,11 @@ class PlanReason(str, Enum):
     # --- Group level: why a group produced no pairs at all. ---
     GROUP_DISABLED = "group_disabled"
     GROUP_NOT_DIRECTIONAL = "group_not_directional"
+    #: Directional, but no hub is set. Distinct from the above because the fix
+    #: differs: this group needs a hub chosen, not its mode changed. Groups
+    #: created before the directional columns existed land here after the
+    #: schema is recovered.
+    GROUP_HUB_NOT_SET = "group_hub_not_set"
     GROUP_TOO_FEW_SYSTEMS = "group_too_few_systems"
     HUB_NOT_IN_GROUP = "hub_not_in_group"
     HUB_SYSTEM_MISSING = "hub_system_missing"
