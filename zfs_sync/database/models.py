@@ -1,6 +1,16 @@
 """SQLAlchemy database models."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 from zfs_sync.database.base import BaseModel, GUID
@@ -37,10 +47,10 @@ class SnapshotModel(BaseModel):
     pool = Column(String(100), nullable=False, index=True)  # type: ignore[assignment]
     dataset = Column(String(255), nullable=False, index=True)  # type: ignore[assignment]
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)  # type: ignore[assignment]
-    size = Column(Integer, nullable=True)  # type: ignore[assignment]
+    size = Column(BigInteger, nullable=True)  # type: ignore[assignment]
     system_id = Column(GUID(), ForeignKey("systems.id"), nullable=False, index=True)  # type: ignore[assignment]
-    referenced = Column(Integer, nullable=True)  # type: ignore[assignment]
-    used = Column(Integer, nullable=True)  # type: ignore[assignment]
+    referenced = Column(BigInteger, nullable=True)  # type: ignore[assignment]
+    used = Column(BigInteger, nullable=True)  # type: ignore[assignment]
     extra_metadata = Column("metadata", JSON, default=dict)  # type: ignore[assignment]
 
     # Relationships
@@ -99,3 +109,36 @@ class SyncStateModel(BaseModel):
     # Relationships
     sync_group = relationship("SyncGroupModel")
     system = relationship("SystemModel", back_populates="sync_states")
+
+
+class SyncRunModel(BaseModel):
+    """One reported attempt to execute a sync instruction.
+
+    Append-only history, deliberately separate from SyncStateModel. That table
+    is a current-status projection -- one row per (group, dataset, system)
+    saying where things stand now -- whereas this one records what happened and
+    when. Conflating the two is why there has never been an audit trail: until
+    clients reported outcomes, the witness issued commands and never learned
+    whether any of them worked.
+    """
+
+    __tablename__ = "sync_runs"
+
+    sync_group_id = Column(GUID(), ForeignKey("sync_groups.id"), nullable=False, index=True)  # type: ignore[assignment]
+    dataset = Column(String(255), nullable=False, index=True)  # type: ignore[assignment]
+    source_system_id = Column(GUID(), ForeignKey("systems.id"), nullable=False, index=True)  # type: ignore[assignment]
+    target_system_id = Column(GUID(), ForeignKey("systems.id"), nullable=False, index=True)  # type: ignore[assignment]
+    starting_snapshot = Column(String(255), nullable=True)  # type: ignore[assignment]
+    ending_snapshot = Column(String(255), nullable=True)  # type: ignore[assignment]
+    status = Column(String(20), nullable=False, index=True)  # type: ignore[assignment]
+    started_at = Column(DateTime(timezone=True), nullable=True)  # type: ignore[assignment]
+    finished_at = Column(DateTime(timezone=True), nullable=True)  # type: ignore[assignment]
+    duration_seconds = Column(Integer, nullable=True)  # type: ignore[assignment]
+    bytes_transferred = Column(BigInteger, nullable=True)  # type: ignore[assignment]
+    error_message = Column(Text, nullable=True)  # type: ignore[assignment]
+    reported_by_system_id = Column(GUID(), ForeignKey("systems.id"), nullable=True, index=True)  # type: ignore[assignment]
+    extra_metadata = Column("metadata", JSON, default=dict)  # type: ignore[assignment]
+
+    sync_group = relationship("SyncGroupModel")
+    source_system = relationship("SystemModel", foreign_keys=[source_system_id])
+    target_system = relationship("SystemModel", foreign_keys=[target_system_id])

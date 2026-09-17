@@ -148,3 +148,51 @@ class SyncInstructionsResponse(BaseModel):
         default_factory=list,
         description="Every pair that was evaluated and not actioned, with its reason",
     )
+
+
+class SyncResultCreate(BaseModel):
+    """A client's report of how an execution went.
+
+    Posted after running (or failing to run) an instruction. This is the only
+    way the witness learns whether the commands it issues actually work.
+    """
+
+    sync_group_id: UUID = Field(..., description="Sync group the instruction came from")
+    dataset: str = Field(..., description="Dataset that was synced")
+    source_system_id: UUID = Field(..., description="System that ran the send")
+    target_system_id: UUID = Field(..., description="System that received")
+    status: str = Field(..., description="success, failed, or started")
+    starting_snapshot: Optional[str] = Field(None, description="Incremental base that was used")
+    ending_snapshot: Optional[str] = Field(None, description="Snapshot sent up to")
+    started_at: Optional[datetime] = Field(None, description="When execution began")
+    finished_at: Optional[datetime] = Field(None, description="When execution ended")
+    duration_seconds: Optional[int] = Field(None, ge=0, description="Wall-clock duration")
+    bytes_transferred: Optional[int] = Field(None, ge=0, description="Bytes sent")
+    error_message: Optional[str] = Field(None, description="Failure detail, if it failed")
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Reject a status the projection would not know what to do with."""
+        allowed = {"success", "failed", "started"}
+        if v not in allowed:
+            raise ValueError(f"status must be one of {sorted(allowed)}, got {v!r}")
+        return v
+
+
+class SyncResultResponse(BaseModel):
+    """Acknowledgement of a recorded outcome."""
+
+    id: UUID
+    sync_group_id: UUID
+    dataset: str
+    source_system_id: UUID
+    target_system_id: UUID
+    status: str
+    starting_snapshot: Optional[str] = None
+    ending_snapshot: Optional[str] = None
+    bytes_transferred: Optional[int] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

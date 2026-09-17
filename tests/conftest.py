@@ -35,6 +35,7 @@ def verify_database_setup():
         "sync_groups",
         "sync_group_systems",
         "sync_states",
+        "sync_runs",
     }
 
     # Check that all expected tables are in Base.metadata
@@ -63,6 +64,7 @@ def verify_tables_exist(engine) -> None:
         "sync_groups",
         "sync_group_systems",
         "sync_states",
+        "sync_runs",
     }
 
     missing_tables = expected_tables - existing_tables

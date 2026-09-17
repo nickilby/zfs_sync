@@ -11,6 +11,8 @@ from zfs_sync.api.schemas.sync import (
     DatasetSyncInstruction,
     DeclinedPair,
     SyncInstructionsResponse,
+    SyncResultCreate,
+    SyncResultResponse,
     SyncStateResponse,
     SyncStatusSummary,
 )
@@ -18,6 +20,7 @@ from zfs_sync.database import get_db
 from zfs_sync.database.repositories import SyncStateRepository
 from zfs_sync.enums import SyncStatus
 from zfs_sync.logging_config import get_logger
+from zfs_sync.services.sync.outcomes import RunStatus, SyncOutcome, SyncOutcomeService
 from zfs_sync.services.sync.planner import SyncPlanner
 from zfs_sync.services.sync.renderer import CommandRenderError, render_sync_command
 from zfs_sync.services.sync.state import SyncStateService
@@ -246,3 +249,46 @@ async def analyze_sync_group(group_id: UUID, db: Session = Depends(get_db)) -> D
         "total_pairs": len(plan.decisions),
         "total_requiring_sync": len(plan.instructions),
     }
+
+
+@router.post(
+    "/sync/results",
+    response_model=SyncResultResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def report_sync_result(result: SyncResultCreate, db: Session = Depends(get_db)):
+    """Report how an executed sync instruction went.
+
+    Records an append-only run and projects the outcome into sync_states, so
+    the dashboard and status summary reflect what actually happened rather than
+    what was merely planned.
+    """
+    run = SyncOutcomeService(db).record(
+        SyncOutcome(
+            sync_group_id=result.sync_group_id,
+            dataset=result.dataset,
+            source_system_id=result.source_system_id,
+            target_system_id=result.target_system_id,
+            status=RunStatus(result.status),
+            starting_snapshot=result.starting_snapshot,
+            ending_snapshot=result.ending_snapshot,
+            started_at=result.started_at,
+            finished_at=result.finished_at,
+            duration_seconds=result.duration_seconds,
+            bytes_transferred=result.bytes_transferred,
+            error_message=result.error_message,
+            reported_by_system_id=result.source_system_id,
+        )
+    )
+    return SyncResultResponse.model_validate(run)
+
+
+@router.get("/sync/groups/{group_id}/runs")
+async def get_sync_runs(
+    group_id: UUID,
+    limit: int = Query(50, ge=1, le=500, description="Maximum runs to return"),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Recent execution history for a sync group, newest first."""
+    runs = SyncOutcomeService(db).recent_runs(group_id, limit=limit)
+    return {"sync_group_id": str(group_id), "run_count": len(runs), "runs": runs}
