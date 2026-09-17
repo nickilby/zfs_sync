@@ -93,6 +93,14 @@ class SnapshotNaming:
 #: The legacy Zengenti convention, kept as a named default rather than a literal.
 MIDNIGHT_NAMING = SnapshotNaming(pattern=r"-000000$")
 
+#: znapzend's default ``tsformat`` is ``%Y-%m-%d-%H%M%S``, and it takes
+#: snapshots throughout the day rather than only at midnight. Under
+#: MIDNIGHT_NAMING all but one snapshot per day would be ineligible to end a
+#: send window, so a znapzend-managed host would appear to be days behind while
+#: being perfectly current. Sites that have changed tsformat should configure
+#: ``snapshot_anchor_pattern`` to match.
+ZNAPZEND_NAMING = SnapshotNaming(pattern=r"^\d{4}-\d{2}-\d{2}-\d{6}$")
+
 
 def naming_from_pattern(pattern: Optional[str]) -> Optional[SnapshotNaming]:
     """Build a naming policy from configuration.
