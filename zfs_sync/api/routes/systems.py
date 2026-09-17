@@ -64,7 +64,8 @@ async def create_system(
     except ValueError as e:
         # Handle constraint violations from repository
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=f"Failed to create system: {e!s}"
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Could not create system '{system.hostname}'. It may already exist.",
         ) from e
 
     # Generate API key for the new system
@@ -74,7 +75,10 @@ async def create_system(
         logger.error(f"Failed to generate API key for system {db_system.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"System created but failed to generate API key: {e!s}",
+            detail=(
+                "The system was created but an API key could not be issued. "
+                "Request one from /systems/{id}/api-key."
+            ),
         ) from e
 
     logger.info(f"Created system: {db_system.hostname} ({db_system.id}) with API key")
@@ -215,7 +219,7 @@ async def update_system(
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update system '{system_id}': {e!s}",
+            detail=f"Could not update system '{system_id}'.",
         ) from e
     if not system:
         raise HTTPException(
@@ -245,7 +249,7 @@ async def delete_system(
         logger.error(f"Error deleting system {system_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete system '{system_id}': {e!s}",
+            detail=f"Could not delete system '{system_id}'.",
         ) from e
     logger.info(f"Deleted system: {system_id}")
 

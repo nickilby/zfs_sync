@@ -38,7 +38,9 @@ async def readiness_check(db: Session = Depends(get_db)):
         logger.error(f"Database connectivity check failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database not available: {e!s}",
+            # The exception text names the database file and driver; the log
+            # records it, the response does not.
+            detail="Database not available",
         ) from e
 
 

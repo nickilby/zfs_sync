@@ -7,6 +7,12 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:
 
+# Read-only by default. Jobs that need more declare it themselves -- only the
+# release job does. Without this every job runs with a token that can write to
+# the repository, which matters more now that this is public.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test Python ${{ matrix.python-version }}
