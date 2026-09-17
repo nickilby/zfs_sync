@@ -841,4 +841,4 @@ Regularly test your backup and recovery procedures:
 - [SETUP_GUIDE.md](SETUP_GUIDE.md) - Initial setup and configuration
 - [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md) - Issue resolution
 - [DASHBOARD_GUIDE.md](DASHBOARD_GUIDE.md) - Web dashboard usage
-- [HOW_TO_USE.md](../HOW_TO_USE.md) - API usage examples
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - API usage examples

@@ -1,5 +1,12 @@
 # Sync Mismatch Detection Bug Analysis
 
+> **Historical.** Kept for the reasoning, not as a description of the code.
+>
+> The diagnosis here is sound, but the fix it describes was never wired into
+> the running service: the helper it names lived in `sync_validators.py` and
+> nothing imported it. The rules are now implemented, and tested, in
+> `zfs_sync/services/sync/policy.py`.
+
 ## Problem Description
 
 The sync system is not detecting that SPOKE1 is behind HUB1 for the DATA1 dataset, even though SPOKE1 is missing many snapshots.

@@ -200,7 +200,7 @@ This roadmap focuses on **usability enhancements** and **feature improvements** 
     - Conflict detection/resolution
 
 - **Queryable Audit Log**
-  - API endpoint: `GET /api/v1/audit`
+  - API endpoint: `GET /api/v1/audit (proposed)`
   - Filter by:
     - Date range
     - Event type

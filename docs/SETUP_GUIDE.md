@@ -113,7 +113,7 @@ pip install -r requirements.txt
 python -m zfs_sync
 ```
 
-**See [QUICK_START.md](../QUICK_START.md) for detailed native installation instructions.**
+**See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed native installation instructions.**
 
 ### Decision Matrix: SQLite vs PostgreSQL
 
@@ -629,5 +629,5 @@ After completing setup:
 - [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) - Daily operations and maintenance
 - [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md) - Issue resolution
 - [DASHBOARD_GUIDE.md](DASHBOARD_GUIDE.md) - Web dashboard usage
-- [HOW_TO_USE.md](../HOW_TO_USE.md) - API usage examples
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - API usage examples
 - [README.md](../README.md) - Project overview and deployment details

@@ -1,5 +1,12 @@
 # Database Schema Update: Sync States
 
+> **Historical.** This describes a manual `DROP TABLE` workaround adopted
+> because Alembic could not run: the repository had migrations but no
+> `alembic.ini` and no `env.py`, and the revision chain did not resolve.
+>
+> Migrations work now. See `docs/MIGRATION_RECOVERY.md` for bringing an
+> existing database under Alembic control without dropping anything.
+
 ## Problem
 
 The `sync_states` table schema was changed from using `snapshot_id` to `dataset`. The database needs to be updated to match the new code.

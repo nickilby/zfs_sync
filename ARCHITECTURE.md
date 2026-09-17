@@ -174,7 +174,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 ### Conflict Detection Flow
 
 ```
-1. System → GET /api/v1/conflicts/{sync_group_id}
+1. System → GET /api/v1/conflicts/sync-group/{sync_group_id}
 2. API → ConflictResolutionService.detect_conflicts()
 3. Service → Compare snapshots across systems
 4. Service → Identify conflict types (diverged, orphaned, etc.)
@@ -566,6 +566,6 @@ The application acts as a witness:
 ## References
 
 - [README.md](README.md) - Project overview and getting started
-- [HOW_TO_USE.md](HOW_TO_USE.md) - User guide
-- [QUICK_START.md](QUICK_START.md) - Quick setup guide
+- [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) - User guide
+- [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) - Quick setup guide
 - API Documentation: Available at `/docs` when running the service

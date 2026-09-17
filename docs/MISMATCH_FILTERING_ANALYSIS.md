@@ -1,5 +1,15 @@
 # Mismatch Filtering Analysis
 
+> **Historical.** Kept because its "Target Behaviour" section is the clearest
+> statement of the send-window policy, and its worked example is now a test.
+>
+> Its "Files Modified" section is not accurate. The functions it describes --
+> `get_latest_allowed_snapshot_before_now()` among them -- existed but were
+> imported by nothing; the code that ran was an inline 72-hour check elsewhere.
+> The policy is now implemented once, in `zfs_sync/services/sync/policy.py`,
+> and the worked example below is asserted in
+> `tests/unit/test_services/test_sync_policy.py`.
+
 ## Problem Summary
 
 The system detects 1525 mismatches for sync group `<sync-group-id>` but reports "no datasets to sync". There are also many `orphaned_snapshot` conflicts for system `<system-id>` on dataset `MIRROR1`.
