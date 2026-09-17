@@ -99,6 +99,34 @@ class Settings(BaseSettings):
         description="Suppress repeated warnings for datasets that exist on some systems but have no snapshots yet on the target (orphan datasets).",
     )
 
+    # Send-window policy. These were hardcoded literals in two places -- an
+    # inline "hours_behind <= 72.0" in the coordination service and
+    # MIN_SNAPSHOT_GAP_HOURS in the validators -- so neither was configurable
+    # and the two could drift apart.
+    snapshot_min_age_hours: float = Field(
+        default=72.0,
+        description=(
+            "How old a snapshot must be before it may end a send window. After a "
+            "successful sync the target trails the source by at most this much."
+        ),
+    )
+    snapshot_min_gap_hours: float = Field(
+        default=72.0,
+        description=(
+            "Minimum span between the starting and ending snapshot for a sync to "
+            "be worth performing."
+        ),
+    )
+    snapshot_anchor_pattern: str = Field(
+        default=r"-000000$",
+        description=(
+            "Regular expression selecting which snapshot names may end a send "
+            "window. The default matches the midnight convention; set it to "
+            r"'^\d{4}-\d{2}-\d{2}-\d{6}$' for znapzend-style naming, or '' to "
+            "accept any snapshot name."
+        ),
+    )
+
     # File paths
     config_file: Optional[Path] = Field(
         default=None, description="Path to configuration file (YAML/TOML)"
@@ -176,6 +204,27 @@ class Settings(BaseSettings):
         """Validate heartbeat timeout is positive."""
         if v <= 0:
             raise ValueError(f"heartbeat_timeout_seconds must be positive, got {v}")
+        return v
+
+    @field_validator("snapshot_anchor_pattern")
+    @classmethod
+    def validate_snapshot_anchor_pattern(cls, v: str) -> str:
+        """Reject an uncompilable naming pattern at startup, not mid-sync."""
+        import re
+
+        if v:
+            try:
+                re.compile(v)
+            except re.error as exc:
+                raise ValueError(f"snapshot_anchor_pattern is not a valid regex: {exc}") from exc
+        return v
+
+    @field_validator("snapshot_min_age_hours", "snapshot_min_gap_hours")
+    @classmethod
+    def validate_positive_hours(cls, v: float) -> float:
+        """These are durations; a negative one is always a configuration error."""
+        if v < 0:
+            raise ValueError(f"must not be negative, got {v}")
         return v
 
     @field_validator("sync_check_interval_seconds")
