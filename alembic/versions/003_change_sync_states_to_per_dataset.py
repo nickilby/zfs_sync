@@ -11,7 +11,6 @@ import sqlalchemy as sa
 
 from zfs_sync.database.base import GUID
 
-
 # revision identifiers, used by Alembic.
 revision = "003"
 down_revision = "002"
@@ -50,9 +49,7 @@ def upgrade():
 
     with op.batch_alter_table("sync_states") as batch_op:
         batch_op.drop_column("snapshot_id")
-        batch_op.add_column(
-            sa.Column("dataset", sa.String(255), nullable=False, server_default="")
-        )
+        batch_op.add_column(sa.Column("dataset", sa.String(255), nullable=False, server_default=""))
 
     op.create_index(op.f("ix_sync_states_dataset"), "sync_states", ["dataset"], unique=False)
 

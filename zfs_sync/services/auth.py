@@ -57,9 +57,7 @@ class AuthService:
         """Issue a key for a system and return the plaintext exactly once."""
         system = self.system_repo.get(system_id)
         if not system:
-            raise ValueError(
-                f"System '{system_id}' not found. Cannot create an API key for it."
-            )
+            raise ValueError(f"System '{system_id}' not found. Cannot create an API key for it.")
 
         api_key = self.generate_api_key()
         self.system_repo.update(

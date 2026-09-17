@@ -25,11 +25,7 @@ class SystemRepository(BaseRepository[SystemModel]):
         Replaces get_by_api_key, which compared plaintext. Keys are never
         stored in plaintext now, so there is nothing to compare against.
         """
-        return (
-            self.db.query(SystemModel)
-            .filter(SystemModel.api_key_hash == api_key_hash)
-            .first()
-        )
+        return self.db.query(SystemModel).filter(SystemModel.api_key_hash == api_key_hash).first()
 
     def get_all_online(self) -> List[SystemModel]:
         """Get all online systems."""

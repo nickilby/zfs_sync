@@ -171,9 +171,7 @@ class TestTheExecutingHostSeesEverything:
 
     def test_no_spoke_is_asked_to_run_a_command_it_cannot(self, fan_out):
         for entry in fan_out["spokes"].values():
-            decisions = SyncPlanner(fan_out["db"]).plan_for_system(
-                entry["system"].id, now=NOW
-            )
+            decisions = SyncPlanner(fan_out["db"]).plan_for_system(entry["system"].id, now=NOW)
             assert decisions == [], "a spoke cannot send from the hub's pool"
 
 

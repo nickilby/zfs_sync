@@ -7,7 +7,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ssh_hostname and ssh_user are interpolated into a command that a client runs
 # as root. The generator quotes them, but validating here keeps obviously
 # hostile values out of the database in the first place. Permissive enough for

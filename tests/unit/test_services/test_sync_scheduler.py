@@ -104,24 +104,34 @@ class TestSchedulerRecordsState:
         snapshots = SnapshotRepository(db)
 
         hub = systems.create(
-            hostname="hub1", platform="linux", connectivity_status="online",
+            hostname="hub1",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="hub1-san",
         )
         spoke = systems.create(
-            hostname="spoke1", platform="linux", connectivity_status="online",
+            hostname="spoke1",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="spoke1-san",
         )
         for number in range(1, 21):
             snapshots.create(
                 name=f"hubpool1/DATA1@2025-01-{number:02d}-000000",
-                pool="hubpool1", dataset="DATA1", system_id=hub.id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                pool="hubpool1",
+                dataset="DATA1",
+                system_id=hub.id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=1024,
             )
         for number in (1, 2):
             snapshots.create(
                 name=f"spokepool1/DATA1@2025-01-{number:02d}-000000",
-                pool="spokepool1", dataset="DATA1", system_id=spoke.id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                pool="spokepool1",
+                dataset="DATA1",
+                system_id=spoke.id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=1024,
             )
 
         group = groups.create(name="sched", directional=True, hub_system_id=hub.id)
@@ -191,6 +201,6 @@ async def test_a_pass_does_not_block_the_event_loop(test_db, monkeypatch):
     await scheduler._process_all_sync_groups()
 
     assert worker_threads, "the blocking body should have run"
-    assert worker_threads[0] != main_thread, (
-        f"scheduler work ran on the event loop thread ({main_thread})"
-    )
+    assert (
+        worker_threads[0] != main_thread
+    ), f"scheduler work ran on the event loop thread ({main_thread})"

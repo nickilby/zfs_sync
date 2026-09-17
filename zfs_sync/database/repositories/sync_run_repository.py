@@ -39,9 +39,7 @@ class SyncRunRepository(BaseRepository[SyncRunModel]):
         self, sync_group_id: UUID, limit: int = 100, status: Optional[str] = None
     ) -> List[SyncRunModel]:
         """Return recent runs for a sync group, newest first."""
-        query = self.db.query(SyncRunModel).filter(
-            SyncRunModel.sync_group_id == sync_group_id
-        )
+        query = self.db.query(SyncRunModel).filter(SyncRunModel.sync_group_id == sync_group_id)
         if status:
             query = query.filter(SyncRunModel.status == status)
         return query.order_by(SyncRunModel.created_at.desc()).limit(limit).all()

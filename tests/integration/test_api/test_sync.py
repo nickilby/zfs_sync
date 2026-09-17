@@ -187,20 +187,22 @@ class TestSyncInstructionsEndpoints:
         assert "spokepool1/DATA1" in cmd, f"Target pool missing in command: {cmd}"
         assert "spoke1-san" in cmd, f"Target ssh host missing in command: {cmd}"
 
-    def test_the_target_is_not_asked_to_run_the_source_command(
-        self, auth_client, test_db
-    ):
+    def test_the_target_is_not_asked_to_run_the_source_command(self, auth_client, test_db):
         """A target receives no instruction, because it cannot execute one."""
         system_repo = SystemRepository(test_db)
         snapshot_repo = SnapshotRepository(test_db)
         sync_group_repo = SyncGroupRepository(test_db)
 
         source = system_repo.create(
-            hostname="hub-exec", platform="linux", connectivity_status="online",
+            hostname="hub-exec",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="hub-exec-san",
         )
         target = system_repo.create(
-            hostname="spoke-exec", platform="linux", connectivity_status="online",
+            hostname="spoke-exec",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="spoke-exec-san",
         )
         sync_group = sync_group_repo.create(
@@ -212,14 +214,20 @@ class TestSyncInstructionsEndpoints:
         for number in range(1, 21):
             snapshot_repo.create(
                 name=f"hubpool1/DATA1@2025-01-{number:02d}-000000",
-                pool="hubpool1", dataset="DATA1", system_id=source.id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=0,
+                pool="hubpool1",
+                dataset="DATA1",
+                system_id=source.id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=0,
             )
         for number in (1, 2):
             snapshot_repo.create(
                 name=f"spokepool1/DATA1@2025-01-{number:02d}-000000",
-                pool="spokepool1", dataset="DATA1", system_id=target.id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=0,
+                pool="spokepool1",
+                dataset="DATA1",
+                system_id=target.id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=0,
             )
 
         source_view = auth_client.get(f"/api/v1/sync/instructions/{source.id}").json()
@@ -239,11 +247,15 @@ class TestSyncInstructionsEndpoints:
         sync_group_repo = SyncGroupRepository(test_db)
 
         source = system_repo.create(
-            hostname="hub-sync", platform="linux", connectivity_status="online",
+            hostname="hub-sync",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="hub-sync-san",
         )
         target = system_repo.create(
-            hostname="spoke-sync", platform="linux", connectivity_status="online",
+            hostname="spoke-sync",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="spoke-sync-san",
         )
         sync_group = sync_group_repo.create(
@@ -256,8 +268,11 @@ class TestSyncInstructionsEndpoints:
             for number in range(1, 21):
                 snapshot_repo.create(
                     name=f"{pool}/DATA1@2025-01-{number:02d}-000000",
-                    pool=pool, dataset="DATA1", system_id=system.id,
-                    timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=0,
+                    pool=pool,
+                    dataset="DATA1",
+                    system_id=system.id,
+                    timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                    size=0,
                 )
 
         payload = auth_client.get(f"/api/v1/sync/instructions/{source.id}").json()

@@ -175,9 +175,7 @@ class SyncPlanner:
             )
         return decisions
 
-    def dataset_pools(
-        self, system_ids: Sequence[UUID]
-    ) -> Dict[str, List[Tuple[str, UUID]]]:
+    def dataset_pools(self, system_ids: Sequence[UUID]) -> Dict[str, List[Tuple[str, UUID]]]:
         """Map each dataset name to the ``(pool, system_id)`` pairs holding it.
 
         Replaces ``sync_queries.get_datasets_for_systems``, which paged through
@@ -372,9 +370,7 @@ class SyncPlanner:
         if after is None:
             return False
         source_names = {name for name, _ in source}
-        return any(
-            name not in source_names and timestamp > after for name, timestamp in target
-        )
+        return any(name not in source_names and timestamp > after for name, timestamp in target)
 
 
 __all__ = [

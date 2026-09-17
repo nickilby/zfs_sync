@@ -86,3 +86,54 @@ class TestFailureIsReported:
             validate_log_directory(settings)
 
         assert "nested" in str(raised.value)
+
+
+class TestEnvironmentConfiguration:
+    """ZFS_SYNC_* variables must work with or without a config file.
+
+    SettingsConfigDict had no env_prefix, and the prefix was applied by a
+    manual loop inside Settings.from_file(). So environment configuration was
+    only honoured when a config file happened to exist; a deployment
+    configured purely through the environment -- a container, say -- silently
+    fell back to platform defaults, including for database_url.
+    """
+
+    def test_the_prefix_is_declared_on_the_model(self):
+        from zfs_sync.config.settings import Settings
+
+        assert (
+            Settings.model_config.get("env_prefix") == "ZFS_SYNC_"
+        ), "without env_prefix, ZFS_SYNC_* is only honoured when a config file exists"
+
+    def test_the_database_url_is_taken_from_the_environment(self, tmp_path, monkeypatch):
+        from zfs_sync.config.settings import Settings
+
+        expected = f"sqlite:///{tmp_path / 'from-env.db'}"
+        monkeypatch.setenv("ZFS_SYNC_DATABASE_URL", expected)
+
+        assert Settings().database_url == expected
+
+    def test_other_settings_come_from_the_environment_too(self, monkeypatch):
+        from zfs_sync.config.settings import Settings
+
+        monkeypatch.setenv("ZFS_SYNC_LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("ZFS_SYNC_PORT", "9999")
+
+        settings = Settings()
+
+        assert settings.log_level == "DEBUG"
+        assert settings.port == 9999
+
+    def test_the_environment_still_wins_over_a_config_file(self, tmp_path, monkeypatch):
+        """from_file applies env as init kwargs so it takes precedence; the
+        prefix must not have reversed that."""
+        from zfs_sync.config.settings import Settings
+
+        config = tmp_path / "zfs_sync.yaml"
+        config.write_text('log_level: "WARNING"\nport: 1234\n', encoding="utf-8")
+        monkeypatch.setenv("ZFS_SYNC_LOG_LEVEL", "DEBUG")
+
+        settings = Settings.from_file(config)
+
+        assert settings.log_level == "DEBUG", "the environment should override the file"
+        assert settings.port == 1234, "unset variables leave the file's value alone"

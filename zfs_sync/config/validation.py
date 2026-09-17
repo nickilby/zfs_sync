@@ -256,8 +256,11 @@ def validate_network_config(settings: Settings) -> None:
             # Port check failed, but this is not critical - just log a warning
             logger.warning("Could not check if port %s is available: %s", port, e)
 
-    # Validate host format (already done in field validator, but double-check)
-    if host not in ("0.0.0.0", "127.0.0.1", "localhost", "*"):  # noqa: S104 -- comparison, not a bind
+    # Validate host format (already done in field validator, but double-check).
+    # These are comparisons, not binds; keep the tuple on one line so the
+    # suppression stays attached to the literal it explains.
+    special_hosts = ("0.0.0.0", "127.0.0.1", "localhost", "*")  # noqa: S104
+    if host not in special_hosts:
         try:
             # Try to resolve hostname
             socket.gethostbyname(host)

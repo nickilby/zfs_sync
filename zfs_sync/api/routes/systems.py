@@ -23,9 +23,7 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-@router.post(
-    "/systems", response_model=SystemCreatedResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/systems", response_model=SystemCreatedResponse, status_code=status.HTTP_201_CREATED)
 async def create_system(
     system: SystemCreate,
     db: Session = Depends(get_db),
@@ -294,9 +292,7 @@ async def get_all_systems_health(
 
 
 @router.get("/systems/health/online")
-async def get_online_systems(
-    db: Session = Depends(get_db), _: UUID = Depends(get_current_system)
-):
+async def get_online_systems(db: Session = Depends(get_db), _: UUID = Depends(get_current_system)):
     """Get list of online systems. Public endpoint."""
     health_service = SystemHealthService(db)
     online = health_service.get_online_systems()
@@ -304,9 +300,7 @@ async def get_online_systems(
 
 
 @router.get("/systems/health/offline")
-async def get_offline_systems(
-    db: Session = Depends(get_db), _: UUID = Depends(get_current_system)
-):
+async def get_offline_systems(db: Session = Depends(get_db), _: UUID = Depends(get_current_system)):
     """Get list of offline systems. Public endpoint."""
     health_service = SystemHealthService(db)
     offline = health_service.get_offline_systems()

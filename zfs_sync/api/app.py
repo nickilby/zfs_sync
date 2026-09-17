@@ -94,7 +94,9 @@ def _mount_static(app: FastAPI) -> None:
     what makes the page work rather than render unstyled and inert.
     """
     if not PACKAGE_STATIC_DIR.is_dir():
-        logger.warning("Static directory %s not found; dashboard assets will 404", PACKAGE_STATIC_DIR)
+        logger.warning(
+            "Static directory %s not found; dashboard assets will 404", PACKAGE_STATIC_DIR
+        )
         return
 
     app.mount("/static", StaticFiles(directory=str(PACKAGE_STATIC_DIR)), name="static")

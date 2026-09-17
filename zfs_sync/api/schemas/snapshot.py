@@ -76,9 +76,7 @@ class SnapshotBatchResponse(BaseModel):
 
     created: int = Field(..., description="Rows inserted for the first time")
     updated: int = Field(..., description="Rows that already existed and were refreshed")
-    deleted: int = Field(
-        ..., description="Rows removed because the client no longer reports them"
-    )
+    deleted: int = Field(..., description="Rows removed because the client no longer reports them")
     failed: List[SnapshotIngestFailure] = Field(
         default_factory=list, description="Rows that could not be stored, with the reason"
     )
@@ -90,6 +88,4 @@ class SnapshotBatchResponse(BaseModel):
             "for datasets it said nothing about."
         ),
     )
-    snapshots: List[SnapshotResponse] = Field(
-        default_factory=list, description="The stored rows"
-    )
+    snapshots: List[SnapshotResponse] = Field(default_factory=list, description="The stored rows")

@@ -200,9 +200,7 @@ class SyncSchedulerService:
             try:
                 plan = planner.plan_group(sync_group_id)
                 if plan.skipped_reason:
-                    logger.info(
-                        "Sync group %s not planned: %s", sync_group_id, plan.skipped_reason
-                    )
+                    logger.info("Sync group %s not planned: %s", sync_group_id, plan.skipped_reason)
                 else:
                     recorded = SyncOutcomeService(db).record_planned_states(plan.decisions)
                     logger.info(

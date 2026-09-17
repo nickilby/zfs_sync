@@ -45,9 +45,7 @@ def _deduplicate(table: str, key_columns: Sequence[str]) -> int:
         for column in key_columns
     )
 
-    result = bind.execute(
-        sa.text(
-            f"""
+    result = bind.execute(sa.text(f"""
             DELETE FROM {table}
             WHERE id IN (
                 SELECT dupe.id FROM {table} AS dupe
@@ -59,9 +57,7 @@ def _deduplicate(table: str, key_columns: Sequence[str]) -> int:
                                AND target.id > dupe.id))
                 )
             )
-            """  # noqa: S608 - table and column names are literals in this module
-        )
-    )
+            """))  # noqa: S608 - table and column names are literals in this module
     removed = result.rowcount or 0
     if removed:
         print(f"  removed {removed} duplicate row(s) from {table} (key: {keys})")

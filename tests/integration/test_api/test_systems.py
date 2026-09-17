@@ -37,9 +37,7 @@ class TestSystemsEndpoints:
         api_key = register_response.json()["api_key"]
 
         # Then retrieve it, authenticating as itself.
-        response = test_client.get(
-            f"/api/v1/systems/{system_id}", headers={"X-API-Key": api_key}
-        )
+        response = test_client.get(f"/api/v1/systems/{system_id}", headers={"X-API-Key": api_key})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["id"] == system_id
@@ -136,10 +134,7 @@ class TestSystemResponseDoesNotLeakCredentials:
         first = self._register(test_client, "leak-list-1")
         second = self._register(test_client, "leak-list-2")
 
-
-        response = test_client.get(
-            "/api/v1/systems", headers={"X-API-Key": second["api_key"]}
-        )
+        response = test_client.get("/api/v1/systems", headers={"X-API-Key": second["api_key"]})
 
         assert response.status_code == status.HTTP_200_OK
         for entry in response.json():
@@ -224,7 +219,7 @@ class TestSSHFieldsRejectShellMetacharacters:
                 payload["ssh_user"] = user
 
             response = test_client.post("/api/v1/systems", json=payload)
-            assert response.status_code == status.HTTP_201_CREATED, (
-                f"{host!r}/{user!r} rejected: {response.text}"
-            )
+            assert (
+                response.status_code == status.HTTP_201_CREATED
+            ), f"{host!r}/{user!r} rejected: {response.text}"
             assert response.json()["ssh_hostname"] == host

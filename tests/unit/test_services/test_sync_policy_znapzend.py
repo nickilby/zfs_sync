@@ -103,16 +103,24 @@ class TestRetentionPruning:
         target_before = plan_over([1, 2])
 
         before = choose_send_window(
-            source=source, target=target_before, now=NOW,
-            min_age_hours=72.0, min_gap_hours=1.0, naming=ZNAPZEND_NAMING,
+            source=source,
+            target=target_before,
+            now=NOW,
+            min_age_hours=72.0,
+            min_gap_hours=1.0,
+            naming=ZNAPZEND_NAMING,
         )
         assert before.window.base == "2025-01-02-180000"
 
         # znapzend expires everything from day 1 on the target.
         target_after = plan_over([2])
         after = choose_send_window(
-            source=source, target=target_after, now=NOW,
-            min_age_hours=72.0, min_gap_hours=1.0, naming=ZNAPZEND_NAMING,
+            source=source,
+            target=target_after,
+            now=NOW,
+            min_age_hours=72.0,
+            min_gap_hours=1.0,
+            naming=ZNAPZEND_NAMING,
         )
 
         assert after.window.base == "2025-01-02-180000"
@@ -123,8 +131,12 @@ class TestRetentionPruning:
         target = plan_over([1])  # retained nothing the source still has
 
         result = choose_send_window(
-            source=source, target=target, now=NOW,
-            min_age_hours=72.0, min_gap_hours=1.0, naming=ZNAPZEND_NAMING,
+            source=source,
+            target=target,
+            now=NOW,
+            min_age_hours=72.0,
+            min_gap_hours=1.0,
+            naming=ZNAPZEND_NAMING,
         )
 
         assert result.ok
@@ -134,8 +146,7 @@ class TestRetentionPruning:
     def test_a_source_pruned_back_inside_the_age_window_has_nothing_to_send(self):
         """Aggressive retention can leave nothing old enough to send."""
         recent = [
-            (f"2025-02-01-{hour:02d}0000",
-             datetime(2025, 2, 1, hour, tzinfo=timezone.utc))
+            (f"2025-02-01-{hour:02d}0000", datetime(2025, 2, 1, hour, tzinfo=timezone.utc))
             for hour in (0, 6, 12, 18)
         ]
 
@@ -158,8 +169,12 @@ class TestRetentionPruning:
         source = plan_over(range(1, 11))
 
         result = choose_send_window(
-            source=source, target=list(source), now=NOW,
-            min_age_hours=72.0, min_gap_hours=1.0, naming=ZNAPZEND_NAMING,
+            source=source,
+            target=list(source),
+            now=NOW,
+            min_age_hours=72.0,
+            min_gap_hours=1.0,
+            naming=ZNAPZEND_NAMING,
         )
 
         assert not result.ok
@@ -172,15 +187,21 @@ class TestFrequentSnapshotSchedules:
     def test_a_fifteen_minute_plan_still_respects_the_age_cap(self):
         start = datetime(2025, 1, 1, tzinfo=timezone.utc)
         source = [
-            ((start + timedelta(minutes=15 * i)).strftime(NAME_FORMAT),
-             start + timedelta(minutes=15 * i))
+            (
+                (start + timedelta(minutes=15 * i)).strftime(NAME_FORMAT),
+                start + timedelta(minutes=15 * i),
+            )
             for i in range(0, 400)
         ]
         now = start + timedelta(days=5)
 
         result = choose_send_window(
-            source=source, target=[source[0]], now=now,
-            min_age_hours=72.0, min_gap_hours=1.0, naming=ZNAPZEND_NAMING,
+            source=source,
+            target=[source[0]],
+            now=now,
+            min_age_hours=72.0,
+            min_gap_hours=1.0,
+            naming=ZNAPZEND_NAMING,
         )
 
         assert result.ok
@@ -193,8 +214,12 @@ class TestFrequentSnapshotSchedules:
         source = plan_over(range(1, 11))
 
         result = choose_send_window(
-            source=source, target=plan_over([1]), now=NOW,
-            min_age_hours=72.0, min_gap_hours=1.0, naming=ZNAPZEND_NAMING,
+            source=source,
+            target=plan_over([1]),
+            now=NOW,
+            min_age_hours=72.0,
+            min_gap_hours=1.0,
+            naming=ZNAPZEND_NAMING,
         )
 
         assert result.window.base == "2025-01-01-180000"

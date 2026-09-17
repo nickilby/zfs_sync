@@ -52,9 +52,7 @@ class BaseRepository(Generic[ModelType]):
             # duplicate and a dangling reference need different HTTP statuses
             # and different fixes.
             error = classify_integrity_error(e, self.model.__name__)
-            logger.warning(
-                "Integrity error creating %s: %s", self.model.__name__, error.detail
-            )
+            logger.warning("Integrity error creating %s: %s", self.model.__name__, error.detail)
             raise error from e
         except Exception as e:
             self.db.rollback()

@@ -25,8 +25,10 @@ NOW = datetime(2025, 2, 1, tzinfo=timezone.utc)
 
 def znapzend_names(day: int, hours=(0, 6, 12, 18)):
     """Names as znapzend's default tsformat produces them."""
-    return [(f"2025-01-{day:02d}-{hour:02d}0000", datetime(2025, 1, day, hour, tzinfo=timezone.utc))
-            for hour in hours]
+    return [
+        (f"2025-01-{day:02d}-{hour:02d}0000", datetime(2025, 1, day, hour, tzinfo=timezone.utc))
+        for hour in hours
+    ]
 
 
 @pytest.fixture
@@ -49,25 +51,37 @@ def fleet(test_db):
     snapshots = SnapshotRepository(test_db)
 
     hub = systems.create(
-        hostname="hub1", platform="linux", connectivity_status="online",
+        hostname="hub1",
+        platform="linux",
+        connectivity_status="online",
         ssh_hostname="hub1-san",
     )
     spoke = systems.create(
-        hostname="spoke1", platform="linux", connectivity_status="online",
+        hostname="spoke1",
+        platform="linux",
+        connectivity_status="online",
         ssh_hostname="spoke1-san",
     )
 
     for day in range(1, 11):
         for name, timestamp in znapzend_names(day):
             snapshots.create(
-                name=f"hubpool1/{DATASET}@{name}", pool="hubpool1", dataset=DATASET,
-                timestamp=timestamp, size=1024, system_id=hub.id,
+                name=f"hubpool1/{DATASET}@{name}",
+                pool="hubpool1",
+                dataset=DATASET,
+                timestamp=timestamp,
+                size=1024,
+                system_id=hub.id,
             )
     # The spoke has only the first day: znapzend has not replicated the rest.
     for name, timestamp in znapzend_names(1):
         snapshots.create(
-            name=f"spokepool1/{DATASET}@{name}", pool="spokepool1", dataset=DATASET,
-            timestamp=timestamp, size=1024, system_id=spoke.id,
+            name=f"spokepool1/{DATASET}@{name}",
+            pool="spokepool1",
+            dataset=DATASET,
+            timestamp=timestamp,
+            size=1024,
+            system_id=spoke.id,
         )
 
     group = groups.create(name="znapzend", directional=True, hub_system_id=hub.id)
@@ -89,9 +103,7 @@ class TestPlanningAZnapzendFleet:
         decision = plan.decisions[0]
         assert decision.ending_snapshot == "2025-01-10-000000"
 
-    def test_configuring_the_pattern_uses_the_newest_snapshot(
-        self, fleet, znapzend_settings
-    ):
+    def test_configuring_the_pattern_uses_the_newest_snapshot(self, fleet, znapzend_settings):
         plan = SyncPlanner(fleet["db"], settings=znapzend_settings).plan_group(
             fleet["group"].id, now=NOW
         )
@@ -117,19 +129,21 @@ class TestPlanningAZnapzendFleet:
 class TestMixedFleet:
     """Some hosts on znapzend, some on the legacy convention."""
 
-    def test_both_conventions_plan_under_the_znapzend_pattern(
-        self, test_db, znapzend_settings
-    ):
+    def test_both_conventions_plan_under_the_znapzend_pattern(self, test_db, znapzend_settings):
         systems = SystemRepository(test_db)
         groups = SyncGroupRepository(test_db)
         snapshots = SnapshotRepository(test_db)
 
         hub = systems.create(
-            hostname="hub1", platform="linux", connectivity_status="online",
+            hostname="hub1",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="hub1-san",
         )
         legacy = systems.create(
-            hostname="legacy-spoke", platform="linux", connectivity_status="online",
+            hostname="legacy-spoke",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="legacy-san",
         )
 
@@ -137,26 +151,30 @@ class TestMixedFleet:
         for day in range(1, 11):
             for name, timestamp in znapzend_names(day):
                 snapshots.create(
-                    name=f"hubpool1/{DATASET}@{name}", pool="hubpool1", dataset=DATASET,
-                    timestamp=timestamp, size=1024, system_id=hub.id,
+                    name=f"hubpool1/{DATASET}@{name}",
+                    pool="hubpool1",
+                    dataset=DATASET,
+                    timestamp=timestamp,
+                    size=1024,
+                    system_id=hub.id,
                 )
         # The legacy host only ever took midnight snapshots, which the
         # znapzend pattern also matches.
         for day in (1, 2):
             snapshots.create(
                 name=f"legacypool/{DATASET}@2025-01-{day:02d}-000000",
-                pool="legacypool", dataset=DATASET,
+                pool="legacypool",
+                dataset=DATASET,
                 timestamp=datetime(2025, 1, day, tzinfo=timezone.utc),
-                size=1024, system_id=legacy.id,
+                size=1024,
+                system_id=legacy.id,
             )
 
         group = groups.create(name="mixed", directional=True, hub_system_id=hub.id)
         groups.add_system(group.id, hub.id)
         groups.add_system(group.id, legacy.id)
 
-        plan = SyncPlanner(test_db, settings=znapzend_settings).plan_group(
-            group.id, now=NOW
-        )
+        plan = SyncPlanner(test_db, settings=znapzend_settings).plan_group(group.id, now=NOW)
 
         decision = plan.decisions[0]
         assert decision.action.value == "sync"
@@ -196,8 +214,11 @@ class TestReportingZnapzendSnapshots:
         """The report hook posts what znapzend created, like any other client."""
         registered = test_client.post(
             "/api/v1/systems",
-            json={"hostname": "znapzend-host", "platform": "linux",
-                  "ssh_hostname": "znapzend-host-san"},
+            json={
+                "hostname": "znapzend-host",
+                "platform": "linux",
+                "ssh_hostname": "znapzend-host-san",
+            },
         ).json()
 
         rows = [
@@ -237,8 +258,11 @@ class TestReportingZnapzendSnapshots:
                 params={"reconcile": "true"},
                 json=[
                     {
-                        "name": f"tank/{DATASET}@{name}", "pool": "tank", "dataset": DATASET,
-                        "timestamp": timestamp.isoformat(), "size": 1024,
+                        "name": f"tank/{DATASET}@{name}",
+                        "pool": "tank",
+                        "dataset": DATASET,
+                        "timestamp": timestamp.isoformat(),
+                        "size": 1024,
                         "system_id": registered["id"],
                     }
                     for name, timestamp in names

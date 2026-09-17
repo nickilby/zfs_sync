@@ -53,9 +53,7 @@ def columns(db_path, table) -> set:
 class TestRevisionChain:
     def test_there_is_exactly_one_head(self):
         """Two revisions both followed 001, so the map was unresolvable."""
-        script = ScriptDirectory.from_config(
-            Config(str(ROOT / "alembic.ini"))
-        )
+        script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
 
         heads = script.get_heads()
         assert len(heads) == 1, f"expected a single head, found {heads}"
@@ -67,17 +65,15 @@ class TestRevisionChain:
 
         for revision in script.walk_revisions():
             for parent in revision._all_down_revisions:
-                assert parent in known, (
-                    f"revision {revision.revision} requires {parent}, which does not exist"
-                )
+                assert (
+                    parent in known
+                ), f"revision {revision.revision} requires {parent}, which does not exist"
 
     def test_the_chain_is_linear(self):
         script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
 
         for revision in script.walk_revisions():
-            assert len(revision._all_down_revisions) <= 1, (
-                f"revision {revision.revision} branches"
-            )
+            assert len(revision._all_down_revisions) <= 1, f"revision {revision.revision} branches"
 
 
 class TestUpgradeFromEmpty:
@@ -153,8 +149,7 @@ class TestRecoveringADriftedDatabase:
     def build_drifted(db_path) -> None:
         """A database as create_all() would have left it at revision 002."""
         connection = sqlite3.connect(db_path)
-        connection.executescript(
-            """
+        connection.executescript("""
             CREATE TABLE systems (
                 id CHAR(36) PRIMARY KEY, created_at DATETIME, updated_at DATETIME,
                 hostname VARCHAR(255), platform VARCHAR(50),
@@ -193,8 +188,7 @@ class TestRecoveringADriftedDatabase:
                     '11111111-1111-1111-1111-111111111111');
             INSERT INTO sync_groups (id, name, enabled, sync_interval_seconds)
             VALUES ('33333333-3333-3333-3333-333333333333', 'legacy group', 1, 3600);
-            """
-        )
+            """)
         connection.commit()
         connection.close()
 
@@ -331,9 +325,7 @@ class TestNaturalKeyConstraints:
         finally:
             connection.close()
 
-    def test_the_same_snapshot_name_on_another_system_is_still_allowed(
-        self, alembic_config
-    ):
+    def test_the_same_snapshot_name_on_another_system_is_still_allowed(self, alembic_config):
         """Uniqueness is per system, not global -- a hub and its spokes all
         hold the same snapshot names."""
         config, db_path = alembic_config

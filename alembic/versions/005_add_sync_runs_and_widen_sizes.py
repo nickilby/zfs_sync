@@ -60,9 +60,7 @@ def upgrade() -> None:
     op.create_index("ix_sync_runs_source_system_id", "sync_runs", ["source_system_id"])
     op.create_index("ix_sync_runs_target_system_id", "sync_runs", ["target_system_id"])
     op.create_index("ix_sync_runs_status", "sync_runs", ["status"])
-    op.create_index(
-        "ix_sync_runs_reported_by_system_id", "sync_runs", ["reported_by_system_id"]
-    )
+    op.create_index("ix_sync_runs_reported_by_system_id", "sync_runs", ["reported_by_system_id"])
 
     # SQLite stores integers as up to eight bytes whatever the column says, so
     # this widening is a no-op there and a real change on PostgreSQL.

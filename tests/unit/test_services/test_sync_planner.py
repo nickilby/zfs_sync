@@ -287,9 +287,7 @@ class TestSinglePair:
 
         # 36h after the last hub snapshot: with a 72h minimum age the newest
         # two snapshots are too recent to send.
-        plan = SyncPlanner(fleet.db).plan_group(
-            group.id, now=day(20) + timedelta(hours=36)
-        )
+        plan = SyncPlanner(fleet.db).plan_group(group.id, now=day(20) + timedelta(hours=36))
 
         decision = plan.decisions[0]
         assert decision.ending_snapshot == name(18)
@@ -452,6 +450,6 @@ class TestQueryEfficiency:
         assert len(plan.decisions) == 12
         # Group, associations, two systems, one snapshot sweep -- a small
         # constant. Twelve datasets must not mean dozens of queries.
-        assert len(statements) < 12, (
-            f"planning 12 datasets issued {len(statements)} SELECTs: {statements}"
-        )
+        assert (
+            len(statements) < 12
+        ), f"planning 12 datasets issued {len(statements)} SELECTs: {statements}"

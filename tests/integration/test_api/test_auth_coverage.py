@@ -97,9 +97,7 @@ class TestRejectionBehaviour:
         assert response.headers.get("WWW-Authenticate") == "ApiKey"
 
     def test_an_unknown_key_is_401(self, test_client):
-        response = test_client.get(
-            "/api/v1/systems", headers={"X-API-Key": "not-a-real-key"}
-        )
+        response = test_client.get("/api/v1/systems", headers={"X-API-Key": "not-a-real-key"})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -109,9 +107,7 @@ class TestRejectionBehaviour:
             json={"hostname": "hub1", "platform": "linux", "connectivity_status": "online"},
         ).json()
 
-        response = test_client.get(
-            "/api/v1/systems", headers={"X-API-Key": created["api_key"]}
-        )
+        response = test_client.get("/api/v1/systems", headers={"X-API-Key": created["api_key"]})
 
         assert response.status_code == status.HTTP_200_OK
 

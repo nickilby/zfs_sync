@@ -227,9 +227,7 @@ async def analyze_sync_group(group_id: UUID, db: Session = Depends(get_db)) -> D
         datasets.append(
             {
                 "dataset_name": dataset,
-                "sync_status": "out_of_sync"
-                if any(d.is_sync for d in decisions)
-                else "in_sync",
+                "sync_status": "out_of_sync" if any(d.is_sync for d in decisions) else "in_sync",
                 "targets": [
                     {
                         "target_system_id": str(d.target.id),

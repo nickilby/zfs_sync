@@ -149,6 +149,12 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
+        # Without this, ZFS_SYNC_* variables were only honoured when a config
+        # file happened to exist -- from_file() applied them with a manual
+        # loop, and nothing applied them otherwise. A deployment configured
+        # purely through the environment (a container, say) silently fell back
+        # to platform defaults, including for database_url.
+        env_prefix="ZFS_SYNC_",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,

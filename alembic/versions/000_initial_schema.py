@@ -115,9 +115,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["system_id"], ["systems.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "ix_sync_group_systems_sync_group_id", "sync_group_systems", ["sync_group_id"]
-    )
+    op.create_index("ix_sync_group_systems_sync_group_id", "sync_group_systems", ["sync_group_id"])
     op.create_index("ix_sync_group_systems_system_id", "sync_group_systems", ["system_id"])
 
     op.create_table(

@@ -56,9 +56,7 @@ def seed(test_client, api_key, system_id, datasets=("DATA1", "DATA2"), days=(1, 
 
 
 class TestReportScope:
-    def test_a_single_dataset_report_leaves_other_datasets_alone(
-        self, test_client, test_db
-    ):
+    def test_a_single_dataset_report_leaves_other_datasets_alone(self, test_client, test_db):
         """The destructive case, now fixed.
 
         A client reporting only DATA1 must not remove DATA2, about which it
@@ -85,9 +83,7 @@ class TestReportScope:
         assert {s.dataset for s in remaining} == {"DATA1", "DATA2"}
         assert len(remaining) == 6
 
-    def test_a_genuine_deletion_is_honoured_when_reconciling(
-        self, test_client, test_db
-    ):
+    def test_a_genuine_deletion_is_honoured_when_reconciling(self, test_client, test_db):
         """Retention pruning must still be reflected, or the witness would
         keep proposing an incremental base that no longer exists."""
         system_id, api_key = register(test_client, "hub2")
@@ -124,8 +120,10 @@ class TestReportScope:
         report(
             test_client,
             api_key,
-            [payload(system_id, "DATA1", 1, pool="poolA"),
-             payload(system_id, "DATA1", 1, pool="poolB")],
+            [
+                payload(system_id, "DATA1", 1, pool="poolA"),
+                payload(system_id, "DATA1", 1, pool="poolB"),
+            ],
         )
 
         response = report(
@@ -233,9 +231,7 @@ class TestFailuresAreReported:
 
         monkeypatch.setattr(SnapshotRepository, "upsert", selective)
 
-    def test_a_rejected_row_is_named_in_the_response(
-        self, test_client, test_db, monkeypatch
-    ):
+    def test_a_rejected_row_is_named_in_the_response(self, test_client, test_db, monkeypatch):
         system_id, api_key = register(test_client, "hub8")
         self.fail_on(monkeypatch, "DATA2")
 
@@ -302,9 +298,7 @@ class TestDeletionIsOptIn:
         assert response.json()["deleted"] == 0
         assert len(SnapshotRepository(test_db).get_by_system(system_id, limit=None)) == 3
 
-    def test_chunked_reporting_does_not_destroy_earlier_chunks(
-        self, test_client, test_db
-    ):
+    def test_chunked_reporting_does_not_destroy_earlier_chunks(self, test_client, test_db):
         """The scenario the shipped script actually produces."""
         system_id, api_key = register(test_client, "optin2")
         every_day = [payload(system_id, "DATA1", day) for day in range(1, 11)]
@@ -315,13 +309,11 @@ class TestDeletionIsOptIn:
             assert response.status_code == status.HTTP_201_CREATED
 
         stored = SnapshotRepository(test_db).get_by_system(system_id, limit=None)
-        assert len(stored) == 10, (
-            "every chunk must survive; system-wide reconciliation left only the last"
-        )
+        assert (
+            len(stored) == 10
+        ), "every chunk must survive; system-wide reconciliation left only the last"
 
-    def test_reconciling_a_partial_chunk_would_prune_within_its_dataset(
-        self, test_client, test_db
-    ):
+    def test_reconciling_a_partial_chunk_would_prune_within_its_dataset(self, test_client, test_db):
         """Why a chunked client must not set reconcile.
 
         Scoping bounds deletion to the datasets in the batch, but a chunk that
@@ -336,6 +328,4 @@ class TestDeletionIsOptIn:
         report(test_client, api_key, every_day[:4], reconcile=True)
 
         stored = SnapshotRepository(test_db).get_by_system(system_id, limit=None)
-        assert len(stored) == 4, (
-            "reconcile means 'complete for these datasets'; misusing it prunes"
-        )
+        assert len(stored) == 4, "reconcile means 'complete for these datasets'; misusing it prunes"

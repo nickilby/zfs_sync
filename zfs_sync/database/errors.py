@@ -36,9 +36,7 @@ class ConstraintViolation(RepositoryError):
     """Some other integrity constraint rejected the write. Maps to HTTP 409."""
 
 
-def classify_integrity_error(
-    error: Exception, model: Optional[str] = None
-) -> RepositoryError:
+def classify_integrity_error(error: Exception, model: Optional[str] = None) -> RepositoryError:
     """Turn a driver-specific IntegrityError into something meaningful.
 
     The wording differs per driver, so this matches on the fragments SQLite
@@ -55,9 +53,7 @@ def classify_integrity_error(
         )
 
     if "unique" in lowered or "duplicate key" in lowered:
-        return DuplicateRecord(
-            f"{model or 'Record'} already exists", model=model, detail=detail
-        )
+        return DuplicateRecord(f"{model or 'Record'} already exists", model=model, detail=detail)
 
     return ConstraintViolation(
         f"{model or 'Record'} violates a database constraint", model=model, detail=detail

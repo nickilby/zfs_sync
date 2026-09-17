@@ -27,28 +27,38 @@ def fleet(test_db):
     snapshots = SnapshotRepository(test_db)
 
     hub = systems.create(
-        hostname="hub1", platform="linux", connectivity_status="online",
+        hostname="hub1",
+        platform="linux",
+        connectivity_status="online",
         ssh_hostname="hub1-san",
     )
     spokes = []
     for hostname, pool in (("spoke1", "spokepool1"), ("spoke2", "spokepool2")):
         spoke = systems.create(
-            hostname=hostname, platform="linux", connectivity_status="online",
+            hostname=hostname,
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname=f"{hostname}-san",
         )
         for number in (1, 2):
             snapshots.create(
                 name=f"{pool}/{DATASET}@2025-01-{number:02d}-000000",
-                pool=pool, dataset=DATASET, system_id=spoke.id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                pool=pool,
+                dataset=DATASET,
+                system_id=spoke.id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=1024,
             )
         spokes.append(spoke)
 
     for number in range(1, 21):
         snapshots.create(
             name=f"hubpool1/{DATASET}@2025-01-{number:02d}-000000",
-            pool="hubpool1", dataset=DATASET, system_id=hub.id,
-            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+            pool="hubpool1",
+            dataset=DATASET,
+            system_id=hub.id,
+            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+            size=1024,
         )
 
     group = groups.create(name="outcomes", directional=True, hub_system_id=hub.id)
@@ -142,11 +152,13 @@ class TestRecordingAnOutcome:
 
         repo = SyncStateRepository(fleet["db"])
         first = repo.get_by_dataset(
-            sync_group_id=fleet["group"].id, dataset=DATASET,
+            sync_group_id=fleet["group"].id,
+            dataset=DATASET,
             system_id=fleet["spokes"][0].id,
         )
         second = repo.get_by_dataset(
-            sync_group_id=fleet["group"].id, dataset=DATASET,
+            sync_group_id=fleet["group"].id,
+            dataset=DATASET,
             system_id=fleet["spokes"][1].id,
         )
         assert first.status == SyncStatus.IN_SYNC.value
@@ -159,14 +171,16 @@ class TestRecordingAnOutcome:
         service.record(outcome(fleet, status=RunStatus.SUCCESS))
 
         state = SyncStateRepository(fleet["db"]).get_by_dataset(
-            sync_group_id=fleet["group"].id, dataset=DATASET,
+            sync_group_id=fleet["group"].id,
+            dataset=DATASET,
             system_id=fleet["spokes"][0].id,
         )
         assert state.status == SyncStatus.IN_SYNC.value
         assert state.error_message is None
 
         runs = SyncRunRepository(fleet["db"]).get_for_pair(
-            sync_group_id=fleet["group"].id, dataset=DATASET,
+            sync_group_id=fleet["group"].id,
+            dataset=DATASET,
             target_system_id=fleet["spokes"][0].id,
         )
         assert len(runs) == 2, "history keeps both attempts"
@@ -201,15 +215,19 @@ class TestPlannedStateProjection:
         for number in range(3, 21):
             snapshots.create(
                 name=f"spokepool1/{DATASET}@2025-01-{number:02d}-000000",
-                pool="spokepool1", dataset=DATASET, system_id=fleet["spokes"][0].id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                pool="spokepool1",
+                dataset=DATASET,
+                system_id=fleet["spokes"][0].id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=1024,
             )
 
         plan = SyncPlanner(fleet["db"]).plan_group(fleet["group"].id, now=NOW)
         SyncOutcomeService(fleet["db"]).record_planned_states(plan.decisions)
 
         state = SyncStateRepository(fleet["db"]).get_by_dataset(
-            sync_group_id=fleet["group"].id, dataset=DATASET,
+            sync_group_id=fleet["group"].id,
+            dataset=DATASET,
             system_id=fleet["spokes"][0].id,
         )
         assert state.status == SyncStatus.IN_SYNC.value
@@ -222,7 +240,8 @@ class TestPlannedStateProjection:
         service.record_planned_states(plan.decisions)
 
         state = SyncStateRepository(fleet["db"]).get_by_dataset(
-            sync_group_id=fleet["group"].id, dataset=DATASET,
+            sync_group_id=fleet["group"].id,
+            dataset=DATASET,
             system_id=fleet["spokes"][0].id,
         )
         assert state.status == SyncStatus.SYNCING.value
@@ -232,15 +251,19 @@ class TestPlannedStateProjection:
         for number in range(3, 21):
             snapshots.create(
                 name=f"spokepool1/{DATASET}@2025-01-{number:02d}-000000",
-                pool="spokepool1", dataset=DATASET, system_id=fleet["spokes"][0].id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                pool="spokepool1",
+                dataset=DATASET,
+                system_id=fleet["spokes"][0].id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=1024,
             )
 
         plan = SyncPlanner(fleet["db"]).plan_group(fleet["group"].id, now=NOW)
         SyncOutcomeService(fleet["db"]).record_planned_states(plan.decisions)
 
         state = SyncStateRepository(fleet["db"]).get_by_dataset(
-            sync_group_id=fleet["group"].id, dataset=DATASET,
+            sync_group_id=fleet["group"].id,
+            dataset=DATASET,
             system_id=fleet["spokes"][0].id,
         )
         assert state.error_message  # carries why it was not actioned
@@ -263,8 +286,7 @@ class TestStatusSummaryReflectsReality:
     def test_recent_runs_are_returned_newest_first(self, fleet):
         service = SyncOutcomeService(fleet["db"])
         service.record(outcome(fleet, spoke_index=0))
-        service.record(outcome(fleet, spoke_index=1, status=RunStatus.FAILED,
-                               error_message="boom"))
+        service.record(outcome(fleet, spoke_index=1, status=RunStatus.FAILED, error_message="boom"))
 
         runs = service.recent_runs(fleet["group"].id)
 

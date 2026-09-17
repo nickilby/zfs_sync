@@ -43,9 +43,7 @@ class TestTheFactory:
             configure_logging=False,
         )
         second = create_app(
-            settings=Settings(
-                database_url=f"sqlite:///{tmp_path / 'b.db'}", api_prefix="/api/v2"
-            ),
+            settings=Settings(database_url=f"sqlite:///{tmp_path / 'b.db'}", api_prefix="/api/v2"),
             configure_logging=False,
         )
 
@@ -119,9 +117,7 @@ class TestSchedulerLifecycle:
             async def stop_scheduler(self):
                 stopped.append(True)
 
-        monkeypatch.setattr(
-            "zfs_sync.services.sync_scheduler.SyncSchedulerService", FakeScheduler
-        )
+        monkeypatch.setattr("zfs_sync.services.sync_scheduler.SyncSchedulerService", FakeScheduler)
         app = create_app(
             settings=Settings(
                 database_url=f"sqlite:///{tmp_path / 'sched.db'}",
@@ -137,9 +133,7 @@ class TestSchedulerLifecycle:
 
         assert stopped, "scheduler was not stopped on shutdown"
 
-    def test_a_failing_scheduler_does_not_take_the_service_down(
-        self, tmp_path, monkeypatch
-    ):
+    def test_a_failing_scheduler_does_not_take_the_service_down(self, tmp_path, monkeypatch):
         """Snapshot reporting still works even if scheduling cannot start."""
 
         class BrokenScheduler:
@@ -190,9 +184,9 @@ class TestDashboardAssets:
         create_app(settings=settings, configure_logging=False)
 
         assert PACKAGE_STATIC_DIR.name == "static"
-        assert PACKAGE_STATIC_DIR.parent.name == "zfs_sync", (
-            "assets must resolve inside the package, not at the repo root"
-        )
+        assert (
+            PACKAGE_STATIC_DIR.parent.name == "zfs_sync"
+        ), "assets must resolve inside the package, not at the repo root"
         assert (PACKAGE_STATIC_DIR / "dashboard" / "index.html").is_file()
         assert isinstance(PACKAGE_STATIC_DIR, Path)
 

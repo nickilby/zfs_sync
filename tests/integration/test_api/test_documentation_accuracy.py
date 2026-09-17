@@ -22,9 +22,9 @@ ROOT = Path(__file__).resolve().parents[3]
 #: Documents that deliberately describe history or proposals rather than the
 #: current API, and are annotated as such.
 EXCLUDED = {
-    "docs/plans/",              # planning artefacts
+    "docs/plans/",  # planning artefacts
     "docs/IMPROVEMENTS_ROADMAP.md",  # proposes future endpoints
-    "PROJECT_SETUP_GUIDE.md",   # generic material, not about this service
+    "PROJECT_SETUP_GUIDE.md",  # generic material, not about this service
     "GITHUB_ACTIONS_GUIDE.md",
     "GITHUB_ACTIONS_PROMPTS.md",
 }
@@ -35,7 +35,8 @@ def tracked_markdown():
         ["git", "ls-files", "*.md"], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout.split()
     return [
-        name for name in listing
+        name
+        for name in listing
         if not any(name.startswith(prefix) or name == prefix for prefix in EXCLUDED)
     ]
 
@@ -62,14 +63,14 @@ class TestDocumentedEndpointsExist:
                 if candidate and candidate not in known_paths:
                     problems.setdefault(name, set()).add(raw)
 
-        assert not problems, (
-            "documentation references endpoints that do not exist: "
-            + "; ".join(f"{name}: {sorted(paths)}" for name, paths in sorted(problems.items()))
+        assert not problems, "documentation references endpoints that do not exist: " + "; ".join(
+            f"{name}: {sorted(paths)}" for name, paths in sorted(problems.items())
         )
 
     def test_no_document_references_the_phantom_parameter(self):
         offenders = [
-            name for name in tracked_markdown()
+            name
+            for name in tracked_markdown()
             if "include_commands" in (ROOT / name).read_text(encoding="utf-8")
         ]
 
@@ -77,7 +78,8 @@ class TestDocumentedEndpointsExist:
 
     def test_no_document_references_the_nonexistent_register_route(self):
         offenders = [
-            name for name in tracked_markdown()
+            name
+            for name in tracked_markdown()
             if "/systems/register" in (ROOT / name).read_text(encoding="utf-8")
         ]
 
@@ -95,9 +97,8 @@ class TestDocumentLinksResolve:
                 if not resolved.exists():
                     problems.setdefault(name, set()).add(target)
 
-        assert not problems, (
-            "documents link to files that do not exist: "
-            + "; ".join(f"{name}: {sorted(links)}" for name, links in sorted(problems.items()))
+        assert not problems, "documents link to files that do not exist: " + "; ".join(
+            f"{name}: {sorted(links)}" for name, links in sorted(problems.items())
         )
 
 
@@ -112,7 +113,7 @@ class TestVersionIsStatedOnce:
         with open(ROOT / "pyproject.toml", "rb") as handle:
             pyproject = tomllib.load(handle)
 
-        assert "version" in pyproject["project"].get("dynamic", []), (
-            "pyproject should derive the version, not restate it"
-        )
+        assert "version" in pyproject["project"].get(
+            "dynamic", []
+        ), "pyproject should derive the version, not restate it"
         assert "version" not in pyproject["project"]

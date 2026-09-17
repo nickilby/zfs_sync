@@ -35,24 +35,36 @@ def instruction(auth_client, test_db):
     snapshots = SnapshotRepository(test_db)
 
     hub = systems.create(
-        hostname="hub1", platform="linux", connectivity_status="online",
+        hostname="hub1",
+        platform="linux",
+        connectivity_status="online",
         ssh_hostname="hub1-san",
     )
     spoke = systems.create(
-        hostname="spoke1", platform="linux", connectivity_status="online",
-        ssh_hostname="spoke1-san", ssh_user="backup", ssh_port=2222,
+        hostname="spoke1",
+        platform="linux",
+        connectivity_status="online",
+        ssh_hostname="spoke1-san",
+        ssh_user="backup",
+        ssh_port=2222,
     )
     for number in range(1, 21):
         snapshots.create(
             name=f"hubpool1/{DATASET}@2025-01-{number:02d}-000000",
-            pool="hubpool1", dataset=DATASET, system_id=hub.id,
-            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+            pool="hubpool1",
+            dataset=DATASET,
+            system_id=hub.id,
+            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+            size=1024,
         )
     for number in (1, 2):
         snapshots.create(
             name=f"spokepool1/{DATASET}@2025-01-{number:02d}-000000",
-            pool="spokepool1", dataset=DATASET, system_id=spoke.id,
-            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+            pool="spokepool1",
+            dataset=DATASET,
+            system_id=spoke.id,
+            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+            size=1024,
         )
 
     group = groups.create(name="contract", directional=True, hub_system_id=hub.id)
@@ -129,27 +141,32 @@ class TestInstructionFields:
 class TestDeclinedFields:
     """Fields the executor reads from .declined[] to explain a quiet run."""
 
-    def test_declined_entries_carry_a_dataset_target_and_reason(
-        self, auth_client, test_db
-    ):
+    def test_declined_entries_carry_a_dataset_target_and_reason(self, auth_client, test_db):
         systems = SystemRepository(test_db)
         groups = SyncGroupRepository(test_db)
         snapshots = SnapshotRepository(test_db)
 
         hub = systems.create(
-            hostname="hub-q", platform="linux", connectivity_status="online",
+            hostname="hub-q",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="hub-q-san",
         )
         spoke = systems.create(
-            hostname="spoke-q", platform="linux", connectivity_status="online",
+            hostname="spoke-q",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="spoke-q-san",
         )
         for system, pool in ((hub, "hubpool1"), (spoke, "spokepool1")):
             for number in range(1, 21):
                 snapshots.create(
                     name=f"{pool}/{DATASET}@2025-01-{number:02d}-000000",
-                    pool=pool, dataset=DATASET, system_id=system.id,
-                    timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                    pool=pool,
+                    dataset=DATASET,
+                    system_id=system.id,
+                    timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                    size=1024,
                 )
         group = groups.create(name="quiet", directional=True, hub_system_id=hub.id)
         groups.add_system(group.id, hub.id)
@@ -197,17 +214,17 @@ class TestShippedScriptsMatchTheApi:
     def test_no_script_uses_the_phantom_include_commands_parameter(self, script):
         text = (TEMPLATES / script).read_text(encoding="utf-8")
 
-        assert "include_commands" not in text, (
-            f"{script} passes include_commands, which no endpoint accepts"
-        )
+        assert (
+            "include_commands" not in text
+        ), f"{script} passes include_commands, which no endpoint accepts"
 
     @pytest.mark.parametrize("script", SCRIPTS)
     def test_no_script_posts_to_the_nonexistent_register_route(self, script):
         text = (TEMPLATES / script).read_text(encoding="utf-8")
 
-        assert "/systems/register" not in text, (
-            f"{script} references POST /systems/register; the route is POST /systems"
-        )
+        assert (
+            "/systems/register" not in text
+        ), f"{script} references POST /systems/register; the route is POST /systems"
 
     @pytest.mark.parametrize("script", SCRIPTS)
     def test_every_api_path_a_script_uses_exists(self, script, auth_client):
@@ -225,20 +242,15 @@ class TestShippedScriptsMatchTheApi:
                 re.sub(r"\{[^}]+\}", "{param}", candidate).rstrip("/") for candidate in known
             }
             assert normalised in candidates, (
-                f"{script} calls {path}, which is not in the API: "
-                f"normalised to {normalised}"
+                f"{script} calls {path}, which is not in the API: " f"normalised to {normalised}"
             )
 
     def test_the_executor_does_not_eval_server_supplied_text(self):
         """The command string is for display; execution uses an argv."""
         text = (TEMPLATES / "sync_executor.sh").read_text(encoding="utf-8")
 
-        code = "\n".join(
-            line for line in text.splitlines() if not line.strip().startswith("#")
-        )
-        assert "eval " not in code, (
-            "sync_executor.sh must not eval strings returned by the API"
-        )
+        code = "\n".join(line for line in text.splitlines() if not line.strip().startswith("#"))
+        assert "eval " not in code, "sync_executor.sh must not eval strings returned by the API"
 
 
 class TestSnapshotBatchContract:
@@ -285,9 +297,7 @@ class TestSnapshotBatchContract:
         """
         from zfs_sync.api.app import app
 
-        parameters = app.openapi()["paths"]["/api/v1/snapshots/batch"]["post"].get(
-            "parameters", []
-        )
+        parameters = app.openapi()["paths"]["/api/v1/snapshots/batch"]["post"].get("parameters", [])
         names = {p["name"] for p in parameters}
         assert "reconcile" in names, f"reconcile is not a real parameter; found {names}"
 
@@ -297,18 +307,16 @@ class TestSnapshotBatchContract:
         retention pruning would never be reflected."""
         text = (TEMPLATES / script).read_text(encoding="utf-8")
 
-        assert "reconcile=true" in text, (
-            f"{script} reports a complete inventory but never asks to reconcile"
-        )
+        assert (
+            "reconcile=true" in text
+        ), f"{script} reports a complete inventory but never asks to reconcile"
 
     def test_the_report_script_chunks_by_dataset(self):
         """Chunking by row count splits a dataset across requests, which makes
         each request an incomplete report of it -- unsafe to reconcile."""
         text = (TEMPLATES / "zfs_sync_report.sh").read_text(encoding="utf-8")
 
-        assert "select(.dataset == $ds)" in text, (
-            "report script must group snapshots by dataset before sending"
-        )
-        assert "offset + chunk_size" not in text, (
-            "report script still splits batches by row count"
-        )
+        assert (
+            "select(.dataset == $ds)" in text
+        ), "report script must group snapshots by dataset before sending"
+        assert "offset + chunk_size" not in text, "report script still splits batches by row count"

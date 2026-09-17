@@ -268,7 +268,9 @@ class TestRenderingPlannerOutput:
         snapshots = SnapshotRepository(test_db)
 
         hub = systems.create(
-            hostname="hub1", platform="linux", connectivity_status="online",
+            hostname="hub1",
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname="hub1-san",
         )
         spokes = []
@@ -276,24 +278,32 @@ class TestRenderingPlannerOutput:
             [("spoke1", "spokepool1", 2), ("spoke2", "spokepool2", 5)]
         ):
             spoke = systems.create(
-                hostname=hostname, platform="linux", connectivity_status="online",
-                ssh_hostname=f"{hostname}-san", ssh_user="backup", ssh_port=2222 + index,
+                hostname=hostname,
+                platform="linux",
+                connectivity_status="online",
+                ssh_hostname=f"{hostname}-san",
+                ssh_user="backup",
+                ssh_port=2222 + index,
             )
             for number in range(1, stopped + 1):
                 snapshots.create(
                     name=f"{pool}/DATA1@2025-01-{number:02d}-000000",
-                    pool=pool, dataset="DATA1",
+                    pool=pool,
+                    dataset="DATA1",
                     timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
-                    size=1024, system_id=spoke.id,
+                    size=1024,
+                    system_id=spoke.id,
                 )
             spokes.append(spoke)
 
         for number in range(1, 21):
             snapshots.create(
                 name=f"hubpool1/DATA1@2025-01-{number:02d}-000000",
-                pool="hubpool1", dataset="DATA1",
+                pool="hubpool1",
+                dataset="DATA1",
                 timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
-                size=1024, system_id=hub.id,
+                size=1024,
+                system_id=hub.id,
             )
 
         group = groups.create(name="render", directional=True, hub_system_id=hub.id)

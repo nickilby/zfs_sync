@@ -364,9 +364,12 @@ class ConflictResolutionService:
             for other_snap in other_snapshots:
                 other_name = self.comparison_service.extract_snapshot_name(other_snap.name)
                 # Check if there's a snapshot with similar name pattern (simplified check)
-                if other_name.startswith(
-                    snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name
-                ) and other_snap.timestamp < snapshot.timestamp:
+                if (
+                    other_name.startswith(
+                        snapshot_name.split("-")[0] if "-" in snapshot_name else snapshot_name
+                    )
+                    and other_snap.timestamp < snapshot.timestamp
+                ):
                     return True
 
         return False

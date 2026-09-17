@@ -24,28 +24,38 @@ def build_fleet(db, spokes=("spoke1",)):
     snapshots = SnapshotRepository(db)
 
     hub = systems.create(
-        hostname="hub1", platform="linux", connectivity_status="online",
+        hostname="hub1",
+        platform="linux",
+        connectivity_status="online",
         ssh_hostname="hub1-san",
     )
     for number in range(1, 21):
         snapshots.create(
             name=f"hubpool1/{DATASET}@2025-01-{number:02d}-000000",
-            pool="hubpool1", dataset=DATASET, system_id=hub.id,
-            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+            pool="hubpool1",
+            dataset=DATASET,
+            system_id=hub.id,
+            timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+            size=1024,
         )
 
     created = []
     for index, hostname in enumerate(spokes):
         pool = f"spokepool{index + 1}"
         spoke = systems.create(
-            hostname=hostname, platform="linux", connectivity_status="online",
+            hostname=hostname,
+            platform="linux",
+            connectivity_status="online",
             ssh_hostname=f"{hostname}-san",
         )
         for number in (1, 2):
             snapshots.create(
                 name=f"{pool}/{DATASET}@2025-01-{number:02d}-000000",
-                pool=pool, dataset=DATASET, system_id=spoke.id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                pool=pool,
+                dataset=DATASET,
+                system_id=spoke.id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=1024,
             )
         created.append(spoke)
 
@@ -137,17 +147,22 @@ class TestReportingAnOutcome:
         auth_client.post(
             "/api/v1/sync/results",
             json={
-                "sync_group_id": str(group.id), "dataset": DATASET,
-                "source_system_id": str(hub.id), "target_system_id": str(spokes[0].id),
+                "sync_group_id": str(group.id),
+                "dataset": DATASET,
+                "source_system_id": str(hub.id),
+                "target_system_id": str(spokes[0].id),
                 "status": "success",
             },
         )
         auth_client.post(
             "/api/v1/sync/results",
             json={
-                "sync_group_id": str(group.id), "dataset": DATASET,
-                "source_system_id": str(hub.id), "target_system_id": str(spokes[1].id),
-                "status": "failed", "error_message": "unreachable",
+                "sync_group_id": str(group.id),
+                "dataset": DATASET,
+                "source_system_id": str(hub.id),
+                "target_system_id": str(spokes[1].id),
+                "status": "failed",
+                "error_message": "unreachable",
             },
         )
 
@@ -164,8 +179,10 @@ class TestRejectedReports:
         response = auth_client.post(
             "/api/v1/sync/results",
             json={
-                "sync_group_id": str(group.id), "dataset": DATASET,
-                "source_system_id": str(hub.id), "target_system_id": str(spoke.id),
+                "sync_group_id": str(group.id),
+                "dataset": DATASET,
+                "source_system_id": str(hub.id),
+                "target_system_id": str(spoke.id),
                 "status": "probably-fine",
             },
         )
@@ -179,9 +196,12 @@ class TestRejectedReports:
         response = auth_client.post(
             "/api/v1/sync/results",
             json={
-                "sync_group_id": str(group.id), "dataset": DATASET,
-                "source_system_id": str(hub.id), "target_system_id": str(spoke.id),
-                "status": "success", "bytes_transferred": -1,
+                "sync_group_id": str(group.id),
+                "dataset": DATASET,
+                "source_system_id": str(hub.id),
+                "target_system_id": str(spoke.id),
+                "status": "success",
+                "bytes_transferred": -1,
             },
         )
 
@@ -189,9 +209,7 @@ class TestRejectedReports:
 
 
 class TestTheLoopIsClosed:
-    def test_instruction_then_report_then_no_further_instruction(
-        self, auth_client, test_db
-    ):
+    def test_instruction_then_report_then_no_further_instruction(self, auth_client, test_db):
         """After a successful sync is reported and the target catches up, the
         hub is no longer told to sync it -- and the response says why."""
         group, hub, (spoke,) = build_fleet(test_db)
@@ -205,14 +223,19 @@ class TestTheLoopIsClosed:
         for number in range(3, 21):
             snapshots.create(
                 name=f"spokepool1/{DATASET}@2025-01-{number:02d}-000000",
-                pool="spokepool1", dataset=DATASET, system_id=spoke.id,
-                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc), size=1024,
+                pool="spokepool1",
+                dataset=DATASET,
+                system_id=spoke.id,
+                timestamp=datetime(2025, 1, number, tzinfo=timezone.utc),
+                size=1024,
             )
         auth_client.post(
             "/api/v1/sync/results",
             json={
-                "sync_group_id": str(group.id), "dataset": DATASET,
-                "source_system_id": str(hub.id), "target_system_id": str(spoke.id),
+                "sync_group_id": str(group.id),
+                "dataset": DATASET,
+                "source_system_id": str(hub.id),
+                "target_system_id": str(spoke.id),
                 "status": "success",
                 "starting_snapshot": entry["starting_snapshot"],
                 "ending_snapshot": entry["ending_snapshot"],

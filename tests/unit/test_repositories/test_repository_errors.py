@@ -74,9 +74,7 @@ class TestAgainstTheDatabase:
     def test_a_duplicate_snapshot_raises_duplicate_record(self, test_db):
         systems = SystemRepository(test_db)
         snapshots = SnapshotRepository(test_db)
-        system = systems.create(
-            hostname="hub1", platform="linux", connectivity_status="online"
-        )
+        system = systems.create(hostname="hub1", platform="linux", connectivity_status="online")
         fields = {
             "name": "hubpool1/DATA1@2025-01-01-000000",
             "pool": "hubpool1",
