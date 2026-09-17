@@ -315,79 +315,61 @@ report_snapshots() {
         done
     fi
 
-    # Determine if chunking is needed
-    local chunk_size=${SNAPSHOT_BATCH_CHUNK_SIZE:-1000}
+    # Chunk on dataset boundaries, never by row count.
+    #
+    # This previously split by offset, so a dataset could straddle two chunks.
+    # Combined with reconciliation happening on every batch, each chunk deleted
+    # what the previous one had just written, and only the final chunk survived
+    # on the server. Sending whole datasets means every request is a complete
+    # report of what it covers, which is what reconcile=true asserts.
     local total_created=0
+    local total_updated=0
+    local total_deleted=0
     local total_failed=0
+    local chunk_num=0
 
-    if [ "$chunk_size" -gt 0 ] && [ "$snapshot_count" -gt "$chunk_size" ]; then
-        # Split into chunks and process sequentially
-        log_info "Splitting $snapshot_count snapshots into chunks of $chunk_size"
+    local datasets
+    datasets=$(echo "$snapshots_json" | jq -r '[.[].dataset] | unique | .[]')
 
-        local chunk_num=0
-        local offset=0
+    while IFS= read -r dataset; do
+        [ -n "$dataset" ] || continue
+        chunk_num=$((chunk_num + 1))
 
-        while [ $offset -lt $snapshot_count ]; do
-            chunk_num=$((chunk_num + 1))
-            local chunk=$(echo "$snapshots_json" | jq ".[$offset:$((offset + chunk_size))]")
-            local chunk_length=$(echo "$chunk" | jq 'length')
+        local chunk chunk_length response
+        chunk=$(echo "$snapshots_json" | jq -c --arg ds "$dataset" '[.[] | select(.dataset == $ds)]')
+        chunk_length=$(echo "$chunk" | jq 'length')
 
-            log_info "Processing chunk $chunk_num: $chunk_length snapshots (offset $offset)"
+        log_info "Reporting dataset $dataset ($chunk_length snapshot(s))"
 
-            local response
-            local api_exit_code
-            response=$(api_request "POST" "/snapshots/batch" "$chunk")
-            api_exit_code=$?
+        if response=$(api_request "POST" "/snapshots/batch?reconcile=true" "$chunk"); then
+            local created updated deleted failed
+            created=$(echo "$response" | jq -r '.created // 0')
+            updated=$(echo "$response" | jq -r '.updated // 0')
+            deleted=$(echo "$response" | jq -r '.deleted // 0')
+            failed=$(echo "$response" | jq -r '.failed | length')
 
-            if [ $api_exit_code -eq 0 ]; then
-                local created_count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
-                total_created=$((total_created + created_count))
-                log_info "Chunk $chunk_num: Successfully reported $created_count snapshots"
-            else
-                total_failed=$((total_failed + chunk_length))
-                log_error "Chunk $chunk_num: Failed to report $chunk_length snapshots"
-                if [ -n "$response" ]; then
-                    log_error "Error details: $response"
-                fi
-                # Continue with next chunk even if this one failed
+            total_created=$((total_created + created))
+            total_updated=$((total_updated + updated))
+            total_deleted=$((total_deleted + deleted))
+            total_failed=$((total_failed + failed))
+
+            log_info "  $dataset: $created created, $updated updated, $deleted pruned"
+
+            if [ "$failed" -gt 0 ]; then
+                # Rejected rows are named in the response now, not just logged
+                # server-side, so surface them here.
+                echo "$response" | jq -r '.failed[] | "  REJECTED \(.pool)/\(.dataset)@\(.name): \(.error)"' \
+                    | while IFS= read -r line; do log_warning "$line"; done
             fi
-
-            offset=$((offset + chunk_size))
-        done
-
-        # Summary
-        if [ $total_failed -eq 0 ]; then
-            log_info "Successfully reported all $total_created snapshots in $chunk_num chunks"
-            return 0
         else
-            log_warning "Reported $total_created snapshots successfully, $total_failed failed (in $chunk_num chunks)"
-            return 1
+            total_failed=$((total_failed + chunk_length))
+            log_error "  $dataset: request failed for $chunk_length snapshot(s)"
         fi
-    else
-        # Send all snapshots in one request (no chunking needed or disabled)
-        local response
-        local api_exit_code
-        response=$(api_request "POST" "/snapshots/batch" "$snapshots_json")
-        api_exit_code=$?
+    done <<< "$datasets"
 
-        if [ $api_exit_code -eq 0 ]; then
-            # Check if response contains actual data (successful creation)
-            local created_count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
-            if [ "$created_count" -gt 0 ]; then
-                log_info "Successfully reported $created_count snapshots (out of $snapshot_count total)"
-            else
-                log_warning "API returned success but no snapshots were created. Response: $response"
-            fi
-            return 0
-        else
-            log_error "Failed to report snapshots"
-            # Log the error response if available
-            if [ -n "$response" ]; then
-                log_error "Error details: $response"
-            fi
-            return 1
-        fi
-    fi
+    log_info "Reported $chunk_num dataset(s): $total_created created, $total_updated updated, $total_deleted pruned, $total_failed failed"
+
+    [ "$total_failed" -eq 0 ]
 }
 
 # Send heartbeat

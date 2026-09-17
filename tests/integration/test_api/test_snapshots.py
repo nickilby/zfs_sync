@@ -76,8 +76,19 @@ class TestSnapshotsEndpoints:
         )
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 3
+        assert data["created"] == 3
+        assert data["updated"] == 0
+        assert data["failed"] == []
+        assert len(data["snapshots"]) == 3
+
+        # Reporting the same inventory again stores it once, not twice.
+        repeat = test_client.post(
+            "/api/v1/snapshots/batch",
+            headers={"X-API-Key": api_key},
+            json=snapshots,
+        )
+        assert repeat.json()["created"] == 0
+        assert repeat.json()["updated"] == 3
 
     def test_get_snapshots(self, test_client):
         """Test retrieving snapshots for a system."""

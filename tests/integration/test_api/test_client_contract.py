@@ -239,3 +239,76 @@ class TestShippedScriptsMatchTheApi:
         assert "eval " not in code, (
             "sync_executor.sh must not eval strings returned by the API"
         )
+
+
+class TestSnapshotBatchContract:
+    """Fields the reporting scripts read from the batch response."""
+
+    REQUIRED: ClassVar[list] = ["created", "updated", "deleted", "failed", "scope"]
+
+    @staticmethod
+    def register(test_client):
+        response = test_client.post(
+            "/api/v1/systems",
+            json={"hostname": "reporter", "platform": "linux", "connectivity_status": "online"},
+        )
+        body = response.json()
+        return body["id"], body["api_key"]
+
+    def test_every_field_the_scripts_read_is_present(self, test_client):
+        system_id, api_key = self.register(test_client)
+
+        response = test_client.post(
+            "/api/v1/snapshots/batch",
+            headers={"X-API-Key": api_key},
+            json=[
+                {
+                    "name": "pool1/DATA1@2025-01-01-000000",
+                    "pool": "pool1",
+                    "dataset": "DATA1",
+                    "timestamp": datetime(2025, 1, 1, tzinfo=timezone.utc).isoformat(),
+                    "size": 1024,
+                    "system_id": system_id,
+                }
+            ],
+        )
+
+        body = response.json()
+        missing = [field for field in self.REQUIRED if field not in body]
+        assert not missing, f"reporting scripts read fields the API omits: {missing}"
+
+    def test_the_reconcile_parameter_exists(self, test_client):
+        """The scripts pass reconcile=true when sending a complete inventory.
+
+        An unknown query parameter is silently ignored by FastAPI, which is how
+        include_commands went unnoticed for so long -- so assert it is real.
+        """
+        from zfs_sync.api.app import app
+
+        parameters = app.openapi()["paths"]["/api/v1/snapshots/batch"]["post"].get(
+            "parameters", []
+        )
+        names = {p["name"] for p in parameters}
+        assert "reconcile" in names, f"reconcile is not a real parameter; found {names}"
+
+    @pytest.mark.parametrize("script", ["zfs_sync_client.sh", "zfs_sync_report.sh"])
+    def test_reporting_scripts_reconcile_explicitly(self, script):
+        """Both send complete inventories, so both must opt in -- otherwise
+        retention pruning would never be reflected."""
+        text = (TEMPLATES / script).read_text(encoding="utf-8")
+
+        assert "reconcile=true" in text, (
+            f"{script} reports a complete inventory but never asks to reconcile"
+        )
+
+    def test_the_report_script_chunks_by_dataset(self):
+        """Chunking by row count splits a dataset across requests, which makes
+        each request an incomplete report of it -- unsafe to reconcile."""
+        text = (TEMPLATES / "zfs_sync_report.sh").read_text(encoding="utf-8")
+
+        assert "select(.dataset == $ds)" in text, (
+            "report script must group snapshots by dataset before sending"
+        )
+        assert "offset + chunk_size" not in text, (
+            "report script still splits batches by row count"
+        )

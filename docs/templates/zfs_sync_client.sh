@@ -329,9 +329,26 @@ report_snapshots() {
         return 0
     fi
 
-    # Prepare batch request (API expects array directly, not wrapped in object)
-    if api_request "POST" "/api/v1/snapshots/batch" "$snapshots_json" > /dev/null; then
-        log_info "Successfully reported $snapshot_count snapshots"
+    # This function reports the system's entire inventory in one request, so
+    # reconcile=true is correct here: it lets the server prune snapshots that
+    # have been removed by retention. A client that sent a partial or chunked
+    # report must leave it off, or it would delete everything it did not
+    # mention.
+    local response
+    if response=$(api_request "POST" "/api/v1/snapshots/batch?reconcile=true" "$snapshots_json"); then
+        local created updated deleted failed
+        created=$(echo "$response" | jq -r '.created // 0')
+        updated=$(echo "$response" | jq -r '.updated // 0')
+        deleted=$(echo "$response" | jq -r '.deleted // 0')
+        failed=$(echo "$response" | jq -r '.failed | length')
+
+        log_info "Reported $snapshot_count snapshots: $created created, $updated updated, $deleted pruned"
+
+        if [ "$failed" -gt 0 ]; then
+            echo "$response" | jq -r '.failed[] | "  REJECTED \(.pool)/\(.dataset)@\(.name): \(.error)"' \
+                | while IFS= read -r line; do log_warning "$line"; done
+            return 1
+        fi
         return 0
     else
         log_error "Failed to report snapshots"

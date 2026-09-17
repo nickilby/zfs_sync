@@ -1,7 +1,7 @@
 """Snapshot API schemas."""
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -54,3 +54,42 @@ class SnapshotDeleteResponse(BaseModel):
     hostname: str = Field(..., description="System hostname")
     deleted_count: int = Field(..., description="Number of snapshots deleted")
     message: str = Field(..., description="Status message")
+
+
+class SnapshotIngestFailure(BaseModel):
+    """One row the batch could not store, and why."""
+
+    name: str
+    pool: str
+    dataset: str
+    error: str
+
+
+class SnapshotBatchResponse(BaseModel):
+    """Outcome of a batch report.
+
+    The previous response was a bare list of successfully created snapshots,
+    so a batch where rows were rejected still returned 201 with a shorter list
+    and no way to tell which ones failed -- the detail existed only in the
+    server log.
+    """
+
+    created: int = Field(..., description="Rows inserted for the first time")
+    updated: int = Field(..., description="Rows that already existed and were refreshed")
+    deleted: int = Field(
+        ..., description="Rows removed because the client no longer reports them"
+    )
+    failed: List[SnapshotIngestFailure] = Field(
+        default_factory=list, description="Rows that could not be stored, with the reason"
+    )
+    scope: List[str] = Field(
+        default_factory=list,
+        description=(
+            "The pool/dataset pairs this report covered. Reconciliation only "
+            "deletes within these, so a partial report cannot remove records "
+            "for datasets it said nothing about."
+        ),
+    )
+    snapshots: List[SnapshotResponse] = Field(
+        default_factory=list, description="The stored rows"
+    )
