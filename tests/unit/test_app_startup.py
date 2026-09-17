@@ -63,6 +63,37 @@ class TestStartupRunsForReal:
 
         assert database_file.exists(), "startup did not initialise the database"
 
+    def test_the_injected_database_url_is_the_one_used(self, settings, tmp_path):
+        """Startup must not fall back to the process-wide settings.
+
+        init_db() read the global settings rather than the app's, so an
+        injected configuration was ignored and the database was created
+        wherever the platform default pointed -- /var/lib/zfs-sync on Linux,
+        which is not writable by an ordinary user.
+        """
+        from zfs_sync.config import get_settings
+
+        global_url = get_settings().database_url
+        assert settings.database_url != global_url, "fixture must differ from the global"
+
+        app = create_app(settings=settings, configure_logging=False)
+        with TestClient(app):
+            pass
+
+        assert (tmp_path / "startup.db").exists()
+        # And the schema really is there, not merely an empty file.
+        import sqlite3
+
+        connection = sqlite3.connect(tmp_path / "startup.db")
+        try:
+            tables = {
+                row[0]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+        finally:
+            connection.close()
+        assert {"systems", "snapshots", "sync_groups"} <= tables
+
     def test_configuration_validation_runs(self, settings, monkeypatch):
         calls = []
 

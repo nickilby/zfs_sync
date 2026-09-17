@@ -55,7 +55,10 @@ async def _run_startup(app: FastAPI) -> None:
 
     from zfs_sync.database import init_db
 
-    init_db()
+    # Pass the app's settings through. Reading the global here would ignore an
+    # injected configuration entirely -- the database would be created wherever
+    # the process-wide default points, which on Linux is /var/lib/zfs-sync.
+    init_db(settings)
 
     if not settings.auto_sync_enabled:
         logger.info("Automatic sync is disabled")

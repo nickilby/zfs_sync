@@ -70,7 +70,7 @@ def _ensure_database_directory(database_url: str) -> None:
         raise PermissionError(error_msg)
 
 
-def create_engine() -> Engine:
+def create_engine(settings=None) -> Engine:
     """
     Create and configure the database engine.
 
@@ -78,7 +78,7 @@ def create_engine() -> Engine:
     """
     global SessionLocal
 
-    settings = get_settings()
+    settings = settings if settings is not None else get_settings()
 
     # Ensure database directory exists for SQLite databases
     try:
@@ -97,7 +97,7 @@ def create_engine() -> Engine:
     return engine
 
 
-def init_db() -> None:
+def init_db(settings=None) -> None:
     """
     Create the schema for a brand-new database, or verify an existing one.
 
@@ -115,7 +115,7 @@ def init_db() -> None:
     # Import models to ensure they register with Base.metadata
     import zfs_sync.database.models  # noqa: F401
 
-    settings = get_settings()
+    settings = settings if settings is not None else get_settings()
 
     # Ensure database directory exists (create_engine also does this, but be explicit)
     try:
@@ -124,7 +124,7 @@ def init_db() -> None:
         logger.error(f"Failed to prepare database directory: {e}")
         raise RuntimeError(f"Cannot initialize database: {e}") from e
 
-    engine = create_engine()
+    engine = create_engine(settings)
 
     from sqlalchemy import inspect
 

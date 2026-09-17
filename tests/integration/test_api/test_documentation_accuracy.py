@@ -108,7 +108,10 @@ class TestVersionIsStatedOnce:
 
         The version now lives in one place; pyproject reads it from there.
         """
-        import tomllib
+        try:
+            import tomllib  # Python 3.11+
+        except ModuleNotFoundError:  # pragma: no cover - depends on interpreter
+            import tomli as tomllib
 
         with open(ROOT / "pyproject.toml", "rb") as handle:
             pyproject = tomllib.load(handle)

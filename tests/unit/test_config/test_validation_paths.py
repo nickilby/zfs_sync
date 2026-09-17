@@ -45,10 +45,19 @@ class TestDirectorySelection:
         assert not (tmp_path / "ignored").exists()
 
     def test_no_log_file_means_nothing_to_validate(self, tmp_path, monkeypatch):
+        """With no log file configured there is no directory to check.
+
+        Settings fills in a platform default for log_file on Linux, so this
+        asserts the function's behaviour directly rather than going through a
+        Settings instance whose log_file depends on the host.
+        """
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("ZFS_SYNC_LOG_DIR", raising=False)
 
-        validate_log_directory(Settings(log_file=None))
+        settings = Settings()
+        object.__setattr__(settings, "log_file", None)
+
+        validate_log_directory(settings)
 
         assert list(tmp_path.iterdir()) == [], "nothing should have been created"
 
