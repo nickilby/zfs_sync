@@ -240,3 +240,121 @@ class TestRecoveringADriftedDatabase:
 
         assert stored in (0, False), f"directional stored as {stored!r}"
         assert bool(stored) is False
+
+
+class TestNaturalKeyConstraints:
+    """Revision 006 deduplicates, then prevents recurrence."""
+
+    @staticmethod
+    def seed_with_duplicates(db_path, copies: int = 3) -> None:
+        """A snapshot inventory reported several times over, as clients did."""
+        connection = sqlite3.connect(db_path)
+        connection.execute(
+            "INSERT INTO systems (id, hostname, platform, connectivity_status) "
+            "VALUES ('11111111-1111-1111-1111-111111111111', 'hub1', 'linux', 'online')"
+        )
+        for copy in range(copies):
+            for index in range(5):
+                connection.execute(
+                    "INSERT INTO snapshots "
+                    "(id, created_at, updated_at, name, pool, dataset, timestamp, size, system_id) "
+                    "VALUES (?, datetime('now', ?), datetime('now'), ?, 'hubpool1', 'DATA1', "
+                    "'2025-01-01 00:00:00', 1024, '11111111-1111-1111-1111-111111111111')",
+                    (
+                        f"{copy}-{index}",
+                        f"+{copy} seconds",
+                        f"hubpool1/DATA1@2025-01-{index + 1:02d}-000000",
+                    ),
+                )
+        connection.commit()
+        connection.close()
+
+    def test_duplicates_are_removed_keeping_one_of_each(self, alembic_config):
+        config, db_path = alembic_config
+        command.upgrade(config, "005")
+        self.seed_with_duplicates(db_path, copies=3)
+
+        connection = sqlite3.connect(db_path)
+        before = next(connection.execute("SELECT COUNT(*) FROM snapshots"))[0]
+        connection.close()
+        assert before == 15
+
+        command.upgrade(config, "006")
+
+        connection = sqlite3.connect(db_path)
+        try:
+            after = next(connection.execute("SELECT COUNT(*) FROM snapshots"))[0]
+            distinct = next(
+                connection.execute(
+                    "SELECT COUNT(*) FROM "
+                    "(SELECT DISTINCT system_id, pool, dataset, name FROM snapshots)"
+                )
+            )[0]
+        finally:
+            connection.close()
+
+        assert after == 5, "one row per distinct snapshot"
+        assert after == distinct, "no duplicates remain"
+
+    def test_the_newest_copy_is_the_one_kept(self, alembic_config):
+        config, db_path = alembic_config
+        command.upgrade(config, "005")
+        self.seed_with_duplicates(db_path, copies=3)
+
+        command.upgrade(config, "006")
+
+        connection = sqlite3.connect(db_path)
+        try:
+            kept = {row[0] for row in connection.execute("SELECT id FROM snapshots")}
+        finally:
+            connection.close()
+
+        # Copies are stamped 0, 1, 2 seconds apart; the last written wins.
+        assert all(identifier.startswith("2-") for identifier in kept), kept
+
+    def test_a_duplicate_is_rejected_afterwards(self, alembic_config):
+        config, db_path = alembic_config
+        command.upgrade(config, "005")
+        self.seed_with_duplicates(db_path, copies=1)
+        command.upgrade(config, "006")
+
+        connection = sqlite3.connect(db_path)
+        try:
+            with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+                connection.execute(
+                    "INSERT INTO snapshots "
+                    "(id, created_at, updated_at, name, pool, dataset, timestamp, system_id) "
+                    "VALUES ('dupe', datetime('now'), datetime('now'), "
+                    "'hubpool1/DATA1@2025-01-01-000000', 'hubpool1', 'DATA1', "
+                    "datetime('now'), '11111111-1111-1111-1111-111111111111')"
+                )
+        finally:
+            connection.close()
+
+    def test_the_same_snapshot_name_on_another_system_is_still_allowed(
+        self, alembic_config
+    ):
+        """Uniqueness is per system, not global -- a hub and its spokes all
+        hold the same snapshot names."""
+        config, db_path = alembic_config
+        command.upgrade(config, "head")
+
+        connection = sqlite3.connect(db_path)
+        try:
+            for identifier, system in (("a", "sys-a"), ("b", "sys-b")):
+                connection.execute(
+                    "INSERT INTO systems (id, hostname, platform, connectivity_status) "
+                    "VALUES (?, ?, 'linux', 'online')",
+                    (system, f"host-{identifier}"),
+                )
+                connection.execute(
+                    "INSERT INTO snapshots "
+                    "(id, created_at, updated_at, name, pool, dataset, timestamp, system_id) "
+                    "VALUES (?, datetime('now'), datetime('now'), "
+                    "'pool/DATA1@2025-01-01-000000', 'pool', 'DATA1', datetime('now'), ?)",
+                    (identifier, system),
+                )
+            connection.commit()
+            assert next(connection.execute("SELECT COUNT(*) FROM snapshots"))[0] == 2
+        finally:
+            connection.close()

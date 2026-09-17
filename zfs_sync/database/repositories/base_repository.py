@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from zfs_sync.database.base import BaseModel
+from zfs_sync.database.errors import classify_integrity_error
 from zfs_sync.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -35,8 +36,9 @@ class BaseRepository(Generic[ModelType]):
         Create a new record.
 
         Raises:
-            ValueError: If a unique constraint violation occurs
-            Exception: For other database errors
+            DuplicateRecord: If the row already exists.
+            InvalidReference: If a foreign key points at a missing row.
+            ConstraintViolation: For any other integrity failure.
         """
         try:
             db_obj = self.model(**kwargs)
@@ -46,12 +48,14 @@ class BaseRepository(Generic[ModelType]):
             return db_obj
         except IntegrityError as e:
             self.db.rollback()
-            error_msg = str(e.orig) if hasattr(e, "orig") else str(e)
-            logger.error(f"Database integrity error creating {self.model.__name__}: {error_msg}")
-            raise ValueError(
-                f"Failed to create {self.model.__name__}: constraint violation. "
-                f"Details: {error_msg}"
-            ) from e
+            # Classify rather than collapsing everything into one error: a
+            # duplicate and a dangling reference need different HTTP statuses
+            # and different fixes.
+            error = classify_integrity_error(e, self.model.__name__)
+            logger.warning(
+                "Integrity error creating %s: %s", self.model.__name__, error.detail
+            )
+            raise error from e
         except Exception as e:
             self.db.rollback()
             logger.error(f"Database error creating {self.model.__name__}: {e}")
@@ -74,14 +78,14 @@ class BaseRepository(Generic[ModelType]):
                 self.db.refresh(db_obj)
             except IntegrityError as e:
                 self.db.rollback()
-                error_msg = str(e.orig) if hasattr(e, "orig") else str(e)
-                logger.error(
-                    f"Database integrity error updating {self.model.__name__} {id}: {error_msg}"
+                error = classify_integrity_error(e, self.model.__name__)
+                logger.warning(
+                    "Integrity error updating %s %s: %s",
+                    self.model.__name__,
+                    id,
+                    error.detail,
                 )
-                raise ValueError(
-                    f"Failed to update {self.model.__name__} {id}: constraint violation. "
-                    f"Details: {error_msg}"
-                ) from e
+                raise error from e
             except Exception as e:
                 self.db.rollback()
                 logger.error(f"Database error updating {self.model.__name__} {id}: {e}")

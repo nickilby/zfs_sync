@@ -2,6 +2,7 @@
 
 from sqlalchemy import (
     BigInteger,
+    UniqueConstraint,
     Boolean,
     Column,
     DateTime,
@@ -52,6 +53,14 @@ class SnapshotModel(BaseModel):
     referenced = Column(BigInteger, nullable=True)  # type: ignore[assignment]
     used = Column(BigInteger, nullable=True)  # type: ignore[assignment]
     extra_metadata = Column("metadata", JSON, default=dict)  # type: ignore[assignment]
+
+    # A snapshot is identified by where it lives, so reporting the same
+    # inventory twice must not create a second row. Ingestion had no upsert and
+    # no constraint, so every polling cycle multiplied the rows -- which then
+    # skewed every "latest snapshot" comparison built on them.
+    __table_args__ = (
+        UniqueConstraint("system_id", "pool", "dataset", "name", name="uq_snapshot_identity"),
+    )
 
     # Relationships
     system = relationship("SystemModel", back_populates="snapshots")
@@ -105,6 +114,12 @@ class SyncStateModel(BaseModel):
     last_check = Column(DateTime(timezone=True), nullable=True)  # type: ignore[assignment]
     error_message = Column(Text, nullable=True)  # type: ignore[assignment]
     extra_metadata = Column("metadata", JSON, default=dict)  # type: ignore[assignment]
+
+    # The projection holds exactly one verdict per pair. update_sync_state
+    # does a get-then-create, which races without this.
+    __table_args__ = (
+        UniqueConstraint("sync_group_id", "dataset", "system_id", name="uq_sync_state_pair"),
+    )
 
     # Relationships
     sync_group = relationship("SyncGroupModel")

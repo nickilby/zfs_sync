@@ -343,13 +343,25 @@ class TestPairEnumeration:
 
         assert plan.decisions[0].source_pool == "newpool"
 
-    def test_duplicate_snapshot_rows_do_not_change_the_window(self, fleet):
-        """Ingestion has no unique constraint yet, so duplicates exist."""
+    def test_reporting_the_same_snapshot_twice_is_now_impossible(self, fleet):
+        """Duplicates used to accumulate on every polling cycle, skewing every
+        "latest snapshot" comparison. The natural-key constraint stops them at
+        the database rather than leaving the planner to cope."""
+        from zfs_sync.database.errors import DuplicateRecord
+
+        hub = fleet.system("hub1")
+        fleet.snaps(hub, "hubpool1", [1])
+
+        with pytest.raises(DuplicateRecord):
+            fleet.snaps(hub, "hubpool1", [1])
+
+    def test_the_same_snapshot_name_across_systems_is_planned_normally(self, fleet):
+        """Uniqueness is per system: a hub and its spokes share snapshot names,
+        which is the whole basis of finding a common incremental base."""
         hub = fleet.system("hub1")
         spoke = fleet.system("spoke1")
-        group = fleet.group(hub, [hub, spoke], name="dupes")
+        group = fleet.group(hub, [hub, spoke], name="shared-names")
         fleet.snaps(hub, "hubpool1", range(1, 21))
-        fleet.snaps(hub, "hubpool1", range(1, 21))  # reported twice
         fleet.snaps(spoke, "spokepool1", [1, 2])
 
         plan = SyncPlanner(fleet.db).plan_group(group.id, now=NOW)
