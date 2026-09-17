@@ -1,6 +1,6 @@
 """Repository for Snapshot operations."""
 
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -112,6 +112,30 @@ class SnapshotRepository(BaseRepository[SnapshotModel]):
         )
         self.db.commit()
         return count
+
+    def get_for_systems(self, system_ids: Sequence[UUID]) -> List[SnapshotModel]:
+        """Fetch every snapshot for several systems in one query.
+
+        The planner needs the whole picture for a sync group at once. Doing
+        that per dataset per system is what made planning scale with the
+        dataset count: the old coordination service loaded every snapshot row
+        for every system just to collect distinct dataset names, then re-issued
+        get_by_dataset four or more times for each (dataset, target) pair.
+
+        Args:
+            system_ids: Systems to fetch snapshots for.
+
+        Returns:
+            All snapshots belonging to those systems, ordered by timestamp.
+        """
+        if not system_ids:
+            return []
+        return (
+            self.db.query(SnapshotModel)
+            .filter(SnapshotModel.system_id.in_(list(system_ids)))
+            .order_by(SnapshotModel.timestamp.asc())
+            .all()
+        )
 
     def get_by_dataset(self, dataset: str, system_id: Optional[UUID] = None) -> List[SnapshotModel]:
         """Get snapshots by dataset, across all pools."""

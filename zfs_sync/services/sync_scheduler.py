@@ -11,8 +11,8 @@ from zfs_sync.database import get_db
 from zfs_sync.database.repositories import SyncGroupRepository
 from zfs_sync.logging_config import get_logger
 from zfs_sync.services.conflict_resolution import ConflictResolutionService
+from zfs_sync.services.sync.planner import SyncPlanner
 from zfs_sync.services.sync_coordination import SyncCoordinationService
-from zfs_sync.services.sync_queries import get_datasets_for_systems
 import contextlib
 
 logger = get_logger(__name__)
@@ -144,9 +144,7 @@ class SyncSchedulerService:
             # Get all datasets for this sync group (now returns dataset_name -> [(pool, system_id), ...])
             system_ids = [assoc.system_id for assoc in sync_group.system_associations]
             sync_coord_service = SyncCoordinationService(db)
-            dataset_mappings = get_datasets_for_systems(
-                system_ids, sync_coord_service.snapshot_repo
-            )
+            dataset_mappings = SyncPlanner(db).dataset_pools(system_ids)
 
             # Log which datasets are being evaluated for transparency (Bug 2 fix)
             dataset_names = sorted(dataset_mappings.keys())
