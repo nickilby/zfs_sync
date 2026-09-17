@@ -15,13 +15,13 @@ from zfs_sync.database.base import Base, get_db
 # Import models to ensure they register with Base.metadata
 import zfs_sync.database.models  # noqa: F401
 
-# Use file-based SQLite for tests to ensure consistent database across connections
-# In-memory SQLite creates separate databases per connection, causing test failures
-# Suppression justified: the handle is closed on the next line, but the file
-# must outlive this statement -- it is the database every test connects to.
-_test_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")  # noqa: SIM115
-_test_db_file.close()
-TEST_DATABASE_URL = f"sqlite:///{_test_db_file.name}"
+# Each test gets its own database file.
+#
+# A single module-level file was shared by the whole session, and the teardown
+# deleted it -- so tests were order-dependent and could not run in parallel:
+# under pytest-xdist one worker would remove the file another was still using.
+# File-based rather than in-memory because in-memory SQLite gives each
+# connection its own database.
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -77,22 +77,24 @@ def verify_tables_exist(engine) -> None:
 
 
 @pytest.fixture(scope="function")
-def test_db() -> Generator[Session, None, None]:
-    """Create a test database session with in-memory SQLite."""
-    # Create a new engine for testing
+def test_database_url(tmp_path) -> str:
+    """A database URL unique to this test."""
+    return f"sqlite:///{tmp_path / 'test.db'}"
+
+
+@pytest.fixture(scope="function")
+def test_db(test_database_url: str) -> Generator[Session, None, None]:
+    """A session against this test's own database."""
     engine = create_engine(
-        TEST_DATABASE_URL,
+        test_database_url,
         connect_args={"check_same_thread": False},
         echo=False,
     )
 
-    # Models are already imported at module level, create all tables
+    # Models are imported at module level, so the metadata is populated.
     Base.metadata.create_all(bind=engine)
-
-    # Verify tables were created successfully
     verify_tables_exist(engine)
 
-    # Create a session
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = TestingSessionLocal()
 
@@ -100,13 +102,9 @@ def test_db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
-        Base.metadata.drop_all(bind=engine)
         engine.dispose()
-        # Clean up test database file
-        import os
-
-        if os.path.exists(_test_db_file.name):
-            os.unlink(_test_db_file.name)
+        # tmp_path is removed by pytest, so there is no file to clean up and
+        # no shared file for another worker to pull out from under us.
 
 
 @pytest.fixture(scope="function")
@@ -228,3 +226,25 @@ def auth_client(test_client, registered_system):
     _system_id, api_key = registered_system
     test_client.headers.update({"X-API-Key": api_key})
     return test_client
+
+
+def pytest_collection_modifyitems(config, items):
+    """Apply the unit/integration markers by location.
+
+    Both markers were declared in pyproject with --strict-markers and applied
+    by no test, so `pytest -m unit` selected nothing and the CI benchmark job
+    was permanently vacuous. Deriving them from the directory keeps them true
+    without asking every test to remember a decorator.
+    """
+    for item in items:
+        path = str(item.fspath).replace("\\", "/")
+        if "/tests/unit/" in path:
+            item.add_marker(pytest.mark.unit)
+        elif "/tests/integration/" in path:
+            item.add_marker(pytest.mark.integration)
+
+        if "migration" in path:
+            # These build and tear down whole schemas.
+            item.add_marker(pytest.mark.slow)
+        if "test_db" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.database)

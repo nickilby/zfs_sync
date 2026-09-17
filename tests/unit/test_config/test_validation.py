@@ -42,7 +42,9 @@ def test_validate_configuration_aggregates_errors(monkeypatch):
     def _db_fail(_settings):
         raise ConfigurationError("db check failed")
 
-    def _log_fail():
+    def _log_fail(_settings=None):
+        # Takes settings now: it validates the directory of the configured
+        # log_file rather than a hardcoded Path("logs").
         raise ConfigurationError("log dir check failed")
 
     def _network_fail(_settings):

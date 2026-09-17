@@ -57,6 +57,12 @@ version = {attr = "zfs_sync.__version__"}
 where = ["."]
 include = ["zfs_sync*"]
 
+# The dashboard's HTML, CSS and JavaScript live inside the package but are not
+# Python, so packages.find does not carry them into a wheel. Without this an
+# installed copy serves the dashboard page with every asset missing.
+[tool.setuptools.package-data]
+zfs_sync = ["static/**/*"]
+
 [tool.black]
 line-length = 100
 target-version = ['py39']
