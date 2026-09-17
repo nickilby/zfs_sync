@@ -146,3 +146,44 @@ class TestRegistrationToken:
             assert not service.check_registration_token(None)[0]
         finally:
             service.settings.registration_token = None
+
+
+class TestKeyEntropyIsEnforced:
+    """Storing a plain digest is safe only while keys are large.
+
+    Static analysis flags SHA-256 here as weak password hashing. That is right
+    for passwords and wrong for random tokens -- but only while the token is
+    big enough that no brute force reaches it. The floor was 8 bytes, which is
+    64 bits: exhaustible offline against a fast hash by anyone holding the
+    database. These tests keep the assumption true.
+    """
+
+    def test_the_default_key_carries_at_least_128_bits(self, test_db, system):
+        import math
+
+        service = AuthService(test_db)
+        api_key = service.create_api_key_for_system(system.id)
+
+        # token_urlsafe is base64url: 6 bits of entropy per character.
+        assert len(api_key) * 6 >= 128, f"only {len(api_key) * 6} bits"
+        assert math.isclose(service.settings.api_key_length, 32)
+
+    def test_a_key_length_below_the_floor_is_rejected(self):
+        from zfs_sync.config.settings import MIN_API_KEY_BYTES, Settings
+
+        with pytest.raises(ValueError, match="api_key_length"):
+            Settings(api_key_length=MIN_API_KEY_BYTES - 1)
+
+    def test_the_floor_is_at_least_128_bits(self):
+        from zfs_sync.config.settings import MIN_API_KEY_BYTES
+
+        assert (
+            MIN_API_KEY_BYTES * 8 >= 128
+        ), "the plain-digest storage argument does not hold below 128 bits"
+
+    def test_keys_are_not_guessable_from_one_another(self, test_db, system):
+        """A trivial sanity check that keys are random, not derived."""
+        service = AuthService(test_db)
+        keys = {service.rotate_api_key(system.id) for _ in range(20)}
+
+        assert len(keys) == 20

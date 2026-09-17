@@ -40,6 +40,13 @@ def get_default_database_url() -> str:
         return f"sqlite:///{db_path}"
 
 
+#: Minimum bytes of entropy in a generated API key. 16 bytes is 128 bits,
+#: which is beyond offline brute force whatever hash is used to store it --
+#: the assumption that lets keys be stored as a plain digest rather than run
+#: through a password KDF on every request.
+MIN_API_KEY_BYTES = 16
+
+
 class Settings(BaseSettings):
     """Application settings with environment variable and file support."""
 
@@ -94,7 +101,16 @@ class Settings(BaseSettings):
             "the service mint credentials for it."
         ),
     )
-    api_key_length: int = Field(default=32, description="Length of generated API keys")
+    api_key_length: int = Field(
+        default=32,
+        description=(
+            "Bytes of entropy in a generated API key (secrets.token_urlsafe). "
+            "Keys are stored as a plain SHA-256 digest, which is safe only "
+            "because they are high-entropy random tokens rather than "
+            "passwords -- so this must not be lowered past the point where "
+            "an offline brute-force becomes feasible."
+        ),
+    )
 
     # Sync Settings
     default_sync_interval_seconds: int = Field(
@@ -207,9 +223,25 @@ class Settings(BaseSettings):
     @field_validator("api_key_length")
     @classmethod
     def validate_api_key_length(cls, v: int) -> int:
-        """Validate API key length is reasonable."""
-        if not (8 <= v <= 128):
-            raise ValueError(f"api_key_length must be between 8 and 128, got {v}")
+        """Keep API keys beyond brute-force reach.
+
+        Keys are stored as a plain SHA-256 digest rather than run through a
+        password KDF. That is the right choice for random tokens -- a KDF
+        would add latency to every authenticated request for no benefit --
+        but it rests entirely on the token being too large to guess.
+
+        The previous floor of 8 bytes is 64 bits, which a well-resourced
+        attacker holding the database could exhaust offline against a fast
+        hash. 16 bytes is 128 bits, which is not reachable by brute force
+        regardless of how fast the hash is.
+        """
+        if not (MIN_API_KEY_BYTES <= v <= 128):
+            raise ValueError(
+                f"api_key_length must be between {MIN_API_KEY_BYTES} and 128 bytes, "
+                f"got {v}. Below {MIN_API_KEY_BYTES} bytes "
+                f"({MIN_API_KEY_BYTES * 8} bits) the stored digest would be "
+                f"open to offline brute force."
+            )
         return v
 
     @field_validator("default_sync_interval_seconds")

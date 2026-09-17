@@ -4,12 +4,19 @@ Keys were stored in plaintext and looked up by equality. Combined with
 ``SystemResponse`` exposing the column, an unauthenticated ``GET /systems``
 returned every key in the fleet.
 
-Keys are now stored as a SHA-256 digest. A digest rather than a password KDF
-is the right choice here: these are 32 bytes of ``secrets.token_urlsafe``
-entropy, so there is no dictionary to attack, and lookup happens on every
-authenticated request -- bcrypt or argon2 would add latency for no benefit.
-The digest is deterministic so it can be indexed and looked up directly, and
-the comparison is constant-time.
+Keys are stored as a SHA-256 digest rather than run through a password KDF.
+
+That choice is deliberate and rests on one property: these are random tokens,
+not passwords. ``secrets.token_urlsafe`` gives at least 128 bits of entropy
+(see ``MIN_API_KEY_BYTES``), so there is no dictionary to attack and no
+feasible offline brute force whatever the hash costs. A KDF would add latency
+to every authenticated request -- the digest is checked on each one -- and buy
+nothing. It is also deterministic, so it can be indexed and looked up directly.
+
+Static analysis flags this as weak password hashing, which is correct advice
+for passwords and wrong here. The property it depends on is enforced rather
+than assumed: ``api_key_length`` cannot be configured below 16 bytes. Lower
+the floor and the analysis becomes right.
 """
 
 import hashlib

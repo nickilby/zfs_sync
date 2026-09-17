@@ -31,9 +31,20 @@ and its assets, and system registration; they are listed explicitly in
 unauthenticated endpoint appears.
 
 Keys are stored as a SHA-256 digest and returned exactly once, at registration
-or rotation. A digest rather than a password KDF is deliberate: keys are 32
-bytes of `secrets.token_urlsafe` entropy, so there is no dictionary to attack,
-and the value is checked on every request.
+or rotation.
+
+A digest rather than a password KDF is deliberate, and worth explaining because
+static analysis flags it. KDFs exist because passwords are low-entropy and
+human-chosen, so an attacker holding the hashes can guess them cheaply against
+a fast hash. These are not passwords: `secrets.token_urlsafe` produces at least
+128 bits of entropy, which no amount of hashing speed brings within reach of a
+brute force. A KDF would add latency to every authenticated request -- the
+digest is checked on each one -- for no gain.
+
+That argument depends entirely on the token being large, so the assumption is
+enforced rather than trusted: `api_key_length` is rejected below 16 bytes. The
+previous floor was 8 bytes (64 bits), which a well-resourced attacker holding
+the database could have exhausted offline.
 
 A system may act only for itself. It cannot report another system's snapshots,
 edit another system's record, or rotate another system's key.
