@@ -78,7 +78,7 @@ def render_sync_command(
     *,
     compressed: bool = True,
     resumable: bool = True,
-    force_rollback: bool = False,
+    force_rollback: Optional[bool] = None,
 ) -> str:
     """Render the command that performs ``decision``.
 
@@ -89,10 +89,10 @@ def render_sync_command(
         decision: A decision whose action is SYNC.
         compressed: Pass ``-c`` to ``zfs send`` (send already-compressed blocks).
         resumable: Pass ``-s`` to ``zfs receive`` (allow a resume token).
-        force_rollback: Pass ``-F`` to ``zfs receive``. This discards target
-            changes made since the base snapshot, so it is off by default --
-            the planner declines diverged targets rather than silently
-            rolling them back.
+        force_rollback: Pass ``-F`` to ``zfs receive``, discarding target
+            snapshots taken since the base. Defaults to the decision's
+            ``requires_rollback``, which the planner sets only when the target
+            has actually drifted; pass False to refuse the rollback instead.
 
     Raises:
         CommandRenderError: If the decision is not renderable.
@@ -134,8 +134,10 @@ def render_sync_command(
         send += ["-I", quote(f"{source_path}@{decision.starting_snapshot}")]
     send.append(quote(f"{source_path}@{decision.ending_snapshot}"))
 
+    rollback = decision.requires_rollback if force_rollback is None else force_rollback
+
     receive = ["zfs", "receive"]
-    if force_rollback:
+    if rollback:
         receive.append("-F")
     if resumable:
         receive.append("-s")

@@ -12,7 +12,6 @@ from zfs_sync.database.repositories import SyncGroupRepository
 from zfs_sync.logging_config import get_logger
 from zfs_sync.services.conflict_resolution import ConflictResolutionService
 from zfs_sync.services.sync.planner import SyncPlanner
-from zfs_sync.services.sync_coordination import SyncCoordinationService
 import contextlib
 
 logger = get_logger(__name__)
@@ -143,8 +142,8 @@ class SyncSchedulerService:
 
             # Get all datasets for this sync group (now returns dataset_name -> [(pool, system_id), ...])
             system_ids = [assoc.system_id for assoc in sync_group.system_associations]
-            sync_coord_service = SyncCoordinationService(db)
-            dataset_mappings = SyncPlanner(db).dataset_pools(system_ids)
+            planner = SyncPlanner(db)
+            dataset_mappings = planner.dataset_pools(system_ids)
 
             # Log which datasets are being evaluated for transparency (Bug 2 fix)
             dataset_names = sorted(dataset_mappings.keys())
@@ -184,21 +183,32 @@ class SyncSchedulerService:
                         f"Error detecting conflicts for {pool}/{dataset_name} in sync group {sync_group_id}: {e}"
                     )
 
-            # Generate sync instructions (incremental only) for all systems in the group
-            # This will also update sync states
-            if self.settings.incremental_sync_only:
-                try:
-                    # Process for all systems in the sync group (system_id=None means all)
-                    sync_coord_service.generate_dataset_sync_instructions(
-                        sync_group_id=sync_group_id, system_id=None, incremental_only=True
+            # Plan the group and report the outcome.
+            #
+            # This previously called generate_dataset_sync_instructions and
+            # discarded the result, while its comment claimed it updated sync
+            # states -- which it never did. Projecting these decisions into
+            # sync_states, so the dashboard and status summary reflect them,
+            # is the remaining half of the fix and lands with the execution
+            # feedback loop.
+            try:
+                plan = planner.plan_group(sync_group_id)
+                if plan.skipped_reason:
+                    logger.info(
+                        "Sync group %s not planned: %s", sync_group_id, plan.skipped_reason
                     )
-                except Exception as e:
-                    logger.error(
-                        f"Error generating sync instructions for sync group {sync_group_id}: {e}",
-                        exc_info=True,
+                else:
+                    logger.info(
+                        "Sync group %s: %d pair(s) evaluated, %d require syncing",
+                        sync_group_id,
+                        len(plan.decisions),
+                        len(plan.instructions),
                     )
-            else:
-                logger.warning("incremental_sync_only is False - full syncs not yet implemented")
+            except Exception as e:
+                logger.error(
+                    f"Error planning sync group {sync_group_id}: {e}",
+                    exc_info=True,
+                )
 
         except Exception as e:
             logger.error(f"Error processing sync group {sync_group_id}: {e}", exc_info=True)

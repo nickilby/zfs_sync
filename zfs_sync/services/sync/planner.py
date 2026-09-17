@@ -325,11 +325,11 @@ class SyncPlanner:
         window = result.window
 
         # A target holding snapshots the source lacks, newer than the base,
-        # cannot receive an incremental stream without a rollback. Emitting the
-        # command anyway produces a failure the witness never sees, because
-        # nothing reports execution results back.
-        if self._diverged_after(source_pairs, target_pairs, window.base_timestamp):
-            return decision(SyncAction.SKIP, PlanReason.TARGET_DIVERGED.value)
+        # cannot receive an incremental stream as-is -- the receive needs -F to
+        # roll them back first. That is reported rather than refused: declining
+        # would mean a drifted backup target never syncs again, which is the
+        # state this fleet was already in.
+        diverged = self._diverged_after(source_pairs, target_pairs, window.base_timestamp)
 
         if not target.has_ssh_identity:
             # The previous implementation appended an action with
@@ -339,13 +339,18 @@ class SyncPlanner:
         if not source_pool:
             return decision(SyncAction.SKIP, PlanReason.SOURCE_POOL_UNKNOWN.value)
 
+        reason = result.reason.value if result.reason else None
+        if diverged:
+            reason = PlanReason.TARGET_DIVERGED.value
+
         return decision(
             SyncAction.SYNC,
-            result.reason.value if result.reason else None,
+            reason,
             starting_snapshot=window.base,
             ending_snapshot=window.end,
             ending_timestamp=window.end_timestamp,
             full_send=window.full_send,
+            requires_rollback=diverged,
         )
 
     @staticmethod

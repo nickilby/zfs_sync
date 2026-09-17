@@ -7,7 +7,8 @@ from zfs_sync.services.conflict_resolution import (
 )
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 from zfs_sync.services.snapshot_history import SnapshotHistoryService
-from zfs_sync.services.sync_coordination import SyncCoordinationService
+from zfs_sync.services.sync.planner import SyncPlanner
+from zfs_sync.services.sync.state import SyncStateService
 
 __all__ = [
     "ConflictResolutionService",
@@ -15,5 +16,6 @@ __all__ = [
     "ConflictType",
     "SnapshotComparisonService",
     "SnapshotHistoryService",
-    "SyncCoordinationService",
+    "SyncPlanner",
+    "SyncStateService",
 ]

@@ -206,7 +206,14 @@ class TestSinglePair:
         assert plan.decisions == []
         assert plan.skipped_reason is None
 
-    def test_a_target_ahead_of_the_hub_is_reported_as_diverged(self, fleet):
+    def test_a_drifted_target_still_syncs_but_flags_the_rollback(self, fleet):
+        """Divergence is reported alongside the sync, not instead of it.
+
+        A backup target that has taken its own snapshots since the base cannot
+        receive an incremental stream as-is; the receive needs -F. Declining
+        would mean such a target never syncs again -- the same "nothing to
+        sync" outcome the rewrite exists to fix.
+        """
         hub = fleet.system("hub1")
         spoke = fleet.system("spoke1")
         group = fleet.group(hub, [hub, spoke], name="diverged")
@@ -225,8 +232,20 @@ class TestSinglePair:
         plan = SyncPlanner(fleet.db).plan_group(group.id, now=NOW)
 
         decision = plan.decisions[0]
-        assert decision.action is SyncAction.SKIP
+        assert decision.action is SyncAction.SYNC
         assert decision.reason == PlanReason.TARGET_DIVERGED.value
+        assert decision.requires_rollback is True
+
+    def test_an_undrifted_target_does_not_request_a_rollback(self, fleet):
+        hub = fleet.system("hub1")
+        spoke = fleet.system("spoke1")
+        group = fleet.group(hub, [hub, spoke], name="clean")
+        fleet.snaps(hub, "hubpool1", range(1, 21))
+        fleet.snaps(spoke, "spokepool1", [1, 2])
+
+        plan = SyncPlanner(fleet.db).plan_group(group.id, now=NOW)
+
+        assert plan.decisions[0].requires_rollback is False
 
     def test_a_target_without_an_ssh_identity_says_so(self, fleet):
         hub = fleet.system("hub1")

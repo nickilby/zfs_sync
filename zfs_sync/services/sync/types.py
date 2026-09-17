@@ -41,6 +41,10 @@ class PlanReason(str, Enum):
     #: The source's pool for this dataset could not be determined.
     SOURCE_POOL_UNKNOWN = "source_pool_unknown"
     #: The target holds snapshots the source does not, newer than the base.
+    #: Reported alongside a sync, not instead of one: a backup target that has
+    #: drifted must be rolled back to receive, which is what `zfs receive -F`
+    #: does. Declining instead would mean such a pair never syncs at all --
+    #: the same "nothing to sync" symptom with a better label.
     TARGET_DIVERGED = "target_diverged"
 
 
@@ -89,6 +93,10 @@ class SyncDecision:
     ending_snapshot: Optional[str] = None
     ending_timestamp: Optional[datetime] = None
     full_send: bool = False
+    #: The target holds snapshots the source lacks, newer than the base, so the
+    #: receive needs -F to roll them back. Surfaced so an operator can see that
+    #: local target snapshots are about to be discarded.
+    requires_rollback: bool = False
 
     @property
     def is_sync(self) -> bool:

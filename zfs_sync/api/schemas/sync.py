@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from zfs_sync.models import SyncStatus
+from zfs_sync.enums import SyncStatus
 
 
 class SyncStateResponse(BaseModel):
@@ -92,12 +92,46 @@ class DatasetSyncInstruction(BaseModel):
     source_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for source system")
     target_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for target system")
     sync_group_id: str = Field(..., description="Sync group ID")
+    requires_rollback: bool = Field(
+        default=False,
+        description=(
+            "The target holds snapshots the source does not, taken after the "
+            "starting snapshot. The command therefore includes 'zfs receive -F', "
+            "which discards them."
+        ),
+    )
     commands: List[str] = Field(
         default_factory=list,
         description=(
             "Ready-to-execute sync commands for this dataset "
             "(e.g. 'zfs send -c -I ... | ssh ... zfs receive ...')."
         ),
+    )
+
+
+class DeclinedPair(BaseModel):
+    """A (dataset, target) pair the planner considered and did not action.
+
+    Returned alongside the instructions so that an empty ``datasets`` list is
+    self-explaining. Previously the only record of these decisions was a log
+    line, which meant a healthy fleet and a completely suppressed one produced
+    an identical response.
+    """
+
+    dataset: str = Field(..., description="Dataset that was evaluated")
+    target_system_id: str = Field(..., description="Target system that was evaluated")
+    target_hostname: Optional[str] = Field(None, description="Target hostname, for readability")
+    reason: Optional[str] = Field(
+        None,
+        description=(
+            "Machine-readable reason, e.g. in_sync_within_window, "
+            "no_eligible_ending_snapshot, target_diverged, missing_ssh_identity"
+        ),
+    )
+    source_latest: Optional[str] = Field(None, description="Newest snapshot on the source")
+    target_latest: Optional[str] = Field(None, description="Newest snapshot on the target")
+    hours_behind: Optional[float] = Field(
+        None, description="How far the target trails the source, in hours"
     )
 
 
@@ -110,7 +144,7 @@ class SyncInstructionsResponse(BaseModel):
         ..., description="List of dataset sync instructions"
     )
     dataset_count: int = Field(..., description="Number of datasets requiring sync")
-    diagnostics: Optional[List[dict]] = Field(
-        None,
-        description="Diagnostic information about why datasets were skipped (only included if include_diagnostics=true)",
+    declined: List[DeclinedPair] = Field(
+        default_factory=list,
+        description="Every pair that was evaluated and not actioned, with its reason",
     )

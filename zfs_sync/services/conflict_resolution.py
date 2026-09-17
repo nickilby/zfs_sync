@@ -14,7 +14,7 @@ from zfs_sync.database.repositories import (
     SyncStateRepository,
 )
 from zfs_sync.logging_config import get_logger
-from zfs_sync.models import SyncStatus
+from zfs_sync.enums import SyncStatus
 from zfs_sync.services.snapshot_comparison import SnapshotComparisonService
 
 logger = get_logger(__name__)
@@ -413,9 +413,9 @@ class ConflictResolutionService:
         actions = resolution.get("actions", [])
 
         # Update sync states for affected systems
-        from zfs_sync.services.sync_coordination import SyncCoordinationService
+        from zfs_sync.services.sync.state import SyncStateService
 
-        sync_service = SyncCoordinationService(self.db)
+        sync_service = SyncStateService(self.db)
 
         # Mark all systems involved in the conflict
         systems_involved = conflict.get("systems", {})
@@ -461,9 +461,9 @@ class ConflictResolutionService:
 
         This updates the sync state status to CONFLICT for affected snapshots.
         """
-        from zfs_sync.services.sync_coordination import SyncCoordinationService
+        from zfs_sync.services.sync.state import SyncStateService
 
-        sync_service = SyncCoordinationService(self.db)
+        sync_service = SyncStateService(self.db)
 
         for conflict in conflicts:
             systems = conflict.get("systems", {})

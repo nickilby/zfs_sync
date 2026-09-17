@@ -144,6 +144,11 @@ def custom_openapi():
 # Override OpenAPI schema to include security scheme
 app.openapi = custom_openapi
 
+# Consistent error responses for domain errors and anything unhandled.
+from zfs_sync.api.errors import register_exception_handlers  # noqa: E402
+
+register_exception_handlers(app)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
