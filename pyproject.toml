@@ -4,7 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zfs-sync"
-version = "0.2.7"
+# Single source of truth is zfs_sync/__init__.__version__. Duplicating the
+# version across pyproject, __init__ and both config files meant every commit
+# touched four files -- so any two branches committing in parallel diverged in
+# all four, and every merge between them conflicted there. That is what left
+# unresolved conflict markers on main.
+dynamic = ["version"]
 description = "A witness service to keep ZFS snapshots in sync across different platforms"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -44,6 +49,9 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "zfs_sync.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]

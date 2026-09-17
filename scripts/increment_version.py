@@ -1,137 +1,96 @@
 #!/usr/bin/env python3
-"""
-Version increment script for ZFS Sync.
+"""Release-time version bump for ZFS Sync.
 
-This script increments the patch version (e.g., 0.2.0 → 0.2.1) and updates
-all version files in the repository.
+There is exactly one source of truth for the version: ``__version__`` in
+``zfs_sync/__init__.py``. ``pyproject.toml`` reads it via setuptools' dynamic
+version, and ``Settings.app_version`` defaults to it, so nothing else needs to
+be kept in step.
+
+This used to run from the pre-commit hook and rewrite the version in four
+tracked files on *every* commit. That meant two branches committing in parallel
+always diverged in those four files, so every merge between them conflicted
+there -- which is how unresolved conflict markers ended up committed to main.
+Run this deliberately when cutting a release instead::
+
+    python scripts/increment_version.py            # 0.2.7 -> 0.2.8
+    python scripts/increment_version.py --minor    # 0.2.7 -> 0.3.0
+    python scripts/increment_version.py --major    # 0.2.7 -> 1.0.0
+    python scripts/increment_version.py --set 1.2.3
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
 
-
-def get_current_version() -> str:
-    """Extract current version from zfs_sync/__init__.py or pyproject.toml."""
-    # Try __init__.py first
-    init_file = Path("zfs_sync/__init__.py")
-    if init_file.exists():
-        content = init_file.read_text()
-        match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
-        if match:
-            return match.group(1)
-
-    # Fallback to pyproject.toml
-    pyproject_file = Path("pyproject.toml")
-    if pyproject_file.exists():
-        content = pyproject_file.read_text()
-        match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
-        if match:
-            return match.group(1)
-
-    raise ValueError("Could not find version in zfs_sync/__init__.py or pyproject.toml")
+INIT_FILE = Path("zfs_sync/__init__.py")
+VERSION_PATTERN = re.compile(r'^__version__\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
+SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 
-def increment_patch_version(version: str) -> str:
-    """Increment patch version (e.g., 0.2.0 → 0.2.1)."""
-    parts = version.split(".")
-    if len(parts) != 3:
-        raise ValueError(f"Version must be in format X.Y.Z, got: {version}")
+def read_version() -> str:
+    """Return the current version from the single source of truth."""
+    if not INIT_FILE.exists():
+        raise SystemExit(f"{INIT_FILE} not found -- run this from the repository root.")
 
-    try:
-        major, minor, patch = map(int, parts)
-        patch += 1
-        return f"{major}.{minor}.{patch}"
-    except ValueError as e:
-        raise ValueError(f"Invalid version format: {version}") from e
-
-
-def update_pyproject_toml(new_version: str) -> bool:
-    """Update version in pyproject.toml."""
-    pyproject_file = Path("pyproject.toml")
-    if not pyproject_file.exists():
-        return False
-
-    content = pyproject_file.read_text()
-    # Match: version = "0.2.0" or version = '0.2.0'
-    pattern = r'(version\s*=\s*["\'])([^"\']+)(["\'])'
-    replacement = rf"\g<1>{new_version}\g<3>"
-
-    new_content = re.sub(pattern, replacement, content)
-    if new_content != content:
-        pyproject_file.write_text(new_content)
-        return True
-    return False
+    matches = VERSION_PATTERN.findall(INIT_FILE.read_text(encoding="utf-8"))
+    if not matches:
+        raise SystemExit(f"No __version__ assignment found in {INIT_FILE}.")
+    if len(matches) > 1:
+        raise SystemExit(
+            f"{INIT_FILE} defines __version__ {len(matches)} times ({', '.join(matches)}). "
+            "Resolve that before bumping."
+        )
+    return matches[0]
 
 
-def update_init_py(new_version: str) -> bool:
-    """Update version in zfs_sync/__init__.py."""
-    init_file = Path("zfs_sync/__init__.py")
-    if not init_file.exists():
-        return False
-
-    content = init_file.read_text()
-    # Match: __version__ = "0.2.0" or __version__ = '0.2.0'
-    pattern = r'(__version__\s*=\s*["\'])([^"\']+)(["\'])'
-    replacement = rf"\g<1>{new_version}\g<3>"
-
-    new_content = re.sub(pattern, replacement, content)
-    if new_content != content:
-        init_file.write_text(new_content)
-        return True
-    return False
+def bump(version: str, part: str) -> str:
+    """Return ``version`` with the requested part incremented."""
+    major, minor, patch = (int(piece) for piece in version.split("."))
+    if part == "major":
+        return f"{major + 1}.0.0"
+    if part == "minor":
+        return f"{major}.{minor + 1}.0"
+    return f"{major}.{minor}.{patch + 1}"
 
 
-def update_yaml_example(new_version: str) -> bool:
-    """Update version in config/zfs_sync.yaml.example."""
-    yaml_file = Path("config/zfs_sync.yaml.example")
-    if not yaml_file.exists():
-        return False
-
-    content = yaml_file.read_text()
-    # Match: app_version: "0.2.0" or app_version: '0.2.0'
-    pattern = r'(app_version:\s*["\'])([^"\']+)(["\'])'
-    replacement = rf"\g<1>{new_version}\g<3>"
-
-    new_content = re.sub(pattern, replacement, content)
-    if new_content != content:
-        yaml_file.write_text(new_content)
-        return True
-    return False
+def write_version(new_version: str) -> None:
+    """Replace the version in the single source of truth."""
+    content = INIT_FILE.read_text(encoding="utf-8")
+    updated = VERSION_PATTERN.sub(f'__version__ = "{new_version}"', content, count=1)
+    INIT_FILE.write_text(updated, encoding="utf-8")
 
 
-def main():
-    """Main function to increment version and update all files."""
-    try:
-        # Get current version
-        current_version = get_current_version()
-        print(f"Current version: {current_version}")
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--major", action="store_true", help="Bump the major version")
+    group.add_argument("--minor", action="store_true", help="Bump the minor version")
+    group.add_argument("--set", dest="explicit", metavar="X.Y.Z", help="Set an exact version")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Report the new version without writing it"
+    )
+    args = parser.parse_args()
 
-        # Increment patch version
-        new_version = increment_patch_version(current_version)
-        print(f"New version: {new_version}")
+    current = read_version()
 
-        # Update all version files
-        updated_files = []
-        if update_pyproject_toml(new_version):
-            updated_files.append("pyproject.toml")
-        if update_init_py(new_version):
-            updated_files.append("zfs_sync/__init__.py")
-        if update_yaml_example(new_version):
-            updated_files.append("config/zfs_sync.yaml.example")
+    if args.explicit:
+        if not SEMVER_PATTERN.match(args.explicit):
+            raise SystemExit(f"'{args.explicit}' is not a valid X.Y.Z version.")
+        new_version = args.explicit
+    else:
+        part = "major" if args.major else "minor" if args.minor else "patch"
+        new_version = bump(current, part)
 
-        if updated_files:
-            print(f"Updated version in: {', '.join(updated_files)}")
-            # Print new version for use in git hook
-            print(f"VERSION={new_version}")
-            return 0
-        else:
-            print("Warning: No version files were updated")
-            return 1
+    if args.dry_run:
+        print(f"{current} -> {new_version} (dry run, nothing written)")
+        return 0
 
-    except Exception as e:
-        print(f"Error incrementing version: {e}", file=sys.stderr)
-        return 1
+    write_version(new_version)
+    print(f"{current} -> {new_version}")
+    print(f"Updated {INIT_FILE}. pyproject.toml and Settings read from it.")
+    print(f"Next: git commit -am 'chore: release v{new_version}' && git tag v{new_version}")
+    return 0
 
 
 if __name__ == "__main__":

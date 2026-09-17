@@ -3,7 +3,8 @@
 
 # Application settings
 app_name: "zfs-sync"
-app_version: "0.2.7"
+# app_version is intentionally omitted: it defaults to the installed package
+# version. Setting it here only creates a second copy to keep in sync.
 debug: false
 log_level: "INFO"
 
