@@ -290,7 +290,7 @@ curl -X POST "http://localhost:8000/api/v1/snapshots" \
 Ask ZFS Sync what snapshots your system needs to sync:
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
   -H "X-API-Key: your-api-key-here"
 ```
 
@@ -328,7 +328,7 @@ curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_
 This tells you which snapshots to copy from other systems. If SSH details are configured, the response includes:
 
 - `source_ssh_hostname`, `source_ssh_user`, `source_ssh_port`: SSH connection details
-- `sync_command`: Ready-to-execute command string (if `include_commands=true`)
+- `sync_command`: Ready-to-execute command string (if ``)
 - `incremental_base`: Base snapshot for incremental sends (if available)
 - `is_incremental`: Whether an incremental send is possible
 

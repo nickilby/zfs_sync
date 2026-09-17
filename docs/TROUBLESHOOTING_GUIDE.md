@@ -298,7 +298,7 @@ psql -U zfs_sync -d zfs_sync -c "SELECT COUNT(*) FROM systems;"
 
 3. **Check sync instructions for incremental base**:
    ```bash
-   curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+   curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
      -H "X-API-Key: api-key" | jq '.actions[] | {snapshot: .snapshot_name, incremental_base: .incremental_base}'
    ```
 

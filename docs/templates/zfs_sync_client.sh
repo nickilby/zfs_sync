@@ -18,7 +18,7 @@
 #    sudo chmod +x /usr/local/bin/zfs_sync_client.sh
 #
 # 2. Register your system with the witness service to get SYSTEM_ID and API_KEY:
-#    curl -X POST "http://witness-service:8000/api/v1/systems/register" \
+#    curl -X POST "http://witness-service:8000/api/v1/systems" \
 #      -H "Content-Type: application/json" \
 #      -d '{"hostname": "your-system-hostname", "platform": "linux"}'
 #
@@ -343,9 +343,9 @@ report_snapshots() {
 get_sync_instructions() {
     log_info "Fetching sync instructions from witness service"
 
-    local endpoint="/api/v1/sync/instructions/$SYSTEM_ID?include_commands=true"
+    local endpoint="/api/v1/sync/instructions/$SYSTEM_ID"
     if [ -n "$SYNC_GROUP_ID" ]; then
-        endpoint="${endpoint}&sync_group_id=$SYNC_GROUP_ID"
+        endpoint="${endpoint}?sync_group_id=$SYNC_GROUP_ID"
     fi
 
     local response=$(api_request "GET" "$endpoint")

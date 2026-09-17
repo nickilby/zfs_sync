@@ -135,7 +135,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 ### System Registration Flow
 
 ```
-1. System → POST /api/v1/systems/register
+1. System → POST /api/v1/systems
 2. API → AuthService.generate_api_key()
 3. API → SystemRepository.create()
 4. Database → Store system with API key
@@ -256,7 +256,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 
 #### Systems
 
-- `POST /systems/register` - Register a new system
+- `POST /systems` - Register a new system
 - `GET /systems` - List all systems
 - `GET /systems/{id}` - Get system details
 - `PUT /systems/{id}` - Update system

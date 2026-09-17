@@ -91,6 +91,13 @@ class DatasetSyncInstruction(BaseModel):
     ending_snapshot: str = Field(..., description="Ending snapshot name (latest to sync)")
     source_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for source system")
     target_ssh_hostname: Optional[str] = Field(None, description="SSH hostname for target system")
+    # The client rebuilds the command as an argument vector rather than
+    # evaluating the rendered string, so it needs the whole target identity.
+    target_ssh_user: Optional[str] = Field(None, description="SSH username for target system")
+    target_ssh_port: int = Field(default=22, description="SSH port for target system")
+    # Required to report the outcome back against the right pair.
+    source_system_id: str = Field(..., description="System that runs the send")
+    target_system_id: str = Field(..., description="System that receives")
     sync_group_id: str = Field(..., description="Sync group ID")
     requires_rollback: bool = Field(
         default=False,

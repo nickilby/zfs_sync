@@ -350,7 +350,7 @@ curl -X PUT "http://localhost:8000/api/v1/systems/{system_id}" \
 After registering SSH details, sync instructions will include ready-to-execute commands:
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
   -H "X-API-Key: your-api-key-here"
 ```
 
@@ -546,7 +546,7 @@ curl -X POST "http://localhost:8000/api/v1/snapshots" \
 Request sync instructions for a system:
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
   -H "X-API-Key: system-api-key"
 ```
 
