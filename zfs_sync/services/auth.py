@@ -1,7 +1,28 @@
-"""Authentication and authorization services."""
+"""Authentication and API key management.
 
+Keys were stored in plaintext and looked up by equality. Combined with
+``SystemResponse`` exposing the column, an unauthenticated ``GET /systems``
+returned every key in the fleet.
+
+Keys are stored as a SHA-256 digest rather than run through a password KDF.
+
+That choice is deliberate and rests on one property: these are random tokens,
+not passwords. ``secrets.token_urlsafe`` gives at least 128 bits of entropy
+(see ``MIN_API_KEY_BYTES``), so there is no dictionary to attack and no
+feasible offline brute force whatever the hash costs. A KDF would add latency
+to every authenticated request -- the digest is checked on each one -- and buy
+nothing. It is also deterministic, so it can be indexed and looked up directly.
+
+Static analysis flags this as weak password hashing, which is correct advice
+for passwords and wrong here. The property it depends on is enforced rather
+than assumed: ``api_key_length`` cannot be configured below 16 bytes. Lower
+the floor and the analysis becomes right.
+"""
+
+import hashlib
+import hmac
 import secrets
-from typing import Optional
+from typing import Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -12,69 +33,100 @@ from zfs_sync.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+#: Shown alongside a system so an operator can tell which key is in use
+#: without the key itself appearing anywhere.
+KEY_PREFIX_LENGTH = 8
+
+
+def hash_api_key(api_key: str) -> str:
+    """Return the stored form of an API key."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
+def keys_match(candidate_hash: str, stored_hash: str) -> bool:
+    """Compare two digests without leaking timing information."""
+    return hmac.compare_digest(candidate_hash, stored_hash)
+
 
 class AuthService:
-    """Service for authentication and API key management."""
+    """Issues and validates system API keys."""
 
     def __init__(self, db: Session):
-        """Initialize the auth service."""
         self.db = db
         self.system_repo = SystemRepository(db)
         self.settings = get_settings()
 
     def generate_api_key(self) -> str:
-        """Generate a secure API key."""
-        # Generate a URL-safe random token
-        api_key = secrets.token_urlsafe(self.settings.api_key_length)
-        return api_key
+        """Generate a key. Returned once; only its digest is stored."""
+        return secrets.token_urlsafe(self.settings.api_key_length)
 
     def create_api_key_for_system(self, system_id: UUID) -> str:
-        """Generate and assign an API key to a system."""
+        """Issue a key for a system and return the plaintext exactly once."""
         system = self.system_repo.get(system_id)
         if not system:
-            raise ValueError(
-                f"System '{system_id}' not found. "
-                f"Cannot create API key for non-existent system."
-            )
+            raise ValueError(f"System '{system_id}' not found. Cannot create an API key for it.")
 
         api_key = self.generate_api_key()
-        self.system_repo.update(system_id, api_key=api_key)
-        logger.info(f"Generated API key for system {system_id}")
+        self.system_repo.update(
+            system_id,
+            api_key_hash=hash_api_key(api_key),
+            api_key_prefix=api_key[:KEY_PREFIX_LENGTH],
+        )
+        logger.info("Issued API key for system %s", system_id)
         return api_key
 
     def validate_api_key(self, api_key: str) -> Optional[UUID]:
-        """
-        Validate an API key and return the system ID if valid.
+        """Return the system this key belongs to, or None.
 
-        Returns:
-            System ID if valid, None otherwise
+        Deliberately does not touch ``last_seen``. Writing on every
+        authenticated request put a write in the path of every read, for
+        liveness information the heartbeat endpoint already records.
         """
         if not api_key:
             return None
 
-        system = self.system_repo.get_by_api_key(api_key)
-        if system:
-            # Update last_seen timestamp
-            from datetime import datetime, timezone
+        candidate = hash_api_key(api_key)
+        system = self.system_repo.get_by_api_key_hash(candidate)
+        if system is None:
+            return None
 
-            self.system_repo.update(system.id, last_seen=datetime.now(timezone.utc))
-            return system.id
-        return None
+        # The lookup already matched, but compare explicitly so the code does
+        # not depend on the database's comparison semantics.
+        if not keys_match(candidate, system.api_key_hash):
+            return None
+        return system.id
 
     def revoke_api_key(self, system_id: UUID) -> None:
-        """Revoke (remove) an API key from a system."""
+        """Remove a system's key, leaving it unable to authenticate."""
         system = self.system_repo.get(system_id)
         if not system:
-            raise ValueError(
-                f"System '{system_id}' not found. "
-                f"Cannot create API key for non-existent system."
-            )
+            raise ValueError(f"System '{system_id}' not found. Cannot revoke its API key.")
 
-        self.system_repo.update(system_id, api_key=None)
-        logger.info(f"Revoked API key for system {system_id}")
+        self.system_repo.update(system_id, api_key_hash=None, api_key_prefix=None)
+        logger.info("Revoked API key for system %s", system_id)
 
     def rotate_api_key(self, system_id: UUID) -> str:
-        """Rotate (generate new) API key for a system."""
+        """Replace a system's key, returning the new plaintext once."""
         new_key = self.create_api_key_for_system(system_id)
-        logger.info(f"Rotated API key for system {system_id}")
+        logger.info("Rotated API key for system %s", system_id)
         return new_key
+
+    def check_registration_token(self, provided: Optional[str]) -> Tuple[bool, str]:
+        """Decide whether a registration request may proceed.
+
+        Registration issues a working API key, so leaving it open lets anyone
+        who can reach the service mint credentials for it. A token makes that
+        an explicit choice rather than the default.
+
+        Returns whether to allow it, and why -- so the caller can log an
+        unprotected registration rather than letting it pass silently.
+        """
+        expected = self.settings.registration_token
+        if not expected:
+            return True, "registration is unprotected (no registration_token configured)"
+        if provided and hmac.compare_digest(provided, expected):
+            return True, "registration token accepted"
+        return False, "registration token missing or incorrect"
+
+
+__all__ = ["KEY_PREFIX_LENGTH", "AuthService", "hash_api_key", "keys_match"]

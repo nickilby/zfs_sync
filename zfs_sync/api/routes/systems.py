@@ -3,11 +3,16 @@
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from zfs_sync.api.middleware.auth import get_current_system, get_optional_system
-from zfs_sync.api.schemas.system import SystemCreate, SystemResponse, SystemUpdate
+from zfs_sync.api.schemas.system import (
+    SystemCreate,
+    SystemCreatedResponse,
+    SystemResponse,
+    SystemUpdate,
+)
 from zfs_sync.database import get_db
 from zfs_sync.database.repositories import SystemRepository
 from zfs_sync.logging_config import get_logger
@@ -18,9 +23,35 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-@router.post("/systems", response_model=SystemResponse, status_code=status.HTTP_201_CREATED)
-async def create_system(system: SystemCreate, db: Session = Depends(get_db)):
-    """Register a new system. An API key will be automatically generated."""
+@router.post("/systems", response_model=SystemCreatedResponse, status_code=status.HTTP_201_CREATED)
+async def create_system(
+    system: SystemCreate,
+    db: Session = Depends(get_db),
+    registration_token: Optional[str] = Header(
+        None,
+        alias="X-Registration-Token",
+        description="Required when registration_token is configured.",
+    ),
+):
+    """Register a new system, returning its API key once.
+
+    Registration issues a working API key, so an unprotected endpoint lets
+    anyone who can reach the service mint credentials for it. Set
+    ``registration_token`` in configuration to require a shared secret; when it
+    is unset the endpoint stays open and says so in the log, rather than
+    failing closed on an existing fleet that has no token configured.
+    """
+    auth_service = AuthService(db)
+    allowed, reason = auth_service.check_registration_token(registration_token)
+    if not allowed:
+        logger.warning("Rejected registration for %r: %s", system.hostname, reason)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="A valid X-Registration-Token header is required to register a system.",
+        )
+    if not auth_service.settings.registration_token:
+        logger.warning("Registering %r: %s", system.hostname, reason)
+
     repo = SystemRepository(db)
     existing = repo.get_by_hostname(system.hostname)
     if existing:
@@ -33,25 +64,30 @@ async def create_system(system: SystemCreate, db: Session = Depends(get_db)):
     except ValueError as e:
         # Handle constraint violations from repository
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=f"Failed to create system: {str(e)}"
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Could not create system '{system.hostname}'. It may already exist.",
         ) from e
 
     # Generate API key for the new system
     try:
-        auth_service = AuthService(db)
         api_key = auth_service.create_api_key_for_system(db_system.id)
     except ValueError as e:
         logger.error(f"Failed to generate API key for system {db_system.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"System created but failed to generate API key: {str(e)}",
+            detail=(
+                "The system was created but an API key could not be issued. "
+                "Request one from /systems/{id}/api-key."
+            ),
         ) from e
 
     logger.info(f"Created system: {db_system.hostname} ({db_system.id}) with API key")
-    response = SystemResponse.model_validate(db_system)
-    # Include API key only on creation (security: key is only shown once)
-    response.api_key = api_key
-    return response
+    # The key is attached explicitly here rather than read off the ORM row, so
+    # that registration stays the only response carrying it.
+    return SystemCreatedResponse(
+        **SystemResponse.model_validate(db_system).model_dump(),
+        api_key=api_key,
+    )
 
 
 @router.post("/systems/{system_id}/api-key", status_code=status.HTTP_200_OK)
@@ -112,7 +148,12 @@ async def rotate_api_key(
 
 
 @router.get("/systems", response_model=List[SystemResponse])
-async def list_systems(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+async def list_systems(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _: UUID = Depends(get_current_system),
+):
     """List all registered systems."""
     repo = SystemRepository(db)
     systems = repo.get_all(skip=skip, limit=limit)
@@ -136,7 +177,11 @@ async def list_systems(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 
 
 @router.get("/systems/{system_id}", response_model=SystemResponse)
-async def get_system(system_id: UUID, db: Session = Depends(get_db)):
+async def get_system(
+    system_id: UUID,
+    db: Session = Depends(get_db),
+    _: UUID = Depends(get_current_system),
+):
     """Get a system by ID."""
     repo = SystemRepository(db)
     system = repo.get(system_id)
@@ -149,9 +194,23 @@ async def get_system(system_id: UUID, db: Session = Depends(get_db)):
 
 @router.put("/systems/{system_id}", response_model=SystemResponse)
 async def update_system(
-    system_id: UUID, system_update: SystemUpdate, db: Session = Depends(get_db)
+    system_id: UUID,
+    system_update: SystemUpdate,
+    db: Session = Depends(get_db),
+    current_system: UUID = Depends(get_current_system),
 ):
-    """Update a system."""
+    """Update a system. A system may only update itself.
+
+    This route writes ``ssh_hostname``, which ends up inside a command the hub
+    runs. It was unauthenticated, so anyone who could reach the service could
+    point a target at a host of their choosing.
+    """
+    if current_system != system_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A system may only update its own record",
+        )
+
     repo = SystemRepository(db)
     try:
         system = repo.update(
@@ -160,7 +219,7 @@ async def update_system(
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update system '{system_id}': {str(e)}",
+            detail=f"Could not update system '{system_id}'.",
         ) from e
     if not system:
         raise HTTPException(
@@ -171,7 +230,11 @@ async def update_system(
 
 
 @router.delete("/systems/{system_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_system(system_id: UUID, db: Session = Depends(get_db)):
+async def delete_system(
+    system_id: UUID,
+    db: Session = Depends(get_db),
+    _: UUID = Depends(get_current_system),
+):
     """Delete a system."""
     repo = SystemRepository(db)
     try:
@@ -186,7 +249,7 @@ async def delete_system(system_id: UUID, db: Session = Depends(get_db)):
         logger.error(f"Error deleting system {system_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete system '{system_id}': {str(e)}",
+            detail=f"Could not delete system '{system_id}'.",
         ) from e
     logger.info(f"Deleted system: {system_id}")
 
@@ -223,7 +286,9 @@ async def get_system_health(
 
 
 @router.get("/systems/health/all")
-async def get_all_systems_health(db: Session = Depends(get_db)):
+async def get_all_systems_health(
+    db: Session = Depends(get_db), _: UUID = Depends(get_current_system)
+):
     """Get health status for all systems. Public endpoint."""
     health_service = SystemHealthService(db)
     all_health = health_service.get_all_systems_health()
@@ -231,7 +296,7 @@ async def get_all_systems_health(db: Session = Depends(get_db)):
 
 
 @router.get("/systems/health/online")
-async def get_online_systems(db: Session = Depends(get_db)):
+async def get_online_systems(db: Session = Depends(get_db), _: UUID = Depends(get_current_system)):
     """Get list of online systems. Public endpoint."""
     health_service = SystemHealthService(db)
     online = health_service.get_online_systems()
@@ -239,7 +304,7 @@ async def get_online_systems(db: Session = Depends(get_db)):
 
 
 @router.get("/systems/health/offline")
-async def get_offline_systems(db: Session = Depends(get_db)):
+async def get_offline_systems(db: Session = Depends(get_db), _: UUID = Depends(get_current_system)):
     """Get list of offline systems. Public endpoint."""
     health_service = SystemHealthService(db)
     offline = health_service.get_offline_systems()

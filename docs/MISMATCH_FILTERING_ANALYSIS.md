@@ -1,8 +1,18 @@
 # Mismatch Filtering Analysis
 
+> **Historical.** Kept because its "Target Behaviour" section is the clearest
+> statement of the send-window policy, and its worked example is now a test.
+>
+> Its "Files Modified" section is not accurate. The functions it describes --
+> `get_latest_allowed_snapshot_before_now()` among them -- existed but were
+> imported by nothing; the code that ran was an inline 72-hour check elsewhere.
+> The policy is now implemented once, in `zfs_sync/services/sync/policy.py`,
+> and the worked example below is asserted in
+> `tests/unit/test_services/test_sync_policy.py`.
+
 ## Problem Summary
 
-The system detects 1525 mismatches for sync group `276231c1-1867-428f-b122-4bc5aaa47ad3` but reports "no datasets to sync". There are also many `orphaned_snapshot` conflicts for system `72c0c3d5-ca09-4174-a2b2-46cf3842d99a` on dataset `M1S2MIR1`.
+The system detects 1525 mismatches for sync group `<sync-group-id>` but reports "no datasets to sync". There are also many `orphaned_snapshot` conflicts for system `<system-id>` on dataset `MIRROR1`.
 
 ## Root Cause Analysis
 
@@ -102,7 +112,7 @@ When running the system, you should now see:
 1. **Individual Filter Warnings**:
 
    ```
-   [FILTER] 72h_check: Skipping mismatch for dataset=M1S2MIR1 snapshot=2025-12-01-000000 
+   [FILTER] 72h_check: Skipping mismatch for dataset=MIRROR1 snapshot=2025-12-01-000000 
    source_system=<id> target_system=<id>. 
    Source latest midnight: 2025-12-03-000000 (2025-12-03T00:00:00+00:00), 
    Target latest midnight: 2025-11-30-000000 (2025-11-30T00:00:00+00:00). 
@@ -124,7 +134,7 @@ The project’s intended policy is:
 - This guarantees that, after a sync run, the target will lag the source by **no more than ~72 hours in absolute time**, regardless of how far behind it started.
 - The decision about *whether* a dataset is out of sync can still use `is_snapshot_out_of_sync_by_72h()` (latest-midnight comparison), but the decision about **which snapshot to send as the ending point** is tied to “now − 72h”.
 
-Concretely, for the L1S4DAT1 example:
+Concretely, for the DATA1 example:
 
 - Comparison time: `2025-12-04T09:13:30Z` (from `/snapshots/compare-dataset`).
 
@@ -144,7 +154,7 @@ Concretely, for the L1S4DAT1 example:
 
 Resulting command:
 
-- `zfs send -c -I hqs10p1/L1S4DAT1@2025-10-30-000000 hqs10p1/L1S4DAT1@2025-12-01-000000 | ssh hqs7-san "zfs receive -s hqs7p1/L1S4DAT1"`
+- `zfs send -c -I hubpool1/DATA1@2025-10-30-000000 hubpool1/DATA1@2025-12-01-000000 | ssh spoke1-san "zfs receive -s spokepool1/DATA1"`
 
 This means:
 
@@ -246,8 +256,8 @@ When orphaned snapshots are detected, use different comparison logic:
    - Introduced `get_latest_allowed_snapshot_before_now()` to implement the “only send snapshots at least 72 hours older than now” policy.
 1. `tests/unit/test_services/test_sync_mismatch_detection.py`
    - Added a test for the orphaned snapshot scenario.
-   - Added `test_l1s4dat1_72h_gate_generates_expected_command`, which:
-     - Builds the L1S4DAT1 snapshot sets as seen in production.
+   - Added `test_data1_72h_gate_generates_expected_command`, which:
+     - Builds the DATA1 snapshot sets as seen in production.
      - Asserts that `get_sync_instructions()` for the lagging system:
        - Picks `2025-10-30-000000` as the starting snapshot (last common).
        - Picks `2025-12-01-000000` as the ending snapshot (latest allowed under now−72h).

@@ -215,7 +215,7 @@ Currently, conflicts must be resolved via the API. The dashboard shows conflicts
 **To resolve conflicts**, use the API:
 
 ```bash
-curl -X POST "http://your-server:8000/api/v1/conflicts/{conflict_id}/resolve" \
+curl -X POST "http://your-server:8000/api/v1/conflicts/{conflict_id}/mark-resolved" \
   -H "X-API-Key: api-key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -330,7 +330,7 @@ curl http://your-server:8000/api/v1/sync/groups/{group_id}/status
 
 **Via API**:
 ```bash
-curl http://your-server:8000/api/v1/conflicts/{sync_group_id}
+curl http://your-server:8000/api/v1/conflicts/sync-group/{sync_group_id}
 ```
 
 ### Viewing Sync History
@@ -435,7 +435,7 @@ If the dashboard isn't working:
 - [SETUP_GUIDE.md](SETUP_GUIDE.md) - Initial setup including dashboard access
 - [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) - Daily operations and monitoring
 - [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md) - Dashboard troubleshooting
-- [HOW_TO_USE.md](../HOW_TO_USE.md) - API usage examples
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - API usage examples
 
 ---
 

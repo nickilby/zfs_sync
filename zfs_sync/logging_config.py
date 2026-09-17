@@ -64,6 +64,7 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
                 f"Could not set up file logging to {log_file}: {e}. "
                 "Continuing with console logging only.",
                 UserWarning,
+                stacklevel=2,
             )
 
     # Set levels for third-party libraries

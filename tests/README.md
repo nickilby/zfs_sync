@@ -117,7 +117,7 @@ Integration tests should test API endpoints:
 def test_create_system_endpoint(test_client):
     """Test system creation endpoint."""
     response = test_client.post(
-        "/api/v1/systems/register",
+        "/api/v1/systems",
         json={"hostname": "test", "platform": "linux"},
     )
     assert response.status_code == 201

@@ -5,7 +5,7 @@ import platform
 import re
 import socket
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import Field, field_validator, model_validator
@@ -40,6 +40,13 @@ def get_default_database_url() -> str:
         return f"sqlite:///{db_path}"
 
 
+#: Minimum bytes of entropy in a generated API key. 16 bytes is 128 bits,
+#: which is beyond offline brute force whatever hash is used to store it --
+#: the assumption that lets keys be stored as a plain digest rather than run
+#: through a password KDF on every request.
+MIN_API_KEY_BYTES = 16
+
+
 class Settings(BaseSettings):
     """Application settings with environment variable and file support."""
 
@@ -62,7 +69,9 @@ class Settings(BaseSettings):
     )
 
     # Server
-    host: str = Field(default="0.0.0.0", description="Server host")
+    # Binding all interfaces is the intended default for a containerised
+    # service; exposure is controlled by the container/network, not here.
+    host: str = Field(default="0.0.0.0", description="Server host")  # noqa: S104
     port: int = Field(default=8000, description="Server port")
     api_prefix: str = Field(default="/api/v1", description="API prefix")
 
@@ -76,7 +85,32 @@ class Settings(BaseSettings):
     secret_key: Optional[str] = Field(
         default=None, description="Secret key for JWT/session management"
     )
-    api_key_length: int = Field(default=32, description="Length of generated API keys")
+    cors_allow_origins: List[str] = Field(
+        default_factory=lambda: ["*"],
+        description=(
+            "Browser origins permitted to call the API. The default is "
+            "permissive for local development; name specific origins in "
+            "production, which also enables credentialed requests."
+        ),
+    )
+    registration_token: Optional[str] = Field(
+        default=None,
+        description=(
+            "Shared secret required by POST /systems. Registration issues a "
+            "working API key, so leaving this unset lets anyone who can reach "
+            "the service mint credentials for it."
+        ),
+    )
+    api_key_length: int = Field(
+        default=32,
+        description=(
+            "Bytes of entropy in a generated API key (secrets.token_urlsafe). "
+            "Keys are stored as a plain SHA-256 digest, which is safe only "
+            "because they are high-entropy random tokens rather than "
+            "passwords -- so this must not be lowered past the point where "
+            "an offline brute-force becomes feasible."
+        ),
+    )
 
     # Sync Settings
     default_sync_interval_seconds: int = Field(
@@ -97,12 +131,46 @@ class Settings(BaseSettings):
         description="Suppress repeated warnings for datasets that exist on some systems but have no snapshots yet on the target (orphan datasets).",
     )
 
+    # Send-window policy. These were hardcoded literals in two places -- an
+    # inline "hours_behind <= 72.0" in the coordination service and
+    # MIN_SNAPSHOT_GAP_HOURS in the validators -- so neither was configurable
+    # and the two could drift apart.
+    snapshot_min_age_hours: float = Field(
+        default=72.0,
+        description=(
+            "How old a snapshot must be before it may end a send window. After a "
+            "successful sync the target trails the source by at most this much."
+        ),
+    )
+    snapshot_min_gap_hours: float = Field(
+        default=72.0,
+        description=(
+            "Minimum span between the starting and ending snapshot for a sync to "
+            "be worth performing."
+        ),
+    )
+    snapshot_anchor_pattern: str = Field(
+        default=r"-000000$",
+        description=(
+            "Regular expression selecting which snapshot names may end a send "
+            "window. The default matches the midnight convention; set it to "
+            r"'^\d{4}-\d{2}-\d{2}-\d{6}$' for znapzend-style naming, or '' to "
+            "accept any snapshot name."
+        ),
+    )
+
     # File paths
     config_file: Optional[Path] = Field(
         default=None, description="Path to configuration file (YAML/TOML)"
     )
 
     model_config = SettingsConfigDict(
+        # Without this, ZFS_SYNC_* variables were only honoured when a config
+        # file happened to exist -- from_file() applied them with a manual
+        # loop, and nothing applied them otherwise. A deployment configured
+        # purely through the environment (a container, say) silently fell back
+        # to platform defaults, including for database_url.
+        env_prefix="ZFS_SYNC_",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
@@ -155,9 +223,25 @@ class Settings(BaseSettings):
     @field_validator("api_key_length")
     @classmethod
     def validate_api_key_length(cls, v: int) -> int:
-        """Validate API key length is reasonable."""
-        if not (8 <= v <= 128):
-            raise ValueError(f"api_key_length must be between 8 and 128, got {v}")
+        """Keep API keys beyond brute-force reach.
+
+        Keys are stored as a plain SHA-256 digest rather than run through a
+        password KDF. That is the right choice for random tokens -- a KDF
+        would add latency to every authenticated request for no benefit --
+        but it rests entirely on the token being too large to guess.
+
+        The previous floor of 8 bytes is 64 bits, which a well-resourced
+        attacker holding the database could exhaust offline against a fast
+        hash. 16 bytes is 128 bits, which is not reachable by brute force
+        regardless of how fast the hash is.
+        """
+        if not (MIN_API_KEY_BYTES <= v <= 128):
+            raise ValueError(
+                f"api_key_length must be between {MIN_API_KEY_BYTES} and 128 bytes, "
+                f"got {v}. Below {MIN_API_KEY_BYTES} bytes "
+                f"({MIN_API_KEY_BYTES * 8} bits) the stored digest would be "
+                f"open to offline brute force."
+            )
         return v
 
     @field_validator("default_sync_interval_seconds")
@@ -176,6 +260,27 @@ class Settings(BaseSettings):
             raise ValueError(f"heartbeat_timeout_seconds must be positive, got {v}")
         return v
 
+    @field_validator("snapshot_anchor_pattern")
+    @classmethod
+    def validate_snapshot_anchor_pattern(cls, v: str) -> str:
+        """Reject an uncompilable naming pattern at startup, not mid-sync."""
+        import re
+
+        if v:
+            try:
+                re.compile(v)
+            except re.error as exc:
+                raise ValueError(f"snapshot_anchor_pattern is not a valid regex: {exc}") from exc
+        return v
+
+    @field_validator("snapshot_min_age_hours", "snapshot_min_gap_hours")
+    @classmethod
+    def validate_positive_hours(cls, v: float) -> float:
+        """These are durations; a negative one is always a configuration error."""
+        if v < 0:
+            raise ValueError(f"must not be negative, got {v}")
+        return v
+
     @field_validator("sync_check_interval_seconds")
     @classmethod
     def validate_sync_check_interval(cls, v: int) -> int:
@@ -189,7 +294,7 @@ class Settings(BaseSettings):
     def validate_host(cls, v: str) -> str:
         """Validate host is a valid IP address or hostname."""
         # Allow common special values
-        if v in ("0.0.0.0", "127.0.0.1", "localhost", "*"):
+        if v in ("0.0.0.0", "127.0.0.1", "localhost", "*"):  # noqa: S104 -- comparison, not a bind
             return v
 
         # Try to validate as IP address
@@ -277,7 +382,7 @@ _settings: Optional[Settings] = None
 
 def get_settings() -> Settings:
     """Get or create the global settings instance."""
-    global _settings  # noqa: PLW0603
+    global _settings
     if _settings is None:
         # Check for config file in common locations
         config_paths = [
@@ -295,10 +400,7 @@ def get_settings() -> Settings:
                 config_file = path
                 break
 
-        if config_file:
-            _settings = Settings.from_file(config_file)
-        else:
-            _settings = Settings()
+        _settings = Settings.from_file(config_file) if config_file else Settings()
 
     # Type assertion: _settings is guaranteed to be non-None after the if block
     assert _settings is not None, "Settings should be initialized"

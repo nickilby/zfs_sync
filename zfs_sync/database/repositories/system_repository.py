@@ -19,9 +19,13 @@ class SystemRepository(BaseRepository[SystemModel]):
         """Get a system by hostname."""
         return self.db.query(SystemModel).filter(SystemModel.hostname == hostname).first()
 
-    def get_by_api_key(self, api_key: str) -> Optional[SystemModel]:
-        """Get a system by API key."""
-        return self.db.query(SystemModel).filter(SystemModel.api_key == api_key).first()
+    def get_by_api_key_hash(self, api_key_hash: str) -> Optional[SystemModel]:
+        """Get a system by the stored digest of its API key.
+
+        Replaces get_by_api_key, which compared plaintext. Keys are never
+        stored in plaintext now, so there is nothing to compare against.
+        """
+        return self.db.query(SystemModel).filter(SystemModel.api_key_hash == api_key_hash).first()
 
     def get_all_online(self) -> List[SystemModel]:
         """Get all online systems."""

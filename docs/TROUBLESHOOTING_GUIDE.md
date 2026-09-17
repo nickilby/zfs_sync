@@ -270,7 +270,7 @@ psql -U zfs_sync -d zfs_sync -c "SELECT COUNT(*) FROM systems;"
 
 5. **Check for conflicts**:
    ```bash
-   curl http://localhost:8000/api/v1/conflicts/{sync_group_id}
+   curl http://localhost:8000/api/v1/conflicts/sync-group/{sync_group_id}
    ```
 
 6. **Verify dataset names match** (pool-agnostic):
@@ -298,7 +298,7 @@ psql -U zfs_sync -d zfs_sync -c "SELECT COUNT(*) FROM systems;"
 
 3. **Check sync instructions for incremental base**:
    ```bash
-   curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+   curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
      -H "X-API-Key: api-key" | jq '.actions[] | {snapshot: .snapshot_name, incremental_base: .incremental_base}'
    ```
 
@@ -491,7 +491,7 @@ psql -U zfs_sync -d zfs_sync -c "SELECT COUNT(*) FROM systems;"
 
 4. **Verify SSE endpoint**:
    ```bash
-   curl -N http://localhost:8000/api/v1/events
+   curl -N http://localhost:8000/api/v1/dashboard/events
    # Should stream events
    ```
 
@@ -510,7 +510,7 @@ psql -U zfs_sync -d zfs_sync -c "SELECT COUNT(*) FROM systems;"
 
 2. **Verify SSE endpoint**:
    ```bash
-   curl -N http://localhost:8000/api/v1/events
+   curl -N http://localhost:8000/api/v1/dashboard/events
    ```
 
 3. **Check browser console**:
@@ -861,4 +861,4 @@ sqlite3 /var/lib/zfs-sync/zfs_sync.db "SELECT 'systems' as table_name, COUNT(*) 
 - [SETUP_GUIDE.md](SETUP_GUIDE.md) - Initial setup and configuration
 - [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) - Daily operations and maintenance
 - [DASHBOARD_GUIDE.md](DASHBOARD_GUIDE.md) - Web dashboard usage
-- [HOW_TO_USE.md](../HOW_TO_USE.md) - API usage examples
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - API usage examples

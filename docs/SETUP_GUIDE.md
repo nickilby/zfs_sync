@@ -113,7 +113,7 @@ pip install -r requirements.txt
 python -m zfs_sync
 ```
 
-**See [QUICK_START.md](../QUICK_START.md) for detailed native installation instructions.**
+**See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed native installation instructions.**
 
 ### Decision Matrix: SQLite vs PostgreSQL
 
@@ -350,7 +350,7 @@ curl -X PUT "http://localhost:8000/api/v1/systems/{system_id}" \
 After registering SSH details, sync instructions will include ready-to-execute commands:
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
   -H "X-API-Key: your-api-key-here"
 ```
 
@@ -445,8 +445,8 @@ curl -X POST "http://localhost:8000/api/v1/sync-groups" \
 ZFS Sync uses **pool-agnostic dataset comparison**, meaning systems with different pool names can sync the same logical dataset.
 
 **Example Scenario**:
-- System A: Pool `hqs10p1`, Dataset `L1S4DAT1`
-- System B: Pool `hqs7p1`, Dataset `L1S4DAT1`
+- System A: Pool `hubpool1`, Dataset `DATA1`
+- System B: Pool `spokepool1`, Dataset `DATA1`
 
 These are recognized as the same logical dataset and will sync correctly, even though the pool names differ.
 
@@ -546,7 +546,7 @@ curl -X POST "http://localhost:8000/api/v1/snapshots" \
 Request sync instructions for a system:
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+curl -X GET "http://localhost:8000/api/v1/sync/instructions/{system_id}" \
   -H "X-API-Key: system-api-key"
 ```
 
@@ -629,5 +629,5 @@ After completing setup:
 - [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) - Daily operations and maintenance
 - [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md) - Issue resolution
 - [DASHBOARD_GUIDE.md](DASHBOARD_GUIDE.md) - Web dashboard usage
-- [HOW_TO_USE.md](../HOW_TO_USE.md) - API usage examples
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - API usage examples
 - [README.md](../README.md) - Project overview and deployment details

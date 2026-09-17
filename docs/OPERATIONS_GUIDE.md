@@ -97,7 +97,7 @@ When a sync operation fails:
 
 4. **Check sync instructions again**:
    ```bash
-   curl -X GET "http://your-server:8000/api/v1/sync/instructions/{system_id}?include_commands=true" \
+   curl -X GET "http://your-server:8000/api/v1/sync/instructions/{system_id}" \
      -H "X-API-Key: your-api-key"
    ```
 
@@ -284,7 +284,7 @@ API_KEY="your-api-key-here"
 SYSTEM_ID="your-system-id-here"
 
 # Get sync instructions
-INSTRUCTIONS=$(curl -s -X GET "$API_URL/sync/instructions/$SYSTEM_ID?include_commands=true" \
+INSTRUCTIONS=$(curl -s -X GET "$API_URL/sync/instructions/$SYSTEM_ID" \
   -H "X-API-Key: $API_KEY")
 
 # Check if there are actions
@@ -413,7 +413,7 @@ def report_snapshots():
 def execute_sync():
     """Get and execute sync instructions."""
     response = requests.get(
-        f"{API_URL}/sync/instructions/{SYSTEM_ID}?include_commands=true",
+        f"{API_URL}/sync/instructions/{SYSTEM_ID}",
         headers={"X-API-Key": API_KEY}
     )
     response.raise_for_status()
@@ -841,4 +841,4 @@ Regularly test your backup and recovery procedures:
 - [SETUP_GUIDE.md](SETUP_GUIDE.md) - Initial setup and configuration
 - [TROUBLESHOOTING_GUIDE.md](TROUBLESHOOTING_GUIDE.md) - Issue resolution
 - [DASHBOARD_GUIDE.md](DASHBOARD_GUIDE.md) - Web dashboard usage
-- [HOW_TO_USE.md](../HOW_TO_USE.md) - API usage examples
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - API usage examples

@@ -1,255 +1,234 @@
-"""FastAPI application setup."""
+"""FastAPI application construction.
 
-import os
+The application is built by :func:`create_app` rather than assembled at import
+time. The previous module-level construction had two consequences worth naming:
+
+* Startup branched on ``PYTEST_CURRENT_TEST`` and returned early, so
+  configuration validation, ``init_db()`` and the scheduler were never
+  exercised by any test. Those are precisely the paths where the scheduler
+  no-op, the blocked event loop and the wrong-directory log check lived.
+* Settings were read once, at import, so a test could not construct an app with
+  different settings without reloading the module.
+
+``app`` is still exported for ``uvicorn zfs_sync.api.app:app``.
+"""
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from zfs_sync.api.errors import register_exception_handlers
+from zfs_sync.api.middleware.auth import get_current_system
 from zfs_sync.config import get_settings
 from zfs_sync.logging_config import get_logger, setup_logging
 
-# Get settings first to access log_file
-settings = get_settings()
-
-# Setup logging with log file if configured
-setup_logging(log_file=settings.log_file)
 logger = get_logger(__name__)
 
-# Settings already loaded above for logging setup
+#: Dashboard assets ship inside the package, not at the repository root. The
+#: previous code resolved the directory two levels up from this file, landing
+#: on a repo-root `static/` that it then created empty -- so it always skipped
+#: the mount, and every asset the dashboard page references returned 404.
+PACKAGE_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
-def _running_under_pytest() -> bool:
-    """Return True when running under pytest."""
-    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
+async def _run_startup(app: FastAPI) -> None:
+    """Validate configuration, prepare the database, start the scheduler."""
+    settings = app.state.settings
 
-async def _run_startup(app_instance: FastAPI) -> None:
-    """Initialize application resources."""
     logger.info("Starting %s v%s", settings.app_name, settings.app_version)
     logger.info("Debug mode: %s", settings.debug)
     logger.info("Database: %s", settings.database_url)
 
-    # Skip validation and database initialization if we're in a test environment
-    # (tests handle their own database setup via fixtures)
-    if _running_under_pytest():
-        logger.info(
-            "Skipping configuration validation and database initialization in test environment"
-        )
-        return
+    from zfs_sync.config.validation import ConfigurationError, validate_configuration
 
-    # Validate configuration before proceeding
     try:
-        from zfs_sync.config.validation import ConfigurationError, validate_configuration
-
         validate_configuration(settings)
         logger.info("Configuration validation passed")
     except ConfigurationError as exc:
         logger.error("Configuration validation failed: %s", exc)
         raise
 
-    # Initialize database
     from zfs_sync.database import init_db
 
-    init_db()
-    logger.info("Database initialized")
+    # Pass the app's settings through. Reading the global here would ignore an
+    # injected configuration entirely -- the database would be created wherever
+    # the process-wide default points, which on Linux is /var/lib/zfs-sync.
+    init_db(settings)
 
-    # Start sync scheduler if enabled
-    if settings.auto_sync_enabled:
-        try:
-            from zfs_sync.services.sync_scheduler import SyncSchedulerService
-
-            scheduler = SyncSchedulerService()
-            await scheduler.start_scheduler()
-            # Store scheduler instance in app state for shutdown
-            app_instance.state.sync_scheduler = scheduler
-            logger.info("Sync scheduler started")
-        except (RuntimeError, ValueError, OSError) as exc:
-            logger.error("Failed to start sync scheduler: %s", exc, exc_info=True)
-    else:
+    if not settings.auto_sync_enabled:
         logger.info("Automatic sync is disabled")
+        return
 
-
-async def _run_shutdown(app_instance: FastAPI) -> None:
-    """Cleanup application resources."""
-    logger.info("Shutting down %s", settings.app_name)
-
-    # Stop sync scheduler if it was started
-    if hasattr(app_instance.state, "sync_scheduler"):
-        try:
-            scheduler = app_instance.state.sync_scheduler
-            await scheduler.stop_scheduler()
-            logger.info("Sync scheduler stopped")
-        except (RuntimeError, ValueError, OSError) as exc:
-            logger.error("Error stopping sync scheduler: %s", exc, exc_info=True)
-
-
-@asynccontextmanager
-async def lifespan(app_instance: FastAPI):
-    """Manage FastAPI startup/shutdown lifecycle."""
-    await _run_startup(app_instance)
     try:
-        yield
-    finally:
-        await _run_shutdown(app_instance)
+        from zfs_sync.services.sync_scheduler import SyncSchedulerService
+
+        scheduler = SyncSchedulerService()
+        await scheduler.start_scheduler()
+        app.state.sync_scheduler = scheduler
+        logger.info("Sync scheduler started")
+    except (RuntimeError, ValueError, OSError) as exc:
+        logger.error("Failed to start sync scheduler: %s", exc, exc_info=True)
 
 
-# Create FastAPI app
-app = FastAPI(
-    title=settings.app_name,
-    version=settings.app_version,
-    description="A witness service to keep ZFS snapshots in sync across different platforms",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
-)
+async def _run_shutdown(app: FastAPI) -> None:
+    """Stop the scheduler if it was started."""
+    logger.info("Shutting down %s", app.state.settings.app_name)
+
+    scheduler = getattr(app.state, "sync_scheduler", None)
+    if scheduler is None:
+        return
+
+    try:
+        await scheduler.stop_scheduler()
+        logger.info("Sync scheduler stopped")
+    except (RuntimeError, ValueError, OSError) as exc:
+        logger.error("Error stopping sync scheduler: %s", exc, exc_info=True)
 
 
-def custom_openapi():
-    """Customize OpenAPI schema to include API key security scheme."""
-    from fastapi.openapi.utils import get_openapi
+def _mount_static(app: FastAPI) -> None:
+    """Serve the dashboard's CSS and JavaScript.
 
-    if app.openapi_schema:
-        return app.openapi_schema
+    The dashboard page references `/static/dashboard/...`, so this mount is
+    what makes the page work rather than render unstyled and inert.
+    """
+    if not PACKAGE_STATIC_DIR.is_dir():
+        logger.warning(
+            "Static directory %s not found; dashboard assets will 404", PACKAGE_STATIC_DIR
+        )
+        return
 
-    openapi_schema = get_openapi(
+    app.mount("/static", StaticFiles(directory=str(PACKAGE_STATIC_DIR)), name="static")
+    logger.debug("Mounted static files from %s", PACKAGE_STATIC_DIR)
+
+    assets_dir = PACKAGE_STATIC_DIR / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+
+def _customise_openapi(app: FastAPI) -> None:
+    """Advertise the API key scheme in the generated schema."""
+
+    def openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        components = schema.setdefault("components", {})
+        components.setdefault("securitySchemes", {})["ApiKeyAuth"] = {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "System API key, issued once at registration.",
+        }
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = openapi
+
+
+def create_app(settings=None, configure_logging: bool = True) -> FastAPI:
+    """Build the application.
+
+    Args:
+        settings: Settings to run with. Defaults to the process-wide settings.
+            Injectable so a test can exercise startup without reaching for
+            environment variables or reloading this module.
+        configure_logging: Whether to install logging handlers. Off in tests,
+            where pytest manages capture.
+    """
+    settings = settings if settings is not None else get_settings()
+
+    if configure_logging:
+        setup_logging(log_file=settings.log_file)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        await _run_startup(app)
+        try:
+            yield
+        finally:
+            await _run_shutdown(app)
+
+    app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="A witness service to keep ZFS snapshots in sync across different platforms",
-        routes=app.routes,
+        description="A witness service to keep ZFS snapshots in sync across platforms",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        lifespan=lifespan,
+    )
+    app.state.settings = settings
+
+    register_exception_handlers(app)
+
+    app.add_middleware(
+        CORSMiddleware,
+        # allow_origins=["*"] with allow_credentials=True is rejected by
+        # browsers and is the wrong default for a service that returns
+        # infrastructure topology. Credentials are only allowed when specific
+        # origins are named.
+        allow_origins=settings.cors_allow_origins,
+        allow_credentials="*" not in settings.cors_allow_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
-    # Ensure components section exists
-    if "components" not in openapi_schema:
-        openapi_schema["components"] = {}
+    from zfs_sync.api.routes import (
+        conflicts,
+        dashboard,
+        health,
+        snapshots,
+        sync,
+        sync_groups,
+        systems,
+    )
 
-    # Add or update API key security scheme
-    if "securitySchemes" not in openapi_schema["components"]:
-        openapi_schema["components"]["securitySchemes"] = {}
+    # Authentication is declared per router, so a new endpoint is protected by
+    # default rather than by memory. Only 6 of 54 endpoints were protected
+    # before, including none of the destructive ones.
+    #
+    # `health` is exempt so probes work without credentials, and `systems` is
+    # exempt at the router level because registration must stay reachable; its
+    # other routes carry the dependency individually.
+    authenticated = [Depends(get_current_system)]
+    routers = [
+        (health.router, "Health", []),
+        (systems.router, "Systems", []),
+        (snapshots.router, "Snapshots", authenticated),
+        (sync_groups.router, "Sync Groups", authenticated),
+        (sync.router, "Sync", authenticated),
+        (conflicts.router, "Conflicts", authenticated),
+    ]
+    for router, tag, dependencies in routers:
+        app.include_router(
+            router, prefix=settings.api_prefix, tags=[tag], dependencies=dependencies
+        )
 
-    # Add API key security scheme (will merge with any auto-generated schemes)
-    openapi_schema["components"]["securitySchemes"]["ApiKeyAuth"] = {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-API-Key",
-        "description": "API key for system authentication. Get your API key when registering a system.",
-    }
+    app.include_router(dashboard.router, tags=["Dashboard"])
 
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return RedirectResponse(url="/dashboard")
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return Response(status_code=204)
 
-# Override OpenAPI schema to include security scheme
-app.openapi = custom_openapi
+    _mount_static(app)
+    _customise_openapi(app)
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# Import routes (must be after app creation)
-from zfs_sync.api.routes import (  # noqa: E402
-    conflicts,
-    dashboard,
-    health,
-    snapshots,
-    sync,
-    sync_groups,
-    systems,
-)
-
-# Validate settings.api_prefix
-if not hasattr(settings, "api_prefix") or settings.api_prefix is None:
-    raise ValueError(f"settings.api_prefix is not set. Current settings: {dir(settings)}")
-
-# Validate and include routers with error handling
-routers_to_include = [
-    ("health", health, "Health"),
-    ("systems", systems, "Systems"),
-    ("snapshots", snapshots, "Snapshots"),
-    ("sync_groups", sync_groups, "Sync Groups"),
-    ("sync", sync, "Sync"),
-    ("conflicts", conflicts, "Conflicts"),
-]
-
-for route_name, route_module, tag in routers_to_include:
-    try:
-        if not hasattr(route_module, "router"):
-            raise AttributeError(
-                f"Module {route_name} does not have a 'router' attribute. "
-                f"Available attributes: {dir(route_module)}"
-            )
-        router = getattr(route_module, "router")
-        if router is None:
-            raise ValueError(f"Router for {route_name} is None")
-        app.include_router(router, prefix=settings.api_prefix, tags=[tag])
-        logger.debug("Successfully included router: %s", route_name)
-    except Exception as exc:
-        logger.error("Failed to include router %s: %s", route_name, exc)
-        raise RuntimeError(
-            f"Failed to include router '{route_name}': {exc}. "
-            f"This is a configuration error that must be fixed."
-        ) from exc
+    return app
 
 
-# Root route - redirect to API docs
-@app.get("/")
-async def root():
-    """Redirect root to dashboard."""
-    return RedirectResponse(url="/dashboard")
-
-
-# Static file serving (for future frontend assets)
-# Create static directory if it doesn't exist
-static_dir = Path(__file__).parent.parent.parent / "static"
-static_dir.mkdir(exist_ok=True)
-assets_dir = static_dir / "assets"
-
-# Track if assets are mounted
-assets_mounted = False
-
-# Mount static files if directories exist
-if assets_dir.exists() and any(assets_dir.iterdir()):
-    try:
-        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-        logger.info("Mounted static assets from %s", assets_dir)
-        assets_mounted = True
-    except (RuntimeError, OSError) as exc:
-        logger.warning("Could not mount assets directory: %s", exc)
-
-if static_dir.exists() and any(static_dir.iterdir()):
-    try:
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-        logger.info("Mounted static files from %s", static_dir)
-    except (RuntimeError, OSError) as exc:
-        logger.warning("Could not mount static directory: %s", exc)
-
-
-# Handle favicon requests gracefully
-@app.get("/favicon.ico")
-async def favicon():
-    """Handle favicon requests."""
-    from fastapi.responses import Response
-
-    return Response(status_code=204)  # No content
-
-
-# Include the dashboard router without a prefix
-app.include_router(dashboard.router, tags=["Dashboard"])
-
-# Catch-all for assets if not mounted (returns 204 to avoid 404 spam in logs)
-if not assets_mounted:
-
-    @app.get("/assets/{path:path}")
-    async def assets_catchall(_path: str):
-        """Handle asset requests when assets directory is not available."""
-        from fastapi.responses import Response
-
-        return Response(status_code=204)  # No content
+#: The application uvicorn serves: `uvicorn zfs_sync.api.app:app`.
+app = create_app()

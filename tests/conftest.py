@@ -15,11 +15,13 @@ from zfs_sync.database.base import Base, get_db
 # Import models to ensure they register with Base.metadata
 import zfs_sync.database.models  # noqa: F401
 
-# Use file-based SQLite for tests to ensure consistent database across connections
-# In-memory SQLite creates separate databases per connection, causing test failures
-_test_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
-_test_db_file.close()
-TEST_DATABASE_URL = f"sqlite:///{_test_db_file.name}"
+# Each test gets its own database file.
+#
+# A single module-level file was shared by the whole session, and the teardown
+# deleted it -- so tests were order-dependent and could not run in parallel:
+# under pytest-xdist one worker would remove the file another was still using.
+# File-based rather than in-memory because in-memory SQLite gives each
+# connection its own database.
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -33,6 +35,7 @@ def verify_database_setup():
         "sync_groups",
         "sync_group_systems",
         "sync_states",
+        "sync_runs",
     }
 
     # Check that all expected tables are in Base.metadata
@@ -61,6 +64,7 @@ def verify_tables_exist(engine) -> None:
         "sync_groups",
         "sync_group_systems",
         "sync_states",
+        "sync_runs",
     }
 
     missing_tables = expected_tables - existing_tables
@@ -73,22 +77,24 @@ def verify_tables_exist(engine) -> None:
 
 
 @pytest.fixture(scope="function")
-def test_db() -> Generator[Session, None, None]:
-    """Create a test database session with in-memory SQLite."""
-    # Create a new engine for testing
+def test_database_url(tmp_path) -> str:
+    """A database URL unique to this test."""
+    return f"sqlite:///{tmp_path / 'test.db'}"
+
+
+@pytest.fixture(scope="function")
+def test_db(test_database_url: str) -> Generator[Session, None, None]:
+    """A session against this test's own database."""
     engine = create_engine(
-        TEST_DATABASE_URL,
+        test_database_url,
         connect_args={"check_same_thread": False},
         echo=False,
     )
 
-    # Models are already imported at module level, create all tables
+    # Models are imported at module level, so the metadata is populated.
     Base.metadata.create_all(bind=engine)
-
-    # Verify tables were created successfully
     verify_tables_exist(engine)
 
-    # Create a session
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = TestingSessionLocal()
 
@@ -96,13 +102,9 @@ def test_db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
-        Base.metadata.drop_all(bind=engine)
         engine.dispose()
-        # Clean up test database file
-        import os
-
-        if os.path.exists(_test_db_file.name):
-            os.unlink(_test_db_file.name)
+        # tmp_path is removed by pytest, so there is no file to clean up and
+        # no shared file for another worker to pull out from under us.
 
 
 @pytest.fixture(scope="function")
@@ -190,3 +192,59 @@ api_prefix: "/api/v1"
     # Cleanup
     if os.path.exists(temp_path):
         os.unlink(temp_path)
+
+
+@pytest.fixture
+def registered_system(test_client):
+    """A registered system: returns its id and the plaintext API key.
+
+    The key is only ever returned at registration -- it is stored as a digest
+    -- so tests that need to authenticate must capture it here.
+    """
+    response = test_client.post(
+        "/api/v1/systems",
+        json={
+            "hostname": "fixture-system",
+            "platform": "linux",
+            "connectivity_status": "online",
+            "ssh_hostname": "fixture-system-san",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    return body["id"], body["api_key"]
+
+
+@pytest.fixture
+def auth_client(test_client, registered_system):
+    """A client that authenticates as `registered_system` by default.
+
+    Most endpoints require a key now; only registration, the health probes and
+    the dashboard page do not. Individual requests can still override or drop
+    the header to exercise the rejection paths.
+    """
+    _system_id, api_key = registered_system
+    test_client.headers.update({"X-API-Key": api_key})
+    return test_client
+
+
+def pytest_collection_modifyitems(config, items):
+    """Apply the unit/integration markers by location.
+
+    Both markers were declared in pyproject with --strict-markers and applied
+    by no test, so `pytest -m unit` selected nothing and the CI benchmark job
+    was permanently vacuous. Deriving them from the directory keeps them true
+    without asking every test to remember a decorator.
+    """
+    for item in items:
+        path = str(item.fspath).replace("\\", "/")
+        if "/tests/unit/" in path:
+            item.add_marker(pytest.mark.unit)
+        elif "/tests/integration/" in path:
+            item.add_marker(pytest.mark.integration)
+
+        if "migration" in path:
+            # These build and tear down whole schemas.
+            item.add_marker(pytest.mark.slow)
+        if "test_db" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.database)

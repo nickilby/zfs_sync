@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
-from zfs_sync.config.settings import Settings
+from zfs_sync.config.settings import Settings, get_settings
 from zfs_sync.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -59,7 +59,7 @@ def validate_configuration(settings: Settings) -> None:
 
     # Validate log directory
     try:
-        validate_log_directory()
+        validate_log_directory(settings)
         logger.debug("Log directory validated")
     except ConfigurationError as e:
         errors.append(str(e))
@@ -97,11 +97,9 @@ def validate_database_config(settings: Settings) -> None:
         # Validate SQLite database path
         file_path = database_url.replace("sqlite:///", "", 1)
 
-        # Handle absolute paths
-        if file_path.startswith("/"):
-            db_path = Path(file_path)
-        else:
-            db_path = Path(file_path)
+        # Path() handles absolute and relative forms identically here:
+        # sqlite://// -> "/abs/path", sqlite:/// -> "relative/path".
+        db_path = Path(file_path)
 
         # Get parent directory
         parent_dir = db_path.parent
@@ -172,20 +170,32 @@ def validate_database_config(settings: Settings) -> None:
             ) from e
 
 
-def validate_log_directory() -> None:
+def validate_log_directory(settings: Optional[Settings] = None) -> None:
     """
-    Validate log directory exists and is writable.
+    Validate that the directory the log file will be written to is usable.
+
+    This used to check ``Path("logs")`` relative to the working directory,
+    which had no relationship to ``settings.log_file``. Startup validation
+    therefore passed while the real log target was unwritable, and the failure
+    surfaced only as a UserWarning swallowed inside setup_logging -- so the
+    service ran with no file logging and said nothing.
 
     Raises:
-        ConfigurationError: If log directory is invalid
+        ConfigurationError: If the directory cannot be created or written to.
     """
-    # Check if log directory is configured via environment
+    settings = settings if settings is not None else get_settings()
+
+    # Precedence: an explicit override, then the parent of the configured log
+    # file, then the conventional default.
     log_dir_env = os.getenv("ZFS_SYNC_LOG_DIR", None)
     if log_dir_env:
         log_dir = Path(log_dir_env)
+    elif settings.log_file:
+        log_dir = Path(settings.log_file).parent
     else:
-        # Default log directory
-        log_dir = Path("logs")
+        # No log file configured, so there is no directory to validate.
+        logger.debug("No log file configured; skipping log directory validation")
+        return
 
     # Create directory if it doesn't exist
     if not log_dir.exists():
@@ -223,11 +233,15 @@ def validate_network_config(settings: Settings) -> None:
     port = settings.port
 
     # Check if port is already in use (only if host is 0.0.0.0 or localhost)
-    if host in ("0.0.0.0", "127.0.0.1", "localhost"):
+    if host in ("0.0.0.0", "127.0.0.1", "localhost"):  # noqa: S104 -- comparison, not a bind
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
-            result = sock.connect_ex((host if host != "0.0.0.0" else "127.0.0.1", port))
+            # Connect to the loopback address when the configured host is the
+            # wildcard -- 0.0.0.0 is not a connectable destination.
+            result = sock.connect_ex(
+                (host if host != "0.0.0.0" else "127.0.0.1", port)  # noqa: S104
+            )
             sock.close()
 
             if result == 0:
@@ -242,8 +256,11 @@ def validate_network_config(settings: Settings) -> None:
             # Port check failed, but this is not critical - just log a warning
             logger.warning("Could not check if port %s is available: %s", port, e)
 
-    # Validate host format (already done in field validator, but double-check)
-    if host not in ("0.0.0.0", "127.0.0.1", "localhost", "*"):
+    # Validate host format (already done in field validator, but double-check).
+    # These are comparisons, not binds; keep the tuple on one line so the
+    # suppression stays attached to the literal it explains.
+    special_hosts = ("0.0.0.0", "127.0.0.1", "localhost", "*")  # noqa: S104
+    if host not in special_hosts:
         try:
             # Try to resolve hostname
             socket.gethostbyname(host)

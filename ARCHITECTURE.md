@@ -135,7 +135,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 ### System Registration Flow
 
 ```
-1. System → POST /api/v1/systems/register
+1. System → POST /api/v1/systems
 2. API → AuthService.generate_api_key()
 3. API → SystemRepository.create()
 4. Database → Store system with API key
@@ -174,7 +174,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 ### Conflict Detection Flow
 
 ```
-1. System → GET /api/v1/conflicts/{sync_group_id}
+1. System → GET /api/v1/conflicts/sync-group/{sync_group_id}
 2. API → ConflictResolutionService.detect_conflicts()
 3. Service → Compare snapshots across systems
 4. Service → Identify conflict types (diverged, orphaned, etc.)
@@ -256,7 +256,7 @@ ZFS Sync is a witness service that coordinates ZFS snapshot synchronization acro
 
 #### Systems
 
-- `POST /systems/register` - Register a new system
+- `POST /systems` - Register a new system
 - `GET /systems` - List all systems
 - `GET /systems/{id}` - Get system details
 - `PUT /systems/{id}` - Update system
@@ -383,7 +383,7 @@ Container: zfs-sync
 
 ### Dataset Comparison Strategy
 
-The system uses **pool-agnostic dataset comparison**, meaning datasets are compared by dataset name only, regardless of pool differences. This allows systems with different pool names (e.g., `hqs10p1` vs `hqs7p1`) to synchronize the same logical dataset (e.g., `L1S4DAT1`).
+The system uses **pool-agnostic dataset comparison**, meaning datasets are compared by dataset name only, regardless of pool differences. This allows systems with different pool names (e.g., `hubpool1` vs `spokepool1`) to synchronize the same logical dataset (e.g., `DATA1`).
 
 **Key Points:**
 
@@ -394,8 +394,8 @@ The system uses **pool-agnostic dataset comparison**, meaning datasets are compa
 
 **Example:**
 
-- System A: `hqs10p1/L1S4DAT1@2025-11-26-000000`
-- System B: `hqs7p1/L1S4DAT1@2025-11-04-000000`
+- System A: `hubpool1/DATA1@2025-11-26-000000`
+- System B: `spokepool1/DATA1@2025-11-04-000000`
 - The system recognizes these as the same logical dataset and detects that System B is missing snapshots from `2025-11-04-120000` through `2025-11-26-000000`
 
 ### Mismatch Detection
@@ -566,6 +566,6 @@ The application acts as a witness:
 ## References
 
 - [README.md](README.md) - Project overview and getting started
-- [HOW_TO_USE.md](HOW_TO_USE.md) - User guide
-- [QUICK_START.md](QUICK_START.md) - Quick setup guide
+- [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) - User guide
+- [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) - Quick setup guide
 - API Documentation: Available at `/docs` when running the service

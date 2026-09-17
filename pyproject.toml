@@ -1,11 +1,15 @@
-<<<<<<< HEAD
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "zfs-sync"
-version = "0.1.80"
+# Single source of truth is zfs_sync/__init__.__version__. Duplicating the
+# version across pyproject, __init__ and both config files meant every commit
+# touched four files -- so any two branches committing in parallel diverged in
+# all four, and every merge between them conflicted there. That is what left
+# unresolved conflict markers on main.
+dynamic = ["version"]
 description = "A witness service to keep ZFS snapshots in sync across different platforms"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -30,6 +34,11 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "psycopg2-binary>=2.9.0",
 ]
 
 [project.optional-dependencies]
@@ -41,9 +50,18 @@ dev = [
     "mypy>=1.0.0",
 ]
 
+[tool.setuptools.dynamic]
+version = {attr = "zfs_sync.__version__"}
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["zfs_sync*"]
+
+# The dashboard's HTML, CSS and JavaScript live inside the package but are not
+# Python, so packages.find does not carry them into a wheel. Without this an
+# installed copy serves the dashboard page with every asset missing.
+[tool.setuptools.package-data]
+zfs_sync = ["static/**/*"]
 
 [tool.black]
 line-length = 100
@@ -52,6 +70,26 @@ target-version = ['py39']
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.ruff.lint]
+# Without an explicit select, ruff runs only E/F. These add the checks that
+# matter here: bugbear (B) for likely bugs, flake8-bandit (S) for security,
+# simplify (SIM), comprehensions (C4), and flake8-logging-format (G) for the
+# f-string-vs-lazy logging inconsistency spread across this codebase.
+# "G" (logging format) and "UP" (pyupgrade) are deliberately not enabled yet:
+# G reports 64 findings that are the logging-style inconsistency being reworked
+# when log levels are corrected, and UP reports 209 purely mechanical
+# typing.List -> list rewrites that would collide with the sync core rewrite.
+# Both are tracked to be turned on once that work lands.
+select = ["E", "F", "B", "S", "SIM", "C4", "RUF"]
+ignore = [
+    "E501",    # line length is enforced by the formatter
+    "S101",    # asserts are fine in tests
+    "B008",    # FastAPI Depends() in defaults is the framework idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
 
 [tool.mypy]
 python_version = "3.9"
@@ -75,81 +113,3 @@ markers = [
     "benchmark: Performance benchmark tests",
     "database: Tests that require database access",
 ]
-=======
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "zfs-sync"
-version = "0.2.0"
-description = "A witness service to keep ZFS snapshots in sync across different platforms"
-readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "MIT"}
-authors = [
-    {name = "ZFS Sync Contributors"}
-]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
-
-dependencies = [
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "pyyaml>=6.0",
-    "python-dotenv>=1.0.0",
-    "tomli>=2.0.0; python_version < '3.11'",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
-]
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["zfs_sync*"]
-
-[tool.black]
-line-length = 100
-target-version = ['py39']
-
-[tool.ruff]
-line-length = 100
-target-version = "py39"
-
-[tool.mypy]
-python_version = "3.9"
-warn_return_any = true
-warn_unused_configs = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "-v",
-    "--strict-markers",
-    "--tb=short",
-]
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "slow: Slow running tests",
-    "benchmark: Performance benchmark tests",
-    "database: Tests that require database access",
-]
->>>>>>> 4363d1bf1d96c7a96333af491382cd788cf2872e

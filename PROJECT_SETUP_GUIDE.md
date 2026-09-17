@@ -36,8 +36,8 @@ project-root/
 ├── requirements-dev.txt  # Development dependencies
 ├── README.md              # Main project documentation
 ├── ARCHITECTURE.md        # Architecture documentation
-├── HOW_TO_USE.md          # User guide
-└── QUICK_START.md         # Quick setup guide
+├── docs/SETUP_GUIDE.md          # User guide
+└── docs/SETUP_GUIDE.md         # Quick setup guide
 ```
 
 ### Key Principles
@@ -62,7 +62,7 @@ The README.md serves as the primary entry point for anyone discovering your proj
 - **Production Deployment**: Step-by-step deployment guide
 - **Configuration Options**: How to configure the application
 - **Troubleshooting**: Common issues and solutions
-- **Links to Other Documentation**: References to ARCHITECTURE.md, HOW_TO_USE.md, etc.
+- **Links to Other Documentation**: References to ARCHITECTURE.md, docs/SETUP_GUIDE.md, etc.
 
 **Example Structure:**
 
@@ -121,7 +121,7 @@ This document provides comprehensive technical documentation for developers and 
 - Design Patterns
 - Future Enhancements
 
-#### HOW_TO_USE.md (User Guide)
+#### docs/SETUP_GUIDE.md (User Guide)
 
 A beginner-friendly guide for end users:
 
@@ -136,7 +136,7 @@ A beginner-friendly guide for end users:
 
 **Target Audience**: End users who need to use the system but may not be developers.
 
-#### QUICK_START.md (Fast Setup)
+#### docs/SETUP_GUIDE.md (Fast Setup)
 
 A minimal guide for experienced users who want to get started quickly:
 
@@ -924,7 +924,7 @@ CMD ["python", "-m", "uvicorn", "project_name.api.app:app", "--host", "0.0.0.0",
 **Goals**: Set up basic project structure and documentation
 
 - \[ \] Set up repository structure (directories, basic files)
-- \[ \] Create basic documentation (README.md, QUICK_START.md)
+- \[ \] Create basic documentation (README.md, docs/SETUP_GUIDE.md)
 - \[ \] Configure pyproject.toml with project metadata
 - \[ \] Set up basic test structure (tests/ directory, conftest.py)
 - \[ \] Create .gitignore file
@@ -974,7 +974,7 @@ CMD ["python", "-m", "uvicorn", "project_name.api.app:app", "--host", "0.0.0.0",
 **Goals**: Complete comprehensive documentation
 
 - \[ \] Complete ARCHITECTURE.md with all sections
-- \[ \] Write HOW_TO_USE.md user guide
+- \[ \] Write docs/SETUP_GUIDE.md user guide
 - \[ \] Create tests/README.md testing guide
 - \[ \] Review and refine all documentation
 - \[ \] Add diagrams and visual aids where helpful
@@ -1011,8 +1011,8 @@ Use this checklist when setting up a new project to ensure nothing is missed:
 
 - \[ \] README.md complete with all sections
 - \[ \] ARCHITECTURE.md created (if applicable)
-- \[ \] HOW_TO_USE.md created (for user-facing projects)
-- \[ \] QUICK_START.md created
+- \[ \] docs/SETUP_GUIDE.md created (for user-facing projects)
+- \[ \] docs/SETUP_GUIDE.md created
 - \[ \] tests/README.md created
 - \[ \] All documentation cross-referenced
 

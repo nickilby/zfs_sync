@@ -7,6 +7,12 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:
 
+# Read-only by default. Jobs that need more declare it themselves -- only the
+# release job does. Without this every job runs with a token that can write to
+# the repository, which matters more now that this is public.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test Python ${{ matrix.python-version }}
@@ -31,6 +37,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+
+      - name: Verify package builds and installs
+        run: |
+          pip install -e .
+          python -c "import zfs_sync; import zfs_sync.api.middleware.auth; print(zfs_sync.__version__)"
+
+      - name: Verify migrations
+        run: |
+          # A second head means two revisions claim the same parent, which is
+          # what made the revision map unresolvable and every alembic command
+          # fail. Catch it here rather than on a deployment.
+          heads=$(alembic heads | grep -c '(head)' || true)
+          if [ "$heads" != "1" ]; then
+            echo "::error::expected exactly one alembic head, found $heads"
+            alembic heads
+            exit 1
+          fi
+          # And the chain must actually run, both ways, against an empty
+          # database -- it never had a baseline revision, so it could not.
+          export ZFS_SYNC_DATABASE_URL="sqlite:///$(mktemp -d)/ci.db"
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
 
       - name: Run tests with coverage
         run: |
@@ -58,6 +87,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Check for merge conflict markers
+        run: |
+          if git grep -In -E '^(<<<<<<<|>>>>>>>)( |$)' -- .; then
+            echo "::error::Unresolved merge conflict markers found in tracked files"
+            exit 1
+          fi
+          echo "No merge conflict markers found"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -311,10 +348,14 @@ jobs:
           with open('zfs_sync/__init__.py', 'r') as f:
               content = f.read()
 
-          # Extract version using regex
-          match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
-          if match:
-              version = match.group(1)
+          # Require exactly one __version__ definition. A file carrying two (e.g.
+          # from an unresolved merge) must not silently publish whichever is first.
+          matches = re.findall(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+          if len(matches) > 1:
+              print(f"Error: multiple __version__ definitions found: {matches}")
+              sys.exit(1)
+          if matches:
+              version = matches[0]
               # Write to GITHUB_OUTPUT
               output_file = os.environ.get('GITHUB_OUTPUT')
               if output_file:

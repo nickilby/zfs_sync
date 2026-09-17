@@ -1,15 +1,17 @@
 """Snapshot management endpoints."""
 
-from collections import defaultdict
 from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from zfs_sync.api.middleware.auth import get_current_system
 from zfs_sync.api.schemas.snapshot import (
+    SnapshotBatchResponse,
     SnapshotCreate,
     SnapshotDeleteResponse,
+    SnapshotIngestFailure,
     SnapshotResponse,
 )
 from zfs_sync.database import get_db
@@ -41,156 +43,135 @@ async def list_snapshots(skip: int = 0, limit: int = 100, db: Session = Depends(
 
 
 @router.post(
-    "/snapshots/batch", response_model=List[SnapshotResponse], status_code=status.HTTP_201_CREATED
+    "/snapshots/batch",
+    response_model=SnapshotBatchResponse,
+    status_code=status.HTTP_201_CREATED,
 )
-async def create_snapshots_batch(snapshots: List[SnapshotCreate], db: Session = Depends(get_db)):
-    """
-    Report multiple snapshots in a single request.
+async def create_snapshots_batch(
+    snapshots: List[SnapshotCreate],
+    reconcile: bool = Query(
+        False,
+        description=(
+            "Treat this batch as the COMPLETE inventory for the pool/dataset "
+            "pairs it mentions, and delete recorded snapshots within those that "
+            "are absent from it. Leave false when sending a partial or chunked "
+            "report."
+        ),
+    ),
+    db: Session = Depends(get_db),
+    current_system: UUID = Depends(get_current_system),
+):
+    """Report a snapshot inventory.
 
-    Validates that all system_ids exist before creating any snapshots.
-    Continues processing even if individual snapshots fail, collecting
-    both successful and failed snapshots for reporting.
+    Idempotent: reporting the same inventory repeatedly stores it once. The
+    previous implementation called ``create()`` per row with no uniqueness, so
+    every polling cycle multiplied the records.
+
+    Deletion is opt-in, and this is the important part. Reconciliation used to
+    happen on every batch and was scoped to the whole system: anything not in
+    the batch was deleted. The shipped reporting script chunks large inventories
+    by row count, so on any fleet above the chunk size each chunk deleted what
+    the previous chunk had just written, leaving only the final chunk on record.
+
+    With ``reconcile=true`` the caller asserts that this batch is the complete
+    inventory for the pool/dataset pairs it mentions, and pruning is confined to
+    those. A client that chunks must either chunk on dataset boundaries or leave
+    ``reconcile`` false.
     """
     if not snapshots:
-        logger.warning("Empty snapshot batch received")
-        return []
+        logger.info("Empty snapshot batch received; nothing to do")
+        return SnapshotBatchResponse(created=0, updated=0, deleted=0)
 
-    # Validate all system_ids exist before attempting any creates
-    system_repo = SystemRepository(db)
-    unique_system_ids = {snapshot.system_id for snapshot in snapshots}
-    invalid_system_ids = []
-
-    for system_id in unique_system_ids:
-        if not system_repo.get(system_id):
-            invalid_system_ids.append(str(system_id))
-
-    if invalid_system_ids:
-        error_msg = (
-            f"Invalid system_id(s) found: {', '.join(invalid_system_ids)}. "
-            "These systems do not exist in the database. "
-            "This often happens after system re-registration when the system_id changes. "
-            "Please update your system configuration with the new system_id."
+    foreign = {s.system_id for s in snapshots if s.system_id != current_system}
+    if foreign:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "A system may only report its own snapshots. This key belongs to "
+                f"{current_system}, but the batch contains {len(foreign)} other system(s)."
+            ),
         )
-        logger.error(f"Batch snapshot creation failed: {error_msg}")
+
+    system_repo = SystemRepository(db)
+    if not system_repo.get(current_system):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg,
+            detail=f"System {current_system} does not exist",
         )
 
-    # Group snapshots by system_id for sync operation
-    snapshots_by_system: dict[UUID, list] = defaultdict(list)
-    for snapshot_data in snapshots:
-        snapshots_by_system[snapshot_data.system_id].append(snapshot_data)
-
-    logger.info(
-        f"Processing batch snapshot report: {len(snapshots)} snapshots from {len(snapshots_by_system)} system(s)"
-    )
-
-    # Process snapshots with individual error handling
     repo = SnapshotRepository(db)
-    created = []
-    failed = []
+    stored: List[SnapshotResponse] = []
+    failures: List[SnapshotIngestFailure] = []
+    created_count = 0
+    updated_count = 0
 
-    for idx, snapshot_data in enumerate(snapshots):
+    # What this report covers. Only these datasets are reconciled.
+    scope: set = set()
+    reported: set = set()
+
+    for index, snapshot_data in enumerate(snapshots):
+        fields = snapshot_data.model_dump(by_alias=True)
         try:
-            db_snapshot = repo.create(**snapshot_data.model_dump(by_alias=True))
-            created.append(SnapshotResponse.model_validate(db_snapshot))
-        except ValueError as e:
-            # Handle constraint violations (e.g., duplicate snapshots)
-            error_detail = str(e)
+            row, was_created = repo.upsert(**fields)
+        except Exception as exc:
             logger.warning(
-                f"Failed to create snapshot {idx + 1}/{len(snapshots)}: "
-                f"{snapshot_data.name} on {snapshot_data.pool}/{snapshot_data.dataset} - {error_detail}"
+                "Rejected snapshot %d/%d (%s/%s@%s): %s",
+                index + 1,
+                len(snapshots),
+                snapshot_data.pool,
+                snapshot_data.dataset,
+                snapshot_data.name,
+                exc,
             )
-            failed.append(
-                {
-                    "snapshot": snapshot_data.name,
-                    "pool": snapshot_data.pool,
-                    "dataset": snapshot_data.dataset,
-                    "error": error_detail,
-                }
-            )
-        except Exception as e:
-            # Handle other unexpected errors
-            error_detail = str(e)
-            logger.error(
-                f"Unexpected error creating snapshot {idx + 1}/{len(snapshots)}: "
-                f"{snapshot_data.name} on {snapshot_data.pool}/{snapshot_data.dataset} - {error_detail}",
-                exc_info=True,
-            )
-            failed.append(
-                {
-                    "snapshot": snapshot_data.name,
-                    "pool": snapshot_data.pool,
-                    "dataset": snapshot_data.dataset,
-                    "error": error_detail,
-                }
-            )
-
-    # Log creation summary
-    logger.info(
-        f"Created/updated {len(created)} snapshots, {len(failed)} failed out of {len(snapshots)} total"
-    )
-
-    if failed:
-        logger.warning(f"Failed snapshots: {failed}")
-
-    # Sync database: delete snapshots that are no longer on ZFS systems
-    total_deleted = 0
-    for system_id, system_snapshots in snapshots_by_system.items():
-        system = system_repo.get(system_id)
-        system_hostname = system.hostname if system else str(system_id)
-
-        # Build set of reported snapshot identifiers: (pool, dataset, name)
-        reported_snapshots: set[tuple[str, str, str]] = set()
-        for snapshot_data in system_snapshots:
-            key = (snapshot_data.pool, snapshot_data.dataset, snapshot_data.name)
-            reported_snapshots.add(key)
-
-        logger.info(
-            f"Syncing database for system {system_hostname} (system_id: {system_id}): "
-            f"{len(reported_snapshots)} snapshots reported"
-        )
-
-        # Delete snapshots from database that aren't in the reported set
-        deleted_count, deleted_keys = repo.delete_snapshots_not_in_set(
-            system_id, reported_snapshots
-        )
-
-        if deleted_count > 0:
-            # Format deleted snapshot names for logging
-            deleted_snapshot_names = [
-                f"{pool}/{dataset}@{name}" for pool, dataset, name in deleted_keys
-            ]
-
-            logger.info(
-                f"Deleted {deleted_count} stale snapshots from database for system {system_hostname}: "
-                f"{', '.join(deleted_snapshot_names[:10])}"
-                + (
-                    f" and {len(deleted_snapshot_names) - 10} more"
-                    if len(deleted_snapshot_names) > 10
-                    else ""
+            failures.append(
+                SnapshotIngestFailure(
+                    name=snapshot_data.name,
+                    pool=snapshot_data.pool,
+                    dataset=snapshot_data.dataset,
+                    error=str(exc),
                 )
             )
-        else:
-            logger.debug(
-                f"No stale snapshots to delete for system {system_hostname} - database is in sync"
-            )
+            continue
 
-        total_deleted += deleted_count
+        created_count += int(was_created)
+        updated_count += int(not was_created)
+        stored.append(SnapshotResponse.model_validate(row))
+        scope.add((snapshot_data.pool, snapshot_data.dataset))
+        reported.add((snapshot_data.pool, snapshot_data.dataset, snapshot_data.name))
 
-    # Final summary
-    if total_deleted > 0:
-        logger.info(
-            f"Batch snapshot sync completed: {len(created)} created/updated, {total_deleted} deleted across {len(snapshots_by_system)} system(s)"
+    deleted_count, deleted_keys = 0, []
+    if reconcile:
+        deleted_count, deleted_keys = repo.delete_snapshots_not_in_set(
+            current_system, reported, scope=scope
         )
-    else:
+    if deleted_count:
         logger.info(
-            f"Batch snapshot sync completed: {len(created)} created/updated, no deletions needed"
+            "Pruned %d snapshot(s) no longer reported for system %s: %s",
+            deleted_count,
+            current_system,
+            ", ".join(f"{pool}/{dataset}@{name}" for pool, dataset, name in deleted_keys[:10]),
         )
 
-    # Return only successfully created snapshots
-    return created
+    logger.info(
+        "Snapshot report for system %s: %d created, %d updated, %d deleted, %d failed "
+        "across %d dataset(s)%s",
+        current_system,
+        created_count,
+        updated_count,
+        deleted_count,
+        len(failures),
+        len(scope),
+        "" if reconcile else " (reconcile=false, nothing pruned)",
+    )
+
+    return SnapshotBatchResponse(
+        created=created_count,
+        updated=updated_count,
+        deleted=deleted_count,
+        failed=failures,
+        scope=sorted(f"{pool}/{dataset}" for pool, dataset in scope),
+        snapshots=stored,
+    )
 
 
 @router.get("/snapshots/compare-dataset")
@@ -207,7 +188,7 @@ async def compare_snapshots_by_dataset(
 
 @router.get("/snapshots/compare-dataset")
 async def compare_snapshots_by_dataset_name(
-    dataset: str = Query(..., description="Dataset name (pool-agnostic, e.g., 'L1S4DAT1')"),
+    dataset: str = Query(..., description="Dataset name (pool-agnostic, e.g., 'DATA1')"),
     system_ids: List[UUID] = Query(..., description="System IDs to compare"),
     db: Session = Depends(get_db),
 ):

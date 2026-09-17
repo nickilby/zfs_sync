@@ -16,15 +16,15 @@ ZFS Sync acts as a centralized witness that:
 New to ZFS Sync? Start here:
 
 1. **[Setup Guide](SETUP_GUIDE.md)** - Complete setup instructions for first-time installation
-2. **[Quick Start Guide](../QUICK_START.md)** - Fast setup for Linux systems
-3. **[How to Use](../HOW_TO_USE.md)** - Beginner-friendly API usage guide
+2. **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Fast setup for Linux systems
+3. **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Beginner-friendly API usage guide
 
 ## Documentation
 
 ### Getting Started
 
 - **[Setup Guide](SETUP_GUIDE.md)** - Installation, configuration, system registration, SSH setup, and sync group creation
-- **[Quick Start](../QUICK_START.md)** - Fast setup guide for experienced users
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Fast setup guide for experienced users
 - **[Architecture](../ARCHITECTURE.md)** - Technical architecture and design documentation
 
 ### Operations

@@ -11,8 +11,9 @@ from zfs_sync.database import get_db
 from zfs_sync.database.repositories import SyncGroupRepository
 from zfs_sync.logging_config import get_logger
 from zfs_sync.services.conflict_resolution import ConflictResolutionService
-from zfs_sync.services.sync_coordination import SyncCoordinationService
-from zfs_sync.services.sync_queries import get_datasets_for_systems
+from zfs_sync.services.sync.outcomes import SyncOutcomeService
+from zfs_sync.services.sync.planner import SyncPlanner
+import contextlib
 
 logger = get_logger(__name__)
 
@@ -48,10 +49,8 @@ class SyncSchedulerService:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         logger.info("Sync scheduler stopped")
 
     async def _scheduler_loop(self) -> None:
@@ -71,9 +70,21 @@ class SyncSchedulerService:
                 break
 
     async def _process_all_sync_groups(self) -> None:
-        """Process all enabled sync groups."""
-        # Create a new database session for this operation
-        db = next(get_db())
+        """Process all enabled sync groups, off the event loop.
+
+        Everything below is synchronous SQLAlchemy. Running it directly inside
+        the scheduler's asyncio task blocked the single-worker API for the
+        duration of a scan, so a fleet-sized sweep made the service
+        unresponsive -- including its own health check.
+        """
+        await asyncio.to_thread(self._process_all_sync_groups_blocking)
+
+    def _process_all_sync_groups_blocking(self) -> None:
+        """Synchronous body of a scheduler pass."""
+        # get_db() is a generator dependency; closing it runs its finally
+        # block, which the previous `next(get_db())` call skipped entirely.
+        db_context = get_db()
+        db = next(db_context)
         try:
             sync_group_repo = SyncGroupRepository(db)
             enabled_groups = sync_group_repo.get_enabled()
@@ -86,7 +97,7 @@ class SyncSchedulerService:
 
                 if self.should_process_sync_group(sync_group.id, db):
                     try:
-                        await self._process_sync_group(sync_group.id, db)
+                        self._process_sync_group(sync_group.id, db)
                     except Exception as e:
                         logger.error(
                             f"Error processing sync group {sync_group.id}: {e}",
@@ -94,6 +105,8 @@ class SyncSchedulerService:
                         )
         finally:
             db.close()
+            with contextlib.suppress(StopIteration):
+                next(db_context)
 
     def should_process_sync_group(self, sync_group_id: UUID, db: Session) -> bool:
         """
@@ -120,16 +133,8 @@ class SyncSchedulerService:
         # For now, process every time (can be enhanced with last_processed tracking)
         return True
 
-    async def _process_sync_group(self, sync_group_id: UUID, db: Session) -> None:
-        """
-        Process a single sync group.
-
-        This includes:
-        - Detecting conflicts and logging them
-        - Detecting mismatches
-        - Generating sync instructions (incremental only)
-        - Updating sync states
-        """
+    def _process_sync_group(self, sync_group_id: UUID, db: Session) -> None:
+        """Process a single sync group: detect conflicts, plan, record state."""
         logger.info(f"Processing sync group {sync_group_id}")
 
         try:
@@ -144,10 +149,8 @@ class SyncSchedulerService:
 
             # Get all datasets for this sync group (now returns dataset_name -> [(pool, system_id), ...])
             system_ids = [assoc.system_id for assoc in sync_group.system_associations]
-            sync_coord_service = SyncCoordinationService(db)
-            dataset_mappings = get_datasets_for_systems(
-                system_ids, sync_coord_service.snapshot_repo
-            )
+            planner = SyncPlanner(db)
+            dataset_mappings = planner.dataset_pools(system_ids)
 
             # Log which datasets are being evaluated for transparency (Bug 2 fix)
             dataset_names = sorted(dataset_mappings.keys())
@@ -187,21 +190,32 @@ class SyncSchedulerService:
                         f"Error detecting conflicts for {pool}/{dataset_name} in sync group {sync_group_id}: {e}"
                     )
 
-            # Generate sync instructions (incremental only) for all systems in the group
-            # This will also update sync states
-            if self.settings.incremental_sync_only:
-                try:
-                    # Process for all systems in the sync group (system_id=None means all)
-                    sync_coord_service.generate_dataset_sync_instructions(
-                        sync_group_id=sync_group_id, system_id=None, incremental_only=True
+            # Plan the group and record the standing of every pair.
+            #
+            # This previously called generate_dataset_sync_instructions and
+            # discarded the result, while its docstring claimed it updated
+            # sync states. It never did: sync_states was written only by
+            # conflict resolution, so the dashboard and the status summary
+            # showed conflicts and nothing else.
+            try:
+                plan = planner.plan_group(sync_group_id)
+                if plan.skipped_reason:
+                    logger.info("Sync group %s not planned: %s", sync_group_id, plan.skipped_reason)
+                else:
+                    recorded = SyncOutcomeService(db).record_planned_states(plan.decisions)
+                    logger.info(
+                        "Sync group %s: %d pair(s) evaluated, %d require syncing, "
+                        "%d state(s) recorded",
+                        sync_group_id,
+                        len(plan.decisions),
+                        len(plan.instructions),
+                        recorded,
                     )
-                except Exception as e:
-                    logger.error(
-                        f"Error generating sync instructions for sync group {sync_group_id}: {e}",
-                        exc_info=True,
-                    )
-            else:
-                logger.warning("incremental_sync_only is False - full syncs not yet implemented")
+            except Exception as e:
+                logger.error(
+                    f"Error planning sync group {sync_group_id}: {e}",
+                    exc_info=True,
+                )
 
         except Exception as e:
             logger.error(f"Error processing sync group {sync_group_id}: {e}", exc_info=True)
